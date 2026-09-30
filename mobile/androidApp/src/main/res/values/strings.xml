@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Changeloom</string>
+    <string name="security_channel_id" translatable="false">security_alerts</string>
+    <string name="security_channel_name">Security alerts</string>
+</resources>

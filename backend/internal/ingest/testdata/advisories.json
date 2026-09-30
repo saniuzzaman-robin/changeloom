@@ -1,0 +1,14 @@
+[
+  {
+    "ghsa_id": "GHSA-aaaa-bbbb-cccc",
+    "cve_id": "CVE-2026-0001",
+    "html_url": "https://github.com/advisories/GHSA-aaaa-bbbb-cccc",
+    "summary": "Remote code execution in example/lib",
+    "description": "A crafted request executes arbitrary code.",
+    "severity": "critical",
+    "published_at": "2026-09-28T12:00:00Z",
+    "vulnerabilities": [
+      {"package": {"ecosystem": "go", "name": "example/lib"}, "vulnerable_version_range": "< 1.2.3", "first_patched_version": "1.2.3"}
+    ]
+  }
+]

@@ -1,0 +1,77 @@
+# Production stack: Caddy (TLS) -> api, plus worker and Postgres.
+# Usage (from this directory): cp .env.example .env, fill it in, then
+#   docker compose up -d --build
+# Migrations run in the one-shot `migrate` service before api/worker start.
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build: ../backend
+    image: changeloom-backend
+    command: ["/app/goose", "-dir", "/app/migrations", "postgres", "${DATABASE_URL:?set in .env}", "up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: changeloom-backend
+    command: ["/app/api"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ENV: prod
+      HTTP_ADDR: ":8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+  worker:
+    image: changeloom-backend
+    command: ["/app/worker"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ENV: prod
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

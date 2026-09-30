@@ -1,0 +1,72 @@
+# Topic tree synced into the `topics` table on API startup (upsert by slug; nothing is deleted).
+# A child's slug must start with its parent's slug followed by "/".
+# Following a parent topic includes all of its descendants in the timeline.
+- slug: languages
+  name: Languages
+  description: Programming language releases, proposals and toolchains.
+  children:
+    - {slug: languages/go, name: Go}
+    - {slug: languages/python, name: Python}
+    - {slug: languages/javascript, name: JavaScript & TypeScript}
+    - {slug: languages/rust, name: Rust}
+    - {slug: languages/kotlin, name: Kotlin}
+    - {slug: languages/swift, name: Swift}
+    - {slug: languages/java, name: Java}
+- slug: web
+  name: Web
+  description: Web frameworks, runtimes and browser platform changes.
+  children:
+    - {slug: web/react, name: React}
+    - {slug: web/nextjs, name: Next.js}
+    - {slug: web/angular, name: Angular}
+    - {slug: web/vue, name: Vue}
+    - {slug: web/nodejs, name: Node.js}
+    - {slug: web/browsers, name: Browsers}
+- slug: mobile
+  name: Mobile
+  description: Mobile platforms, SDKs and cross-platform frameworks.
+  children:
+    - {slug: mobile/android, name: Android}
+    - {slug: mobile/ios, name: iOS}
+    - {slug: mobile/flutter, name: Flutter}
+    - {slug: mobile/react-native, name: React Native}
+    - {slug: mobile/kmp, name: Kotlin Multiplatform}
+- slug: cloud
+  name: Cloud & Infrastructure
+  description: Cloud providers, containers and infrastructure tooling.
+  children:
+    - {slug: cloud/aws, name: AWS}
+    - {slug: cloud/gcp, name: Google Cloud}
+    - {slug: cloud/azure, name: Azure}
+    - {slug: cloud/kubernetes, name: Kubernetes}
+    - {slug: cloud/docker, name: Docker}
+    - {slug: cloud/terraform, name: Terraform}
+- slug: databases
+  name: Databases
+  description: Database engines, drivers and managed data services.
+  children:
+    - {slug: databases/postgres, name: PostgreSQL}
+    - {slug: databases/mysql, name: MySQL}
+    - {slug: databases/redis, name: Redis}
+    - {slug: databases/mongodb, name: MongoDB}
+    - {slug: databases/sqlite, name: SQLite}
+- slug: ai
+  name: AI & ML
+  description: Model releases, AI APIs and ML frameworks.
+  children:
+    - {slug: ai/models, name: Models & APIs}
+    - {slug: ai/frameworks, name: ML Frameworks}
+- slug: security
+  name: Security
+  description: Vulnerabilities, advisories and security incidents.
+  children:
+    - {slug: security/advisories, name: Advisories & CVEs}
+    - {slug: security/supply-chain, name: Supply Chain}
+    - {slug: security/incidents, name: Incidents & Breaches}
+- slug: devtools
+  name: Developer Tools
+  description: Editors, CI/CD, version control and build tooling.
+  children:
+    - {slug: devtools/github, name: GitHub}
+    - {slug: devtools/editors, name: Editors & IDEs}
+    - {slug: devtools/ci-cd, name: CI/CD}

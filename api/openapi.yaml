@@ -1,0 +1,325 @@
+openapi: 3.0.3
+info:
+  title: Changeloom API
+  version: 1.0.0
+  description: >
+    Personal tech-news timeline. All /v1 endpoints require a Firebase ID token
+    in `Authorization: Bearer <token>`.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      security: []
+      responses:
+        "200":
+          description: Server is up.
+  /v1/topics:
+    get:
+      operationId: listTopics
+      summary: List all topics.
+      responses:
+        "200":
+          description: All topics, ordered by slug.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/Topic"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/me:
+    get:
+      operationId: getMe
+      summary: Get the signed-in user.
+      responses:
+        "200":
+          description: The signed-in user.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Me"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/me/topics:
+    put:
+      operationId: putMyTopics
+      summary: Replace the set of followed topics.
+      description: Following a topic also includes stories from its descendant topics.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [topics]
+              properties:
+                topics:
+                  type: array
+                  description: Topic slugs to follow.
+                  items: {type: string}
+      responses:
+        "200":
+          description: The updated user.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Me"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/me/devices:
+    put:
+      operationId: putMyDevice
+      summary: Register (or refresh) a push notification token for this device.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, platform]
+              properties:
+                token: {type: string, description: FCM registration token.}
+                platform: {type: string, enum: [android, ios]}
+      responses:
+        "204": {description: Registered.}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+    delete:
+      operationId: deleteMyDevice
+      summary: Unregister a push notification token (idempotent).
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        "204": {description: Unregistered.}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/timeline:
+    get:
+      operationId: getTimeline
+      summary: Stories for the followed topics, unread first then newest first.
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque `next_cursor` from the previous page.
+          schema: {type: string}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        "200":
+          description: One page of the timeline.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/StorySummary"}
+                  next_cursor:
+                    type: string
+                    description: Absent when there are no more pages.
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/stories/{id}:
+    parameters:
+      - $ref: "#/components/parameters/StoryID"
+    get:
+      operationId: getStory
+      summary: Get a story with its full body and sources.
+      responses:
+        "200":
+          description: The story.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Story"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /v1/stories/{id}/read:
+    parameters:
+      - $ref: "#/components/parameters/StoryID"
+    put:
+      operationId: markStoryRead
+      summary: Mark a story read (idempotent; keeps the first read time).
+      responses:
+        "204": {description: Marked read.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    delete:
+      operationId: markStoryUnread
+      summary: Mark a story unread (idempotent).
+      responses:
+        "204": {description: Marked unread.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /v1/search:
+    get:
+      operationId: searchStories
+      summary: Full-text search over all stories, newest first.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search text (web-search syntax; quotes and `-word` are supported).
+          schema: {type: string, minLength: 1, maxLength: 200}
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: string}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        "200": {$ref: "#/components/responses/StoryPage"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/bookmarks:
+    get:
+      operationId: listBookmarks
+      summary: Bookmarked stories, most recently bookmarked first.
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: string}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        "200": {$ref: "#/components/responses/StoryPage"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/stories/{id}/bookmark:
+    parameters:
+      - $ref: "#/components/parameters/StoryID"
+    put:
+      operationId: addBookmark
+      summary: Bookmark a story (idempotent).
+      responses:
+        "204": {description: Bookmarked.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    delete:
+      operationId: removeBookmark
+      summary: Remove a bookmark (idempotent).
+      responses:
+        "204": {description: Removed.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    StoryID:
+      name: id
+      in: path
+      required: true
+      schema: {type: integer, format: int64}
+  responses:
+    StoryPage:
+      description: One page of stories.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items]
+            properties:
+              items:
+                type: array
+                items: {$ref: "#/components/schemas/StorySummary"}
+              next_cursor:
+                type: string
+                description: Absent when there are no more pages.
+    BadRequest:
+      description: Invalid request.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    Unauthorized:
+      description: Missing or invalid token.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    NotFound:
+      description: Not found.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: {type: string, example: not_found}
+        message: {type: string}
+    Topic:
+      type: object
+      required: [slug, name, description]
+      properties:
+        slug: {type: string, example: languages/go}
+        name: {type: string, example: Go}
+        parent: {type: string, description: Parent topic slug; absent for root topics.}
+        description: {type: string}
+    Me:
+      type: object
+      required: [id, topics]
+      properties:
+        id: {type: integer, format: int64}
+        email: {type: string}
+        topics:
+          type: array
+          description: Followed topic slugs.
+          items: {type: string}
+    StoryKind:
+      type: string
+      enum: [release, breaking, security, deprecation, announcement, article]
+    Severity:
+      type: string
+      enum: [low, medium, high, critical]
+    StorySummary:
+      type: object
+      required: [id, title, summary, kind, importance, published_at, topics, is_read, is_bookmarked]
+      properties:
+        id: {type: integer, format: int64}
+        title: {type: string}
+        summary: {type: string}
+        kind: {$ref: "#/components/schemas/StoryKind"}
+        severity: {$ref: "#/components/schemas/Severity"}
+        importance: {type: integer, minimum: 1, maximum: 5}
+        published_at: {type: string, format: date-time}
+        topics:
+          type: array
+          items: {type: string}
+        is_read: {type: boolean}
+        is_bookmarked: {type: boolean}
+        read_at: {type: string, format: date-time}
+    StorySource:
+      type: object
+      required: [url, name]
+      properties:
+        url: {type: string}
+        name: {type: string}
+    Story:
+      allOf:
+        - $ref: "#/components/schemas/StorySummary"
+        - type: object
+          required: [body_md, sources]
+          properties:
+            body_md: {type: string, description: Markdown body.}
+            sources:
+              type: array
+              items: {$ref: "#/components/schemas/StorySource"}

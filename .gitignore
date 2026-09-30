@@ -1,0 +1,29 @@
+# Env / secrets
+.env
+*.pem
+*service-account*.json
+google-services.json
+GoogleService-Info.plist
+
+# Go
+/backend/bin/
+*.test
+*.out
+coverage.*
+
+# Gradle / Android / Kotlin
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+.kotlin/
+captures/
+
+# iOS
+xcuserdata/
+DerivedData/
+Pods/
+
+# OS
+.DS_Store
