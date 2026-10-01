@@ -6,7 +6,7 @@
 //	worker sources sync        sync seed/sources.yaml into the database
 //	worker sources poll NAME   poll one source once and print what was stored
 //	worker process-one ID [--apply]
-//	                           run one raw item through Claude synchronously and print
+//	                           run one raw item through the AI provider synchronously and print
 //	                           the result; with --apply, store it like a batch result
 //	worker eval export ID      print a raw item as an eval fixture (JSON)
 //	worker eval run [DIR]      run eval fixtures (default internal/ai/testdata/eval)
@@ -109,11 +109,11 @@ func runWorker(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error
 		slog.Warn("AI processing disabled", "reason", err.Error())
 	} else {
 		var err error
-		if opt.Processor, err = newProcessor(pool, cfg); err != nil {
+		if opt.Processor, err = newProcessor(ctx, pool, cfg); err != nil {
 			return err
 		}
 		if cfg.AI.DiscoveryEnabled {
-			if opt.Discoverer, err = newDiscoverer(pool, ingester, cfg); err != nil {
+			if opt.Discoverer, err = newDiscoverer(ctx, pool, ingester, cfg); err != nil {
 				return err
 			}
 		}
@@ -170,11 +170,11 @@ func pollSource(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, name
 	return nil
 }
 
-func newProcessor(pool *pgxpool.Pool, cfg config.Config) (*ai.Processor, error) {
+func newProcessor(ctx context.Context, pool *pgxpool.Pool, cfg config.Config) (*ai.Processor, error) {
 	if err := cfg.AI.Validate(); err != nil {
 		return nil, err
 	}
-	client, err := ai.NewAnthropicClient(cfg.AI.APIKey, cfg.AI.Model, cfg.AI.Effort, cfg.AI.MaxOutputTokens)
+	client, err := ai.NewProvider(ctx, cfg.AI.Provider, ai.ProviderConfig{APIKey: cfg.AI.APIKey, Model: cfg.AI.Model, MaxTokens: cfg.AI.MaxOutputTokens})
 	if err != nil {
 		return nil, err
 	}
@@ -189,8 +189,8 @@ func newProcessor(pool *pgxpool.Pool, cfg config.Config) (*ai.Processor, error) 
 	}), nil
 }
 
-func newDiscoverer(pool *pgxpool.Pool, ingester *ingest.Ingester, cfg config.Config) (*ai.Discoverer, error) {
-	client, err := ai.NewAnthropicClient(cfg.AI.APIKey, cfg.AI.Model, cfg.AI.Effort, cfg.AI.MaxOutputTokens)
+func newDiscoverer(ctx context.Context, pool *pgxpool.Pool, ingester *ingest.Ingester, cfg config.Config) (*ai.Discoverer, error) {
+	client, err := ai.NewProvider(ctx, cfg.AI.Provider, ai.ProviderConfig{APIKey: cfg.AI.APIKey, Model: cfg.AI.Model, MaxTokens: cfg.AI.MaxOutputTokens})
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +210,7 @@ func processOne(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, args
 	if err != nil {
 		return fmt.Errorf("raw item id must be a number, got %q", args[0])
 	}
-	proc, err := newProcessor(pool, cfg)
+	proc, err := newProcessor(ctx, pool, cfg)
 	if err != nil {
 		return err
 	}
@@ -259,7 +259,7 @@ func evalRun(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, args []
 	if len(fixtures) == 0 {
 		return fmt.Errorf("no fixtures in %s (create them with `worker eval export ID > %s/NAME.json`)", dir, dir)
 	}
-	proc, err := newProcessor(pool, cfg)
+	proc, err := newProcessor(ctx, pool, cfg)
 	if err != nil {
 		return err
 	}

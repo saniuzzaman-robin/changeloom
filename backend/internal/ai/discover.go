@@ -45,7 +45,7 @@ type DiscoverySettings struct {
 	MaxItemAge time.Duration
 }
 
-// Discoverer finds stories no feed covers by asking Claude to search the web, then stores
+// Discoverer finds stories no feed covers by asking the AI provider to search the web, then stores
 // them as raw items for the normal processing pipeline.
 type Discoverer struct {
 	pool     *pgxpool.Pool

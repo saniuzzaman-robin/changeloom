@@ -37,12 +37,12 @@ WHERE id = @id
 RETURNING status;
 
 -- name: InsertAIBatch :one
-INSERT INTO ai_batches (anthropic_batch_id, status, item_count, estimated_tokens)
-VALUES (@anthropic_batch_id, @status, @item_count, @estimated_tokens)
+INSERT INTO ai_batches (provider_batch_id, status, item_count, estimated_tokens)
+VALUES (@provider_batch_id, @status, @item_count, @estimated_tokens)
 RETURNING id;
 
 -- name: ListOpenAIBatches :many
-SELECT id, anthropic_batch_id FROM ai_batches WHERE ended_at IS NULL ORDER BY id;
+SELECT id, provider_batch_id FROM ai_batches WHERE ended_at IS NULL ORDER BY id;
 
 -- name: UpdateAIBatchStatus :exec
 UPDATE ai_batches SET status = @status WHERE id = @id;

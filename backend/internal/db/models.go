@@ -12,7 +12,7 @@ import (
 
 type AiBatch struct {
 	ID                  int64
-	AnthropicBatchID    string
+	ProviderBatchID     string
 	Status              string
 	ItemCount           int32
 	InputTokens         int64

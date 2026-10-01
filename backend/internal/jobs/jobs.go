@@ -119,7 +119,7 @@ func EnqueueDue(ctx context.Context, pool *pgxpool.Pool, client *river.Client[pg
 	return len(res), nil
 }
 
-// SubmitBatchArgs submits pending raw items to Claude as one batch.
+// SubmitBatchArgs submits pending raw items to the AI provider as one batch.
 type SubmitBatchArgs struct{}
 
 // Kind implements river.JobArgs.
@@ -142,7 +142,7 @@ func (w *SubmitBatchWorker) Work(ctx context.Context, _ *river.Job[SubmitBatchAr
 	return err
 }
 
-// PollBatchesArgs polls open Claude batches and applies finished ones.
+// PollBatchesArgs polls open AI batches and applies finished ones.
 type PollBatchesArgs struct{}
 
 // Kind implements river.JobArgs.
@@ -164,7 +164,7 @@ func (w *PollBatchesWorker) Work(ctx context.Context, _ *river.Job[PollBatchesAr
 	return w.Processor.Poll(ctx)
 }
 
-// DedupeStoriesArgs merges near-duplicate stories using Claude.
+// DedupeStoriesArgs merges near-duplicate stories using the AI provider.
 type DedupeStoriesArgs struct{}
 
 // Kind implements river.JobArgs.

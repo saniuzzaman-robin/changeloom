@@ -97,7 +97,7 @@ func parseCustomID(s string) (int64, error) {
 	return strconv.ParseInt(strings.TrimPrefix(s, customIDPrefix), 10, 64)
 }
 
-// Submit sends pending items to Claude as one batch, within the daily token budget.
+// Submit sends pending items to the AI provider as one batch, within the daily token budget.
 // It returns the number of items submitted.
 func (p *Processor) Submit(ctx context.Context) (int, error) {
 	now := p.now()
@@ -153,7 +153,7 @@ func (p *Processor) Submit(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	rowID, err := q.InsertAIBatch(ctx, db.InsertAIBatchParams{
-		AnthropicBatchID: batchID, Status: "in_progress", ItemCount: int32(len(reqs)), EstimatedTokens: estimated, //nolint:gosec // bounded by BatchMaxItems
+		ProviderBatchID: batchID, Status: "in_progress", ItemCount: int32(len(reqs)), EstimatedTokens: estimated, //nolint:gosec // bounded by BatchMaxItems
 	})
 	if err != nil {
 		return 0, fmt.Errorf("record batch %s (its items will be resubmitted): %w", batchID, err)
@@ -176,8 +176,8 @@ func (p *Processor) Poll(ctx context.Context) error {
 	}
 	var errs []error
 	for _, b := range batches {
-		if err := p.pollBatch(ctx, b.ID, b.AnthropicBatchID); err != nil {
-			errs = append(errs, fmt.Errorf("batch %s: %w", b.AnthropicBatchID, err))
+		if err := p.pollBatch(ctx, b.ID, b.ProviderBatchID); err != nil {
+			errs = append(errs, fmt.Errorf("batch %s: %w", b.ProviderBatchID, err))
 		}
 	}
 	return errors.Join(errs...)
@@ -271,7 +271,7 @@ func (p *Processor) retry(ctx context.Context, q *db.Queries, id int64, reason s
 	return nil
 }
 
-// applyResult moves one raw item to its next state based on Claude's result. It never
+// applyResult moves one raw item to its next state based on the provider's result. It never
 // reports a model-side problem as an error: those are recorded on the item.
 func (p *Processor) applyResult(ctx context.Context, it rawItem, res Result, validTopics map[string]bool) error {
 	tx, err := p.pool.Begin(ctx)
@@ -297,7 +297,7 @@ func (p *Processor) applyResultTx(ctx context.Context, q *db.Queries, it rawItem
 	case res.StopReason == "refusal":
 		return setStatus("needs_review", "model refused (category: "+orNone(res.RefusalCategory)+")")
 	case res.StopReason == "max_tokens":
-		return p.retry(ctx, q, it.ID, "output hit max tokens; raise AI_MAX_OUTPUT_TOKENS or lower AI_EFFORT")
+		return p.retry(ctx, q, it.ID, "output hit max tokens; raise AI_MAX_OUTPUT_TOKENS")
 	}
 	out, err := ParseOutput(res.Text, validTopics)
 	if err != nil {
@@ -419,7 +419,7 @@ type Preview struct {
 	User     string
 }
 
-// ProcessOne runs one raw item through Claude synchronously (full price, no batch).
+// ProcessOne runs one raw item through the AI provider synchronously (full price, no batch).
 // With apply, the outcome is written like a batch result; otherwise nothing is stored.
 func (p *Processor) ProcessOne(ctx context.Context, rawItemID int64, apply bool) (Preview, error) {
 	q := db.New(p.pool)

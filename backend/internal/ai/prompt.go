@@ -1,4 +1,4 @@
-// Package ai turns raw ingested items into stories using Claude.
+// Package ai turns raw ingested items into stories using an AI provider.
 package ai
 
 import (

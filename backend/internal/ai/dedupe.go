@@ -42,7 +42,7 @@ type dedupeAnswer struct {
 	Reason      string `json:"reason"`
 }
 
-// DedupeStories asks Claude whether each recently created story repeats an existing one and
+// DedupeStories asks the AI provider whether each recently created story repeats an existing one and
 // merges the repeats: sources, topics and bookmarks move to the older story and the new
 // one is deleted. It complements the CVE and project+version merge done at insert time.
 // Calls run synchronously at full price, so at most DedupeMaxPerRun stories are checked

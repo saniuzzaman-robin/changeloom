@@ -81,7 +81,7 @@ func (p *Processor) ExportFixture(ctx context.Context, rawItemID int64) (Fixture
 	return f, nil
 }
 
-// Eval runs fixtures through Claude synchronously and checks the answers. Nothing is stored.
+// Eval runs fixtures through the AI provider synchronously and checks the answers. Nothing is stored.
 func (p *Processor) Eval(ctx context.Context, fixtures []Fixture) ([]EvalResult, error) {
 	pc, err := p.promptContext(ctx, db.New(p.pool))
 	if err != nil {

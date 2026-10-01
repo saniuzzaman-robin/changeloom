@@ -35,18 +35,19 @@ type Config struct {
 	// PushEnabled turns on FCM push notifications in the worker (FCM_ENABLED). It needs
 	// FIREBASE_PROJECT_ID and Application Default Credentials (GOOGLE_APPLICATION_CREDENTIALS).
 	PushEnabled bool
-	// AI configures Claude processing. It is optional at load time (the api does not
+	// AI configures AI processing. It is optional at load time (the api does not
 	// need it); AI.Validate is called by the worker before it starts AI jobs.
 	AI AIConfig
 }
 
-// AIConfig holds the settings for the Claude processing pipeline.
+// AIConfig holds the settings for the AI processing pipeline.
 type AIConfig struct {
+	// Provider names the AI service (AI_PROVIDER); see ai.NewProvider for the registered ones.
+	Provider string
+	// APIKey is the provider credential (AI_API_KEY).
 	APIKey string
-	// Model is the Claude model id used for all processing (AI_MODEL).
+	// Model is the model id used for all processing (AI_MODEL).
 	Model string
-	// Effort is the output_config effort level: low, medium, high, xhigh or max.
-	Effort string
 	// DailyTokenBudget caps tokens submitted in any rolling 24 hours.
 	DailyTokenBudget int64
 	BatchMaxItems    int
@@ -64,13 +65,14 @@ type AIConfig struct {
 	DiscoveryInterval    time.Duration
 }
 
-var validEfforts = map[string]bool{"low": true, "medium": true, "high": true, "xhigh": true, "max": true}
+// DefaultAIProvider is used when AI_PROVIDER is unset.
+const DefaultAIProvider = "gemini"
 
-// Validate reports whether the settings needed to call Claude are present.
+// Validate reports whether the settings needed to call the AI provider are present.
 func (a AIConfig) Validate() error {
 	var errs []error
 	if a.APIKey == "" {
-		errs = append(errs, errors.New("ANTHROPIC_API_KEY is required for AI processing"))
+		errs = append(errs, errors.New("AI_API_KEY is required for AI processing"))
 	}
 	if a.Model == "" {
 		errs = append(errs, errors.New("AI_MODEL is required for AI processing (see .env.example)"))
@@ -112,10 +114,6 @@ func Load() (Config, error) {
 		errs = append(errs, errors.New("FIREBASE_PROJECT_ID is required when ENV=prod (see .env.example)"))
 	}
 
-	effort := getenv("AI_EFFORT", "low")
-	if !validEfforts[effort] {
-		errs = append(errs, fmt.Errorf("AI_EFFORT must be one of low, medium, high, xhigh, max, got %q", effort))
-	}
 	budget := envInt(&errs, "AI_DAILY_TOKEN_BUDGET", 2_000_000)
 	batchMax := envInt(&errs, "AI_BATCH_MAX_ITEMS", 100)
 	maxAttempts := envInt(&errs, "AI_MAX_ATTEMPTS", 3)
@@ -146,9 +144,9 @@ func Load() (Config, error) {
 		FirebaseProjectID: firebaseProjectID,
 		PushEnabled:       pushEnabled,
 		AI: AIConfig{
-			APIKey:           strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")),
+			Provider:         getenv("AI_PROVIDER", DefaultAIProvider),
+			APIKey:           strings.TrimSpace(os.Getenv("AI_API_KEY")),
 			Model:            getenv("AI_MODEL", ""),
-			Effort:           effort,
 			DailyTokenBudget: int64(budget),
 			BatchMaxItems:    batchMax,
 			MaxAttempts:      maxAttempts,

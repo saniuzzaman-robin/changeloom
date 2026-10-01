@@ -201,21 +201,21 @@ func (q *Queries) GetRawItem(ctx context.Context, id int64) (GetRawItemRow, erro
 }
 
 const insertAIBatch = `-- name: InsertAIBatch :one
-INSERT INTO ai_batches (anthropic_batch_id, status, item_count, estimated_tokens)
+INSERT INTO ai_batches (provider_batch_id, status, item_count, estimated_tokens)
 VALUES ($1, $2, $3, $4)
 RETURNING id
 `
 
 type InsertAIBatchParams struct {
-	AnthropicBatchID string
-	Status           string
-	ItemCount        int32
-	EstimatedTokens  int64
+	ProviderBatchID string
+	Status          string
+	ItemCount       int32
+	EstimatedTokens int64
 }
 
 func (q *Queries) InsertAIBatch(ctx context.Context, arg InsertAIBatchParams) (int64, error) {
 	row := q.db.QueryRow(ctx, insertAIBatch,
-		arg.AnthropicBatchID,
+		arg.ProviderBatchID,
 		arg.Status,
 		arg.ItemCount,
 		arg.EstimatedTokens,
@@ -263,12 +263,12 @@ func (q *Queries) InsertStory(ctx context.Context, arg InsertStoryParams) (int64
 }
 
 const listOpenAIBatches = `-- name: ListOpenAIBatches :many
-SELECT id, anthropic_batch_id FROM ai_batches WHERE ended_at IS NULL ORDER BY id
+SELECT id, provider_batch_id FROM ai_batches WHERE ended_at IS NULL ORDER BY id
 `
 
 type ListOpenAIBatchesRow struct {
-	ID               int64
-	AnthropicBatchID string
+	ID              int64
+	ProviderBatchID string
 }
 
 func (q *Queries) ListOpenAIBatches(ctx context.Context) ([]ListOpenAIBatchesRow, error) {
@@ -280,7 +280,7 @@ func (q *Queries) ListOpenAIBatches(ctx context.Context) ([]ListOpenAIBatchesRow
 	items := []ListOpenAIBatchesRow{}
 	for rows.Next() {
 		var i ListOpenAIBatchesRow
-		if err := rows.Scan(&i.ID, &i.AnthropicBatchID); err != nil {
+		if err := rows.Scan(&i.ID, &i.ProviderBatchID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
