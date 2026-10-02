@@ -102,7 +102,7 @@ func run() error {
 	}
 }
 
-// newVerifier picks the token verifier: the dev stub in dev, Firebase in prod.
+// newVerifier picks the token verifier: the dev stub in dev, Firebase in staging and prod.
 func newVerifier(ctx context.Context, cfg config.Config) (auth.Verifier, error) {
 	if cfg.Env == config.EnvDev {
 		slog.Warn("dev auth enabled: any 'Bearer dev:<name>' token is accepted")

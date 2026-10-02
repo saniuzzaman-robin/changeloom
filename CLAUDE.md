@@ -11,7 +11,8 @@
 - Android build: `ANDROID_HOME=~/Library/Android/sdk gradle :shared:testAndroidHostTest :androidApp:assembleDebug` (system gradle; wrapper download timed out).
 - Codegen: `make generate` (sqlc + oapi-codegen).
 - Dev auth `Bearer dev:<name>` only when `ENV=dev`; prod uses Firebase (`FIREBASE_PROJECT_ID`).
-- Deploy target: Cloud Run (api image from `backend/Dockerfile`, listens on `$PORT`) + Neon Postgres. Env list in `deploy/.env.example`. Hosted migrations: `make migrate-remote` with `REMOTE_DATABASE_URL` = Neon's direct (non-pooled) URL.
+- Environments: local `dev` plus hosted `staging` and `prod`, each a separate GCP/Firebase project + Neon DB + Cloud Run service; steps in `deploy/README.md`. Make targets take `DEPLOY_ENV` (default `staging`; prod only when explicitly asked): `migrate-remote` (`REMOTE_DATABASE_URL_<ENV>` in `curator/.env`), `deploy-api` (`deploy/<env>.env`), `android-apk`/`android-bundle`. Never run deploys or migrate-remote yourself.
+- Android flavors `staging`/`prod` (tasks like `assembleStagingDebug`); api URL from `changeloom.<env>.apiBaseUrl`, Firebase config from `androidApp/src/<env>/google-services.json`, release signing from `mobile/keystore.properties`.
 - The api no longer syncs topics at startup; tests sync `backend/seed/topics.yaml`.
 - Curator: config in `curator/.env` (copy `.env.example`; the Makefile includes it). `make curator-db curator-migrate curator-seed`, then `curator-test`/`curator-lint`. The real topic catalog is `curator/seed/catalog.yaml`. `curator fetch` makes real `claude -p` calls (subscription usage); tests fake the CLI.
 - Curator schema = `backend/migrations` (read from `BACKEND_MIGRATIONS_DIR`, default `../backend/migrations`, so run it from `curator/`) + `curator/migrations` (goose table `curator_goose_db_version`). Rerun `make curator-generate` after backend migrations change.

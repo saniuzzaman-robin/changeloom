@@ -29,8 +29,9 @@ const connectTimeout = 10 * time.Second
 const usage = `usage: curator <command> [flags]
 
 commands:
-  migrate [--remote]               apply the backend and curator migrations to the local DB;
-                                   --remote applies only the backend migrations to REMOTE_DATABASE_URL
+  migrate [--remote [--env ENV]]   apply the backend and curator migrations to the local DB;
+                                   --remote applies only the backend migrations to the hosted DB
+                                   of ENV (staging, the default, or prod): REMOTE_DATABASE_URL_<ENV>
   seed                             load the topic catalog (seed/catalog.yaml) into the local DB
   fetch                            fetch new stories with Claude into the local DB
   requests pull                    copy pending topic requests and follower counts from the hosted DB
@@ -73,11 +74,16 @@ func run(args []string) error {
 	switch cmd {
 	case "migrate":
 		fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
-		remote := fs.Bool("remote", false, "apply only the backend migrations to REMOTE_DATABASE_URL")
+		remote := fs.Bool("remote", false, "apply only the backend migrations to the hosted DB of --env")
+		envName := fs.String("env", string(config.EnvStaging), "hosted environment for --remote: staging or prod")
 		if err := parse(fs, rest); err != nil {
 			return err
 		}
-		return runMigrate(ctx, cfg, *remote)
+		env, err := config.ParseEnv(*envName)
+		if err != nil {
+			return fmt.Errorf("%w: migrate --env: %w", errUsage, err)
+		}
+		return runMigrate(ctx, cfg, *remote, env)
 	case "seed":
 		if err := parse(flag.NewFlagSet("seed", flag.ContinueOnError), rest); err != nil {
 			return err
@@ -112,10 +118,11 @@ func parse(fs *flag.FlagSet, args []string) error {
 	return nil
 }
 
-func runMigrate(ctx context.Context, cfg config.Config, remote bool) error {
+func runMigrate(ctx context.Context, cfg config.Config, remote bool, env config.Env) error {
 	key, url := "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL
 	if remote {
-		key, url = "REMOTE_DATABASE_URL", cfg.RemoteDatabaseURL
+		key, url = "REMOTE_DATABASE_URL_"+env.Suffix(), cfg.Remotes[env].DatabaseURL
+		slog.Info("migrating the hosted DB", "env", env)
 	}
 	pool, err := openPool(ctx, key, url)
 	if err != nil {

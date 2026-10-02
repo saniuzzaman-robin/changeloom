@@ -11,17 +11,48 @@ import (
 	"time"
 )
 
+// Env is a hosted environment the curator pushes content to.
+type Env string
+
+// Hosted environments.
+const (
+	EnvStaging Env = "staging"
+	EnvProd    Env = "prod"
+)
+
+// Envs lists the hosted environments.
+var Envs = []Env{EnvStaging, EnvProd}
+
+// ParseEnv validates a hosted environment name.
+func ParseEnv(s string) (Env, error) {
+	for _, env := range Envs {
+		if s == string(env) {
+			return env, nil
+		}
+	}
+	return "", fmt.Errorf("environment must be %q or %q, got %q", EnvStaging, EnvProd, s)
+}
+
+// Suffix is the suffix of the env's variables, e.g. REMOTE_DATABASE_URL_STAGING.
+func (e Env) Suffix() string { return strings.ToUpper(string(e)) }
+
+// Remote holds one hosted environment's settings, from the variables ending in _<ENV>.
+type Remote struct {
+	// DatabaseURL is the hosted Postgres (REMOTE_DATABASE_URL_<ENV>): Neon's direct, non-pooled URL.
+	DatabaseURL string
+	// APIBaseURL is the hosted api, called on POST /internal/notify after a sync (API_BASE_URL_<ENV>).
+	APIBaseURL string
+	// NotifySecret is the bearer token for POST /internal/notify (NOTIFY_SECRET_<ENV>).
+	NotifySecret string
+}
+
 // Config holds the curator settings. Database URLs are validated where they are used, since
-// not every command needs both.
+// not every command needs them all.
 type Config struct {
 	// LocalDatabaseURL is the curator's own Postgres (LOCAL_DATABASE_URL).
 	LocalDatabaseURL string
-	// RemoteDatabaseURL is the hosted Postgres (REMOTE_DATABASE_URL): Neon's direct, non-pooled URL.
-	RemoteDatabaseURL string
-	// APIBaseURL is the hosted api, called on POST /internal/notify after a sync (API_BASE_URL).
-	APIBaseURL string
-	// NotifySecret is the bearer token for POST /internal/notify (NOTIFY_SECRET).
-	NotifySecret string
+	// Remotes holds the settings of each hosted environment.
+	Remotes map[Env]Remote
 	// BackendMigrationsDir holds the backend's goose migrations (BACKEND_MIGRATIONS_DIR).
 	BackendMigrationsDir string
 	LogLevel             slog.Level
@@ -70,9 +101,7 @@ func Load() (Config, error) {
 
 	cfg := Config{
 		LocalDatabaseURL:     getenv("LOCAL_DATABASE_URL", ""),
-		RemoteDatabaseURL:    getenv("REMOTE_DATABASE_URL", ""),
-		APIBaseURL:           strings.TrimRight(getenv("API_BASE_URL", ""), "/"),
-		NotifySecret:         getenv("NOTIFY_SECRET", ""),
+		Remotes:              make(map[Env]Remote, len(Envs)),
 		BackendMigrationsDir: getenv("BACKEND_MIGRATIONS_DIR", "../backend/migrations"),
 		LogLevel:             level,
 		Claude: Claude{
@@ -86,6 +115,14 @@ func Load() (Config, error) {
 		ItemMaxAge:         time.Duration(envInt(&errs, "CURATOR_ITEM_MAX_AGE_DAYS", 7)) * 24 * time.Hour,
 		MergeWindow:        time.Duration(envInt(&errs, "CURATOR_MERGE_WINDOW_DAYS", 14)) * 24 * time.Hour,
 		UnfollowedInterval: time.Duration(envInt(&errs, "CURATOR_UNFOLLOWED_INTERVAL_HOURS", 24)) * time.Hour,
+	}
+
+	for _, env := range Envs {
+		cfg.Remotes[env] = Remote{
+			DatabaseURL:  getenv("REMOTE_DATABASE_URL_"+env.Suffix(), ""),
+			APIBaseURL:   strings.TrimRight(getenv("API_BASE_URL_"+env.Suffix(), ""), "/"),
+			NotifySecret: getenv("NOTIFY_SECRET_"+env.Suffix(), ""),
+		}
 	}
 
 	if len(errs) > 0 {

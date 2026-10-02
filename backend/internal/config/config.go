@@ -16,8 +16,9 @@ type Env string
 
 // Supported environments.
 const (
-	EnvDev  Env = "dev"
-	EnvProd Env = "prod"
+	EnvDev     Env = "dev"
+	EnvStaging Env = "staging"
+	EnvProd    Env = "prod"
 )
 
 // Config holds the api settings.
@@ -29,7 +30,7 @@ type Config struct {
 	LogLevel    slog.Level
 	// TimelineWindow hides stories published longer ago than this from the timeline.
 	TimelineWindow time.Duration
-	// FirebaseProjectID is the Firebase project whose ID tokens the api accepts (required when ENV=prod).
+	// FirebaseProjectID is the Firebase project whose ID tokens the api accepts (required unless ENV=dev).
 	FirebaseProjectID string
 	// PushEnabled turns on FCM push notifications (FCM_ENABLED). It needs
 	// FIREBASE_PROJECT_ID and Application Default Credentials (GOOGLE_APPLICATION_CREDENTIALS).
@@ -46,8 +47,8 @@ func Load() (Config, error) {
 	var errs []error
 
 	env := Env(getenv("ENV", string(EnvDev)))
-	if env != EnvDev && env != EnvProd {
-		errs = append(errs, fmt.Errorf("ENV must be %q or %q, got %q", EnvDev, EnvProd, env))
+	if env != EnvDev && env != EnvStaging && env != EnvProd {
+		errs = append(errs, fmt.Errorf("ENV must be %q, %q or %q, got %q", EnvDev, EnvStaging, EnvProd, env))
 	}
 
 	var level slog.Level
@@ -74,8 +75,8 @@ func Load() (Config, error) {
 	}
 
 	firebaseProjectID := getenv("FIREBASE_PROJECT_ID", "")
-	if env == EnvProd && firebaseProjectID == "" {
-		errs = append(errs, errors.New("FIREBASE_PROJECT_ID is required when ENV=prod (see .env.example)"))
+	if (env == EnvStaging || env == EnvProd) && firebaseProjectID == "" {
+		errs = append(errs, fmt.Errorf("FIREBASE_PROJECT_ID is required when ENV=%s (see deploy/%s.env.example)", env, env))
 	}
 
 	pushEnabled := envBool(&errs, "FCM_ENABLED")

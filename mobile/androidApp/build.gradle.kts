@@ -1,14 +1,44 @@
+import com.google.gms.googleservices.GoogleServicesPlugin.GoogleServicesPluginConfig
+import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
 
-// Firebase config is a per-developer secret; the build works without it (sign-in then fails at runtime).
-if (file("google-services.json").exists()) {
+// Hosted environments, one product flavor each (see deploy/README.md).
+val envs = listOf("staging", "prod")
+
+// Firebase config comes from each env's Firebase project and is never committed:
+// src/<env>/google-services.json. Debug builds work without it (sign-in then fails at runtime);
+// release builds require it (see verifyConfig below).
+val googleServicesFiles = envs.associateWith { file("src/$it/google-services.json") }
+if (googleServicesFiles.values.any { it.exists() }) {
     apply(plugin = libs.plugins.google.services.get().pluginId)
+    configure<GoogleServicesPluginConfig> {
+        missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN
+    }
 }
 
-val apiBaseUrl = providers.gradleProperty("changeloom.apiBaseUrl").orElse("http://10.0.2.2:8080")
+// The api each env talks to: -Pchangeloom.<env>.apiBaseUrl (or ~/.gradle/gradle.properties), else
+// changeloom.apiBaseUrl, else the local api from the emulator. Release builds require an https URL.
+val localApiBaseUrl = "http://10.0.2.2:8080"
+fun apiBaseUrl(env: String): String =
+    providers.gradleProperty("changeloom.$env.apiBaseUrl")
+        .orElse(providers.gradleProperty("changeloom.apiBaseUrl"))
+        .orElse(localApiBaseUrl)
+        .get()
+
+// Release signing (both envs use the same upload key), never committed: mobile/keystore.properties
+// with storeFile (relative to mobile/), storePassword, keyAlias and keyPassword.
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) keystorePropertiesFile.inputStream().use(::load)
+}
+fun keystoreProperty(key: String): String =
+    keystoreProperties.getProperty(key)?.takeIf { it.isNotBlank() }
+        ?: throw GradleException("$key is missing from ${keystorePropertiesFile.path} (see deploy/README.md)")
 
 android {
     namespace = "dev.changeloom.android"
@@ -20,7 +50,22 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
-        buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl.get()}\"")
+    }
+
+    flavorDimensions += "env"
+    productFlavors {
+        create("staging") {
+            dimension = "env"
+            // Installs next to the prod app; register this id in the staging Firebase project.
+            applicationIdSuffix = ".staging"
+            versionNameSuffix = "-staging"
+        }
+        create("prod") {
+            dimension = "env"
+        }
+    }
+    productFlavors.configureEach {
+        buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl(name)}\"")
     }
 
     buildFeatures {
@@ -39,10 +84,50 @@ android {
         }
     }
 
+    if (keystorePropertiesFile.exists()) {
+        signingConfigs.create("release") {
+            storeFile = rootProject.file(keystoreProperty("storeFile"))
+            storePassword = keystoreProperty("storePassword")
+            keyAlias = keystoreProperty("keyAlias")
+            keyPassword = keystoreProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
         }
+    }
+}
+
+// A release build fails early, before compiling, unless its env is fully configured.
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        val env = variant.flavorName.orEmpty()
+        val problems = buildList {
+            val url = apiBaseUrl(env)
+            if (!url.startsWith("https://")) {
+                add("the api URL is $url: set changeloom.$env.apiBaseUrl to the $env Cloud Run URL")
+            }
+            if (googleServicesFiles[env]?.exists() != true) {
+                add("src/$env/google-services.json is missing: download it from the $env Firebase project")
+            }
+            if (!keystorePropertiesFile.exists()) {
+                add("${keystorePropertiesFile.path} is missing, so the build would be unsigned")
+            }
+        }
+        val variantName = variant.name.replaceFirstChar { it.uppercase() }
+        val verify = tasks.register("verify${variantName}Config") {
+            group = "verification"
+            description = "Checks that the $env release has an https api URL, Firebase config and a signing key."
+            doLast {
+                if (problems.isNotEmpty()) {
+                    throw GradleException("$env release is not configured (see deploy/README.md):\n- " + problems.joinToString("\n- "))
+                }
+            }
+        }
+        tasks.named { it == "pre${variantName}Build" }.configureEach { dependsOn(verify) }
     }
 }
 

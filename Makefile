@@ -32,8 +32,22 @@ else
 PSQL := docker compose exec -T postgres psql -U "$(POSTGRES_USER)" -d postgres
 endif
 
+# Hosted environment for migrate-remote, deploy-api and the android-* release targets. Prod only
+# when asked for explicitly: `make deploy-api DEPLOY_ENV=prod`. See deploy/README.md.
+DEPLOY_ENV ?= staging
+ifeq ($(filter $(DEPLOY_ENV),staging prod),)
+$(error DEPLOY_ENV must be staging or prod, got "$(DEPLOY_ENV)")
+endif
+# The Android flavor name as it appears in Gradle task names.
+DEPLOY_FLAVOR := $(if $(filter prod,$(DEPLOY_ENV)),Prod,Staging)
+
+MOBILE := mobile
+# Gradle for the android-* targets; use GRADLE=gradle when the wrapper download fails.
+GRADLE ?= ./gradlew
+
 .PHONY: db-up db-down migrate migrate-down migrate-status migrate-remote generate run-api build test lint fmt \
-	curator-db curator-migrate curator-seed curator-generate curator-build curator-test curator-lint curator-fmt
+	curator-db curator-migrate curator-seed curator-generate curator-build curator-test curator-lint curator-fmt \
+	deploy-api android-apk android-bundle
 
 db-up: ## Start the dev Postgres (docker), or check the installed one is reachable (local)
 ifeq ($(POSTGRES_MODE),local)
@@ -60,9 +74,8 @@ migrate-down: ## Roll back the most recent migration
 migrate-status: ## Show migration status
 	$(GOOSE) status
 
-migrate-remote: ## Apply pending migrations to the hosted DB (REMOTE_DATABASE_URL: Neon's direct, non-pooled URL)
-	@test -n "$(REMOTE_DATABASE_URL)" || { echo "REMOTE_DATABASE_URL is not set (use Neon's direct, non-pooled URL)"; exit 1; }
-	cd $(BACKEND) && GOOSE_DRIVER=postgres GOOSE_DBSTRING="$(REMOTE_DATABASE_URL)" GOOSE_MIGRATION_DIR=migrations go tool goose up
+migrate-remote: ## Apply pending backend migrations to DEPLOY_ENV's hosted DB (REMOTE_DATABASE_URL_<ENV> in curator/.env)
+	$(CURATOR_RUN) migrate --remote --env $(DEPLOY_ENV)
 
 generate: ## Regenerate sqlc queries and OpenAPI types
 	cd $(BACKEND) && go tool sqlc generate && go generate ./...
@@ -108,3 +121,12 @@ curator-lint: ## Lint curator code
 
 curator-fmt: ## Format curator code
 	cd $(CURATOR) && go tool golangci-lint fmt ./...
+
+deploy-api: ## Build and deploy the api to Cloud Run for DEPLOY_ENV (reads deploy/<env>.env; run migrate-remote first)
+	deploy/deploy-api.sh $(DEPLOY_ENV)
+
+android-apk: ## Build the signed release APK for DEPLOY_ENV (androidApp/build/outputs/apk/<env>/release)
+	cd $(MOBILE) && $(GRADLE) :androidApp:assemble$(DEPLOY_FLAVOR)Release
+
+android-bundle: ## Build the signed release AAB for DEPLOY_ENV, for Play Console (androidApp/build/outputs/bundle/<env>Release)
+	cd $(MOBILE) && $(GRADLE) :androidApp:bundle$(DEPLOY_FLAVOR)Release
