@@ -1,0 +1,23 @@
+version: "2"
+sql:
+  - engine: postgresql
+    # The local DB has the backend schema plus the curator-only tables.
+    schema:
+      - ../backend/migrations
+      - migrations
+    queries: internal/db/queries
+    gen:
+      go:
+        package: db
+        out: internal/db
+        sql_package: pgx/v5
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        overrides:
+          - db_type: timestamptz
+            go_type: time.Time
+          - db_type: timestamptz
+            nullable: true
+            go_type:
+              type: time.Time
+              pointer: true

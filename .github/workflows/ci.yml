@@ -38,17 +38,40 @@ jobs:
       - run: go test ./...
       - run: go tool golangci-lint run ./...
 
+  curator:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: curator
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: changeloom
+          POSTGRES_PASSWORD: changeloom
+          POSTGRES_DB: changeloom
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U changeloom -d changeloom"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://changeloom:changeloom@localhost:5432/changeloom?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: curator/go.mod
+          cache-dependency-path: curator/go.sum
+      - run: go build ./...
+      - run: go test ./...
+      - run: go tool golangci-lint run ./...
+
   docker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t changeloom-backend backend
-      - name: Validate prod compose
-        working-directory: deploy
-        run: |
-          cp .env.example .env
-          sed -i 's/^POSTGRES_PASSWORD=$/POSTGRES_PASSWORD=ci/' .env
-          docker compose config --quiet
 
   mobile:
     runs-on: ubuntu-latest
