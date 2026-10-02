@@ -2,6 +2,8 @@
 package httpapi
 
 import (
+	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -22,25 +24,45 @@ const (
 	maxTokenChars   = 4096
 )
 
+// Notifier sends pending push notifications and reports how many stories were pushed.
+type Notifier interface {
+	Run(ctx context.Context) (int, error)
+}
+
+// Options configures a Server.
+type Options struct {
+	// TimelineWindow hides stories published longer ago than this from the timeline.
+	TimelineWindow time.Duration
+	// TopicRequestMaxPending caps the pending topic requests per user.
+	TopicRequestMaxPending int
+	// NotifySecret is the bearer token POST /internal/notify requires; empty disables the route.
+	NotifySecret string
+	// Notifier is called by POST /internal/notify; nil when push is disabled.
+	Notifier Notifier
+}
+
 // Server implements ServerInterface.
 type Server struct {
-	pool           *pgxpool.Pool
-	q              *db.Queries
-	timelineWindow time.Duration
-	now            func() time.Time
+	pool *pgxpool.Pool
+	q    *db.Queries
+	opts Options
+	now  func() time.Time
 }
 
 var _ ServerInterface = (*Server)(nil)
 
 // NewServer returns a Server backed by pool.
-func NewServer(pool *pgxpool.Pool, timelineWindow time.Duration) *Server {
-	return &Server{pool: pool, q: db.New(pool), timelineWindow: timelineWindow, now: time.Now}
+func NewServer(pool *pgxpool.Pool, opts Options) *Server {
+	return &Server{pool: pool, q: db.New(pool), opts: opts, now: time.Now}
 }
 
 // NewHandler routes all API operations and requires a verified bearer token on /v1/ paths.
+// POST /internal/notify sits outside /v1/ and checks its own shared secret.
 func NewHandler(s *Server, verifier auth.Verifier) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc(http.MethodPost+" /internal/notify", s.notify)
 	h := HandlerWithOptions(s, StdHTTPServerOptions{
-		BaseRouter: http.NewServeMux(),
+		BaseRouter: mux,
 		ErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
 			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		},
@@ -102,6 +124,29 @@ func mustUser(r *http.Request) auth.User {
 		panic("httpapi: handler reached without authenticated user")
 	}
 	return u
+}
+
+// notify sends pending push notifications. It is called by the curator after a sync.
+func (s *Server) notify(w http.ResponseWriter, r *http.Request) {
+	if s.opts.NotifySecret == "" {
+		http.NotFound(w, r)
+		return
+	}
+	token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if subtle.ConstantTimeCompare([]byte(token), []byte(s.opts.NotifySecret)) != 1 {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid notify secret")
+		return
+	}
+	sent := 0
+	if s.opts.Notifier != nil {
+		n, err := s.opts.Notifier.Run(r.Context())
+		if err != nil {
+			internalError(w, r, "send notifications", err)
+			return
+		}
+		sent = n
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"sent": sent})
 }
 
 // GetHealthz reports liveness.

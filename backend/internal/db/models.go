@@ -10,20 +10,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type AiBatch struct {
-	ID                  int64
-	ProviderBatchID     string
-	Status              string
-	ItemCount           int32
-	InputTokens         int64
-	OutputTokens        int64
-	CacheReadTokens     int64
-	CacheCreationTokens int64
-	SubmittedAt         time.Time
-	EndedAt             *time.Time
-	EstimatedTokens     int64
-}
-
 type DeviceToken struct {
 	Token     string
 	UserID    int64
@@ -31,56 +17,27 @@ type DeviceToken struct {
 	UpdatedAt time.Time
 }
 
-type RawItem struct {
-	ID          int64
-	SourceID    int64
-	ExternalID  *string
-	Url         string
-	UrlHash     []byte
-	Title       string
-	Content     *string
-	PublishedAt *time.Time
-	Status      string
-	Error       *string
-	FetchedAt   time.Time
-	Attempts    int16
-	AiBatchID   *int64
-}
-
-type Source struct {
-	ID              int64
-	Name            string
-	Kind            string
-	Config          []byte
-	DefaultTopicIds []int64
-	PollInterval    pgtype.Interval
-	Etag            *string
-	LastModified    *string
-	LastPolledAt    *time.Time
-	Enabled         bool
-}
-
 type Story struct {
-	ID              int64
-	Title           string
-	Summary         string
-	BodyMd          string
-	Kind            string
-	Severity        *string
-	Importance      int16
-	PublishedAt     time.Time
-	DedupeKeys      []byte
-	Model           string
-	PromptVersion   string
-	CreatedAt       time.Time
-	Search          interface{}
-	NotifiedAt      *time.Time
-	DedupeCheckedAt *time.Time
+	ID            int64
+	Title         string
+	Summary       string
+	BodyMd        string
+	Kind          string
+	Severity      *string
+	Importance    int16
+	PublishedAt   time.Time
+	DedupeKeys    []byte
+	Model         string
+	PromptVersion string
+	CreatedAt     time.Time
+	Search        interface{}
+	NotifiedAt    *time.Time
+	Uid           pgtype.UUID
+	UpdatedAt     time.Time
 }
 
 type StorySource struct {
 	StoryID    int64
-	RawItemID  *int64
 	Url        string
 	SourceName string
 }
@@ -96,6 +53,23 @@ type Topic struct {
 	Name        string
 	ParentID    *int64
 	Description string
+	UpdatedAt   time.Time
+}
+
+type TopicRelation struct {
+	TopicID   int64
+	RelatedID int64
+}
+
+type TopicRequest struct {
+	ID         int64
+	UserID     int64
+	Text       string
+	Status     string
+	TopicID    *int64
+	Note       *string
+	CreatedAt  time.Time
+	ResolvedAt *time.Time
 }
 
 type User struct {

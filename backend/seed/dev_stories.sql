@@ -694,7 +694,7 @@ SELECT i.*, row_number() OVER (PARTITION BY topic_slug ORDER BY id) AS n,
 FROM seed_items i;
 
 INSERT INTO stories (title, summary, body_md, kind, severity, importance, published_at,
-                     dedupe_keys, model, prompt_version, notified_at, dedupe_checked_at)
+                     dedupe_keys, model, prompt_version, notified_at)
 SELECT
     s.title,
     s.summary,
@@ -708,7 +708,6 @@ SELECT
     jsonb_build_object('seed', s.seed_key),
     'seed',
     'seed',
-    now(),
     now()
 FROM seed_numbered s
 CROSS JOIN LATERAL (

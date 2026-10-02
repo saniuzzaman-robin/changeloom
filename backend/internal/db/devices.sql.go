@@ -68,7 +68,7 @@ func (q *Queries) ListDeviceTokensForStory(ctx context.Context, storyID int64) (
 
 const listStoriesToNotify = `-- name: ListStoriesToNotify :many
 SELECT id, title, summary FROM stories
-WHERE notified_at IS NULL AND dedupe_checked_at IS NOT NULL
+WHERE notified_at IS NULL
     AND kind = 'security' AND severity IN ('high', 'critical')
     AND created_at >= $1
 ORDER BY id
@@ -80,8 +80,7 @@ type ListStoriesToNotifyRow struct {
 	Summary string
 }
 
-// Recent high-severity security stories that have not been pushed yet. Stories wait for
-// the near-duplicate check so a story that is about to be merged away is not pushed.
+// Recent high-severity security stories that have not been pushed yet.
 func (q *Queries) ListStoriesToNotify(ctx context.Context, since time.Time) ([]ListStoriesToNotifyRow, error) {
 	rows, err := q.db.Query(ctx, listStoriesToNotify, since)
 	if err != nil {

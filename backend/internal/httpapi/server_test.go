@@ -2,13 +2,16 @@ package httpapi_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,9 +25,10 @@ import (
 )
 
 const (
-	testWindow = 60 * 24 * time.Hour
-	aliceToken = auth.DevTokenPrefix + "alice"
-	bobToken   = auth.DevTokenPrefix + "bob"
+	testWindow     = 60 * 24 * time.Hour
+	testMaxPending = 3
+	aliceToken     = auth.DevTokenPrefix + "alice"
+	bobToken       = auth.DevTokenPrefix + "bob"
 )
 
 type env struct {
@@ -35,11 +39,19 @@ type env struct {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
+	return newEnvWith(t, func(*httpapi.Options) {})
+}
+
+// newEnvWith is newEnv with test defaults adjusted by configure.
+func newEnvWith(t *testing.T, configure func(*httpapi.Options)) *env {
+	t.Helper()
 	pool := dbtest.New(t)
 	if _, err := topics.Sync(t.Context(), pool, seed.TopicsYAML); err != nil {
 		t.Fatalf("sync topics: %v", err)
 	}
-	srv := httptest.NewServer(httpapi.NewHandler(httpapi.NewServer(pool, testWindow), auth.DevVerifier{}))
+	opts := httpapi.Options{TimelineWindow: testWindow, TopicRequestMaxPending: testMaxPending}
+	configure(&opts)
+	srv := httptest.NewServer(httpapi.NewHandler(httpapi.NewServer(pool, opts), auth.DevVerifier{}))
 	t.Cleanup(srv.Close)
 	return &env{t: t, pool: pool, srv: srv}
 }
@@ -101,6 +113,24 @@ func (e *env) insertStory(title string, publishedAt time.Time, topicSlugs ...str
 	return id
 }
 
+// relate stores a symmetric relation between two topics.
+func (e *env) relate(a, b string) {
+	e.t.Helper()
+	_, err := e.pool.Exec(e.t.Context(), `
+		INSERT INTO topic_relations (topic_id, related_id)
+		SELECT least(x.id, y.id), greatest(x.id, y.id) FROM topics x, topics y WHERE x.slug = $1 AND y.slug = $2`, a, b)
+	if err != nil {
+		e.t.Fatalf("relate %s and %s: %v", a, b, err)
+	}
+}
+
+func (e *env) markRead(token string, id int64) {
+	e.t.Helper()
+	if code := e.do(http.MethodPut, "/v1/stories/"+strconv.FormatInt(id, 10)+"/read", token, nil, nil); code != http.StatusNoContent {
+		e.t.Fatalf("mark %d read: status %d", id, code)
+	}
+}
+
 type timelinePage struct {
 	Items      []httpapi.StorySummary `json:"items"`
 	NextCursor *string                `json:"next_cursor"`
@@ -133,10 +163,10 @@ func TestTimelineOrderAndReadMoves(t *testing.T) {
 	s1 := e.insertStory("newest", now.Add(-1*time.Hour), "languages/go")
 	s2 := e.insertStory("middle", now.Add(-2*time.Hour), "languages/rust")
 	s3 := e.insertStory("oldest", now.Add(-3*time.Hour), "languages")
-	e.insertStory("other topic", now.Add(-30*time.Minute), "web/react")
+	other := e.insertStory("other topic", now.Add(-30*time.Minute), "web/react")
 	e.insertStory("outside window", now.Add(-testWindow-time.Hour), "languages/go")
 
-	// Following a parent topic includes its descendants.
+	// Following a parent topic includes its descendants; other topics rank after them.
 	e.follow(aliceToken, "languages")
 
 	assertOrder := func(want ...int64) []httpapi.StorySummary {
@@ -148,53 +178,138 @@ func TestTimelineOrderAndReadMoves(t *testing.T) {
 		return got
 	}
 
-	assertOrder(s1, s2, s3)
+	assertOrder(s1, s2, s3, other)
 
 	if code := e.do(http.MethodPut, "/v1/stories/"+strconv.FormatInt(s1, 10)+"/read", aliceToken, nil, nil); code != http.StatusNoContent {
 		t.Fatalf("mark read: status %d", code)
 	}
-	items := assertOrder(s2, s3, s1)
-	if !items[2].IsRead || items[2].ReadAt == nil || items[0].IsRead {
+	items := assertOrder(s2, s3, other, s1)
+	if !items[3].IsRead || items[3].ReadAt == nil || items[0].IsRead {
 		t.Fatalf("read flags wrong after mark read: %+v", items)
 	}
 
 	// Read items stay newest-first within the read section.
 	e.do(http.MethodPut, "/v1/stories/"+strconv.FormatInt(s3, 10)+"/read", aliceToken, nil, nil)
-	assertOrder(s2, s1, s3)
+	assertOrder(s2, other, s1, s3)
 
 	if code := e.do(http.MethodDelete, "/v1/stories/"+strconv.FormatInt(s1, 10)+"/read", aliceToken, nil, nil); code != http.StatusNoContent {
 		t.Fatalf("mark unread: status %d", code)
 	}
-	assertOrder(s1, s2, s3)
+	assertOrder(s1, s2, other, s3)
 
 	// Read state is per user.
 	bob := auth.DevTokenPrefix + "bob"
 	e.follow(bob, "languages")
-	if got := ids(e.timeline(bob, 50, "").Items); !slices.Equal(got, []int64{s1, s2, s3}) {
+	if got := ids(e.timeline(bob, 50, "").Items); !slices.Equal(got, []int64{s1, s2, s3, other}) {
 		t.Fatalf("bob timeline = %v, want all unread", got)
+	}
+}
+
+func TestTimelineTiers(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+	followed := e.insertStory("followed", now.Add(-3*time.Hour), "languages/go")
+	child := e.insertStory("followed child", now.Add(-4*time.Hour), "cloud/docker")
+	neighbour := e.insertStory("relation neighbour", now.Add(-2*time.Hour), "databases/postgres")
+	ancestor := e.insertStory("ancestor", now.Add(-5*time.Hour), "languages")
+	sibling := e.insertStory("sibling", now.Add(-1*time.Hour), "languages/rust")
+	mixed := e.insertStory("followed and explore", now.Add(-6*time.Hour), "web/react", "languages/go")
+
+	e.follow(aliceToken, "languages/go", "cloud")
+	// Relations are symmetric: the pair is stored once and matches from either side.
+	e.relate("databases/postgres", "languages/go")
+
+	got := e.timeline(aliceToken, 50, "").Items
+	want := []int64{followed, child, mixed, neighbour, ancestor, sibling}
+	if !slices.Equal(ids(got), want) {
+		t.Fatalf("timeline order = %v, want %v", ids(got), want)
+	}
+	wantMatch := []httpapi.StorySummaryMatch{
+		httpapi.StorySummaryMatchFollowed, httpapi.StorySummaryMatchFollowed, httpapi.StorySummaryMatchFollowed,
+		httpapi.StorySummaryMatchRelated, httpapi.StorySummaryMatchRelated, httpapi.StorySummaryMatchExplore,
+	}
+	for i, it := range got {
+		if it.Match == nil || *it.Match != wantMatch[i] {
+			t.Errorf("story %d (%s): match = %v, want %s", it.Id, it.Title, it.Match, wantMatch[i])
+		}
+	}
+
+	// Unread stories of every tier come before read ones.
+	e.markRead(aliceToken, followed)
+	if got := ids(e.timeline(aliceToken, 50, "").Items); !slices.Equal(got, []int64{child, mixed, neighbour, ancestor, sibling, followed}) {
+		t.Fatalf("timeline after read = %v", got)
+	}
+}
+
+func TestTimelineWithoutFollowsIsRecencyFeed(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+	older := e.insertStory("older", now.Add(-2*time.Hour), "languages/go")
+	newer := e.insertStory("newer", now.Add(-1*time.Hour), "web/react")
+
+	got := e.timeline(aliceToken, 50, "").Items
+	if !slices.Equal(ids(got), []int64{newer, older}) {
+		t.Fatalf("timeline = %v, want %v", ids(got), []int64{newer, older})
+	}
+	for _, it := range got {
+		if it.Match == nil || *it.Match != httpapi.StorySummaryMatchExplore {
+			t.Errorf("story %d: match = %v, want explore", it.Id, it.Match)
+		}
 	}
 }
 
 func TestTimelineCursorPagination(t *testing.T) {
 	e := newEnv(t)
 	e.follow(aliceToken, "languages/go")
+	e.relate("languages/go", "web/react")
 
 	now := time.Now().Truncate(time.Second)
+	tierTopics := []string{"languages/go", "web/react", "cloud/aws"}
+	tierOf := map[int64]int{}
 	var all []int64
-	for i := range 9 {
-		// Pairs share a published_at so the id tie-breaker is exercised.
-		all = append(all, e.insertStory("story", now.Add(-time.Duration(i/2)*time.Hour), "languages/go"))
+	for i := range 15 {
+		// Pairs share a published_at so the id tie-breaker is exercised, and tiers interleave
+		// by time so every page boundary can fall inside or between tiers.
+		id := e.insertStory("story", now.Add(-time.Duration(i/2)*time.Hour), tierTopics[i%3])
+		tierOf[id] = i % 3
+		all = append(all, id)
 	}
-	for _, id := range []int64{all[1], all[4], all[5]} {
-		e.do(http.MethodPut, "/v1/stories/"+strconv.FormatInt(id, 10)+"/read", aliceToken, nil, nil)
+	read := map[int64]bool{}
+	for _, id := range []int64{all[1], all[4], all[5], all[9]} {
+		e.markRead(aliceToken, id)
+		read[id] = true
 	}
 
-	full := ids(e.timeline(aliceToken, 100, "").Items)
+	full := e.timeline(aliceToken, 100, "").Items
 	if len(full) != len(all) {
 		t.Fatalf("full timeline has %d items, want %d", len(full), len(all))
 	}
+	// Expected order: unread first, then tier, then newest, then highest id.
+	want := slices.Clone(all)
+	pub := map[int64]time.Time{}
+	for _, it := range full {
+		pub[it.Id] = it.PublishedAt
+	}
+	slices.SortFunc(want, func(a, b int64) int {
+		switch {
+		case read[a] != read[b]:
+			if read[a] {
+				return 1
+			}
+			return -1
+		case tierOf[a] != tierOf[b]:
+			return tierOf[a] - tierOf[b]
+		case !pub[a].Equal(pub[b]):
+			return pub[b].Compare(pub[a])
+		default:
+			return int(b - a)
+		}
+	})
+	if !slices.Equal(ids(full), want) {
+		t.Fatalf("full timeline = %v, want %v", ids(full), want)
+	}
 
-	for _, limit := range []int{1, 2, 4, 9, 10} {
+	for _, limit := range []int{1, 2, 4, 9, 15, 16} {
 		var walked []int64
 		cursor := ""
 		for pages := 0; ; pages++ {
@@ -211,15 +326,18 @@ func TestTimelineCursorPagination(t *testing.T) {
 			}
 			cursor = *page.NextCursor
 		}
-		if !slices.Equal(walked, full) {
-			t.Fatalf("limit %d: paged order = %v, want %v", limit, walked, full)
+		if !slices.Equal(walked, want) {
+			t.Fatalf("limit %d: paged order = %v, want %v", limit, walked, want)
 		}
 	}
 }
 
 func TestTimelineRejectsBadParams(t *testing.T) {
 	e := newEnv(t)
-	for _, q := range []string{"limit=0", "limit=101", "limit=abc", "cursor=not-a-cursor", "cursor=e30"} {
+	for _, q := range []string{"limit=0", "limit=101", "limit=abc", "cursor=not-a-cursor", "cursor=e30",
+		// Tier 3 is out of range.
+		"cursor=eyJyIjpmYWxzZSwidCI6MywicCI6IjIwMjYtMDEtMDFUMDA6MDA6MDBaIiwiaSI6MX0",
+	} {
 		if code := e.do(http.MethodGet, "/v1/timeline?"+q, aliceToken, nil, nil); code != http.StatusBadRequest {
 			t.Errorf("GET /v1/timeline?%s: status %d, want 400", q, code)
 		}
@@ -335,5 +453,126 @@ func TestStoryDetailAndNotFound(t *testing.T) {
 		if code := e.do(req.method, req.path, aliceToken, nil, nil); code != http.StatusNotFound {
 			t.Errorf("%s %s: status %d, want 404", req.method, req.path, code)
 		}
+	}
+}
+
+func TestTopicRequests(t *testing.T) {
+	e := newEnv(t)
+	create := func(token, text string) (int, httpapi.TopicRequest) {
+		t.Helper()
+		var tr httpapi.TopicRequest
+		code := e.do(http.MethodPost, "/v1/topic-requests", token, map[string]any{"text": text}, &tr)
+		return code, tr
+	}
+
+	for _, text := range []string{"", " x ", strings.Repeat("a", 101)} {
+		if code, _ := create(aliceToken, text); code != http.StatusBadRequest {
+			t.Errorf("text %q: status %d, want 400", text, code)
+		}
+	}
+	if code := e.do(http.MethodPost, "/v1/topic-requests", aliceToken, map[string]any{"text": "Zig", "extra": 1}, nil); code != http.StatusBadRequest {
+		t.Errorf("unknown field: status %d, want 400", code)
+	}
+
+	code, zig := create(aliceToken, "  Zig  ")
+	if code != http.StatusCreated || zig.Id == 0 || zig.Text != "Zig" || zig.Status != httpapi.Pending || zig.Topic != nil {
+		t.Fatalf("create: status %d, %+v", code, zig)
+	}
+	// The same text is a duplicate while pending, case-insensitively, but only for the same user.
+	if code, _ := create(aliceToken, "zig"); code != http.StatusConflict {
+		t.Fatalf("duplicate: status %d, want 409", code)
+	}
+	if code, _ := create(bobToken, "Zig"); code != http.StatusCreated {
+		t.Fatalf("other user: status %d, want 201", code)
+	}
+	// Once resolved, the same text can be requested again.
+	if _, err := e.pool.Exec(t.Context(), `
+		UPDATE topic_requests SET status = 'merged', note = 'see Go',
+			topic_id = (SELECT id FROM topics WHERE slug = 'languages/go'), resolved_at = now()
+		WHERE id = $1`, zig.Id); err != nil {
+		t.Fatalf("resolve request: %v", err)
+	}
+	if code, _ := create(aliceToken, "zig"); code != http.StatusCreated {
+		t.Fatalf("after resolve: status %d, want 201", code)
+	}
+
+	// The pending cap counts only pending requests.
+	for i := 2; i <= testMaxPending; i++ {
+		if code, _ := create(aliceToken, "topic "+strconv.Itoa(i)); code != http.StatusCreated {
+			t.Fatalf("request %d: status %d, want 201", i, code)
+		}
+	}
+	if code, _ := create(aliceToken, "one too many"); code != http.StatusTooManyRequests {
+		t.Fatalf("over cap: status %d, want 429", code)
+	}
+
+	var list struct {
+		Items []httpapi.TopicRequest `json:"items"`
+	}
+	if code := e.do(http.MethodGet, "/v1/topic-requests", aliceToken, nil, &list); code != http.StatusOK {
+		t.Fatalf("list: status %d", code)
+	}
+	if len(list.Items) != testMaxPending+1 {
+		t.Fatalf("list has %d items, want %d", len(list.Items), testMaxPending+1)
+	}
+	merged := list.Items[len(list.Items)-1]
+	if merged.Id != zig.Id || merged.Status != httpapi.Merged || merged.Topic == nil || *merged.Topic != "languages/go" ||
+		merged.Note == nil || *merged.Note != "see Go" || merged.ResolvedAt == nil {
+		t.Fatalf("resolved request = %+v", merged)
+	}
+	if list.Items[0].Text != "topic "+strconv.Itoa(testMaxPending) {
+		t.Fatalf("list not newest first: %+v", list.Items[0])
+	}
+}
+
+type fakeNotifier struct {
+	sent int
+	err  error
+	runs int
+}
+
+func (f *fakeNotifier) Run(context.Context) (int, error) {
+	f.runs++
+	return f.sent, f.err
+}
+
+func TestNotify(t *testing.T) {
+	const secret = "s3cret"
+	notify := func(e *env, token string) (int, map[string]int) {
+		t.Helper()
+		var out map[string]int
+		return e.do(http.MethodPost, "/internal/notify", token, nil, &out), out
+	}
+
+	disabled := newEnv(t)
+	if code, _ := notify(disabled, secret); code != http.StatusNotFound {
+		t.Errorf("no secret configured: status %d, want 404", code)
+	}
+
+	fake := &fakeNotifier{sent: 2}
+	e := newEnvWith(t, func(o *httpapi.Options) { o.NotifySecret, o.Notifier = secret, fake })
+	for _, token := range []string{"", "wrong", secret + "x", aliceToken} {
+		if code, _ := notify(e, token); code != http.StatusUnauthorized {
+			t.Errorf("token %q: status %d, want 401", token, code)
+		}
+	}
+	if fake.runs != 0 {
+		t.Fatalf("notifier ran %d times on rejected requests", fake.runs)
+	}
+	if code, out := notify(e, secret); code != http.StatusOK || out["sent"] != 2 || fake.runs != 1 {
+		t.Fatalf("notify: status %d, body %v, runs %d", code, out, fake.runs)
+	}
+	if code := e.do(http.MethodGet, "/internal/notify", secret, nil, nil); code != http.StatusMethodNotAllowed {
+		t.Errorf("GET: status %d, want 405", code)
+	}
+
+	fake.err = errors.New("fcm down")
+	if code, _ := notify(e, secret); code != http.StatusInternalServerError {
+		t.Errorf("notifier error: status %d, want 500", code)
+	}
+
+	pushOff := newEnvWith(t, func(o *httpapi.Options) { o.NotifySecret = secret })
+	if code, out := notify(pushOff, secret); code != http.StatusOK || out["sent"] != 0 {
+		t.Fatalf("push disabled: status %d, body %v", code, out)
 	}
 }

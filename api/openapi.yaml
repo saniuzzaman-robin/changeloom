@@ -103,7 +103,10 @@ paths:
   /v1/timeline:
     get:
       operationId: getTimeline
-      summary: Stories for the followed topics, unread first then newest first.
+      summary: Recent stories ranked by interest.
+      description: >
+        Unread first, then followed topics, then related topics, then everything else,
+        newest first within each group.
       parameters:
         - name: cursor
           in: query
@@ -218,6 +221,53 @@ paths:
         "204": {description: Removed.}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "404": {$ref: "#/components/responses/NotFound"}
+  /v1/topic-requests:
+    get:
+      operationId: listMyTopicRequests
+      summary: The signed-in user's topic requests, newest first.
+      responses:
+        "200":
+          description: The user's topic requests.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/TopicRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+    post:
+      operationId: createTopicRequest
+      summary: Ask for a topic to be added to the catalog.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: {type: string, description: "What to follow, 2-100 characters after trimming."}
+      responses:
+        "201":
+          description: The created request.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TopicRequest"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "409":
+          description: The same request is already pending.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "429":
+          description: Too many pending requests.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
 components:
   securitySchemes:
     bearerAuth:
@@ -314,6 +364,26 @@ components:
         is_read: {type: boolean}
         is_bookmarked: {type: boolean}
         read_at: {type: string, format: date-time}
+        match:
+          type: string
+          enum: [followed, related, explore]
+          description: >
+            Timeline only: whether the story is in a followed topic, a topic related to one,
+            or neither.
+    TopicRequest:
+      type: object
+      required: [id, text, status, created_at]
+      properties:
+        id: {type: integer, format: int64}
+        text: {type: string}
+        status:
+          type: string
+          enum: [pending, accepted, merged, rejected]
+          description: accepted means a new topic was created; merged means it maps to an existing one.
+        topic: {type: string, description: Slug of the topic the request was resolved to.}
+        note: {type: string, description: Reviewer note.}
+        created_at: {type: string, format: date-time}
+        resolved_at: {type: string, format: date-time}
     StorySource:
       type: object
       required: [url, name]

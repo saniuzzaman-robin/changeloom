@@ -53,13 +53,13 @@ func addUser(t *testing.T, pool *pgxpool.Pool, uid, follow, token string) {
 	}
 }
 
-func addStory(t *testing.T, pool *pgxpool.Pool, title, kind string, severity *string, checked bool, topic string) int64 {
+func addStory(t *testing.T, pool *pgxpool.Pool, title, kind string, severity *string, topic string) int64 {
 	t.Helper()
 	var id int64
 	err := pool.QueryRow(t.Context(), `
-		INSERT INTO stories (title, summary, body_md, kind, severity, importance, published_at, model, prompt_version, dedupe_checked_at)
-		VALUES ($1, 'summary', 'body', $2, $3, 5, now(), 'm', 'v0', CASE WHEN $4 THEN now() END) RETURNING id`,
-		title, kind, severity, checked).Scan(&id)
+		INSERT INTO stories (title, summary, body_md, kind, severity, importance, published_at, model, prompt_version)
+		VALUES ($1, 'summary', 'body', $2, $3, 5, now(), 'm', 'v0') RETURNING id`,
+		title, kind, severity).Scan(&id)
 	if err != nil {
 		t.Fatalf("insert story: %v", err)
 	}
@@ -76,10 +76,9 @@ func TestNotifierPushesToFollowersOnly(t *testing.T) {
 	addUser(t, pool, "other", "languages/rust", "tok-other")
 	addUser(t, pool, "notoken", "languages/go", "")
 
-	story := addStory(t, pool, "Go CVE", "security", &high, true, "languages/go")
-	addStory(t, pool, "Low severity", "security", &low, true, "languages/go")
-	addStory(t, pool, "Release", "release", nil, true, "languages/go")
-	addStory(t, pool, "Not dedupe-checked yet", "security", &high, false, "languages/go")
+	story := addStory(t, pool, "Go CVE", "security", &high, "languages/go")
+	addStory(t, pool, "Low severity", "security", &low, "languages/go")
+	addStory(t, pool, "Release", "release", nil, "languages/go")
 
 	sender := &fakeSender{}
 	n := push.NewNotifier(pool, sender)
@@ -102,7 +101,7 @@ func TestNotifierRemovesDeadTokensAndRetriesFailures(t *testing.T) {
 	pool := setup(t)
 	high := "critical"
 	addUser(t, pool, "u", "languages/go", "tok-dead")
-	addStory(t, pool, "Go CVE", "security", &high, true, "languages/go")
+	addStory(t, pool, "Go CVE", "security", &high, "languages/go")
 
 	sender := &fakeSender{err: errors.New("fcm down")}
 	n := push.NewNotifier(pool, sender)
@@ -124,7 +123,7 @@ func TestNotifierIgnoresOldStories(t *testing.T) {
 	pool := setup(t)
 	high := "high"
 	addUser(t, pool, "u", "languages/go", "tok")
-	id := addStory(t, pool, "Old CVE", "security", &high, true, "languages/go")
+	id := addStory(t, pool, "Old CVE", "security", &high, "languages/go")
 	exec(t, pool, `UPDATE stories SET created_at = $2 WHERE id = $1`, id, time.Now().Add(-48*time.Hour))
 
 	sender := &fakeSender{}

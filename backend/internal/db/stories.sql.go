@@ -25,15 +25,6 @@ func (q *Queries) AddBookmark(ctx context.Context, arg AddBookmarkParams) error 
 	return err
 }
 
-const deleteStory = `-- name: DeleteStory :exec
-DELETE FROM stories WHERE id = $1
-`
-
-func (q *Queries) DeleteStory(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, deleteStory, id)
-	return err
-}
-
 const getStory = `-- name: GetStory :one
 SELECT s.id, s.title, s.summary, s.body_md, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
     (ub.story_id IS NOT NULL)::boolean AS is_bookmarked,
@@ -162,104 +153,6 @@ func (q *Queries) ListBookmarks(ctx context.Context, arg ListBookmarksParams) ([
 	return items, nil
 }
 
-const listDedupeCandidates = `-- name: ListDedupeCandidates :many
-SELECT DISTINCT s.id, s.title, s.summary, s.kind, s.published_at FROM stories s
-JOIN story_topics st ON st.story_id = s.id
-WHERE s.id <> $1
-    AND s.published_at >= $2
-    AND st.topic_id IN (SELECT own.topic_id FROM story_topics own WHERE own.story_id = $1)
-ORDER BY s.published_at DESC, s.id DESC
-LIMIT $3
-`
-
-type ListDedupeCandidatesParams struct {
-	StoryID int64
-	Since   time.Time
-	MaxRows int32
-}
-
-type ListDedupeCandidatesRow struct {
-	ID          int64
-	Title       string
-	Summary     string
-	Kind        string
-	PublishedAt time.Time
-}
-
-// Stories that share a topic with the story and could describe the same event.
-func (q *Queries) ListDedupeCandidates(ctx context.Context, arg ListDedupeCandidatesParams) ([]ListDedupeCandidatesRow, error) {
-	rows, err := q.db.Query(ctx, listDedupeCandidates, arg.StoryID, arg.Since, arg.MaxRows)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListDedupeCandidatesRow{}
-	for rows.Next() {
-		var i ListDedupeCandidatesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.Summary,
-			&i.Kind,
-			&i.PublishedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listStoriesToDedupe = `-- name: ListStoriesToDedupe :many
-SELECT id, title, summary, kind, importance FROM stories
-WHERE dedupe_checked_at IS NULL AND created_at >= $1
-ORDER BY id
-LIMIT $2
-`
-
-type ListStoriesToDedupeParams struct {
-	Since   time.Time
-	MaxRows int32
-}
-
-type ListStoriesToDedupeRow struct {
-	ID         int64
-	Title      string
-	Summary    string
-	Kind       string
-	Importance int16
-}
-
-// Recently created stories not yet checked for near-duplicates.
-func (q *Queries) ListStoriesToDedupe(ctx context.Context, arg ListStoriesToDedupeParams) ([]ListStoriesToDedupeRow, error) {
-	rows, err := q.db.Query(ctx, listStoriesToDedupe, arg.Since, arg.MaxRows)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListStoriesToDedupeRow{}
-	for rows.Next() {
-		var i ListStoriesToDedupeRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.Summary,
-			&i.Kind,
-			&i.Importance,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listStorySources = `-- name: ListStorySources :many
 SELECT url, source_name FROM story_sources WHERE story_id = $1 ORDER BY source_name, url
 `
@@ -291,42 +184,61 @@ func (q *Queries) ListStorySources(ctx context.Context, storyID int64) ([]ListSt
 
 const listTimeline = `-- name: ListTimeline :many
 WITH RECURSIVE followed AS (
-    SELECT ut.topic_id AS id FROM user_topics ut WHERE ut.user_id = $1
+    SELECT ut.topic_id AS id FROM user_topics ut WHERE ut.user_id = $6
     UNION
     SELECT t.id FROM topics t JOIN followed f ON t.parent_id = f.id
+), ancestors AS (
+    SELECT t.parent_id AS id FROM topics t JOIN user_topics ut ON ut.topic_id = t.id
+    WHERE ut.user_id = $6 AND t.parent_id IS NOT NULL
+    UNION
+    SELECT t.parent_id FROM topics t JOIN ancestors a ON a.id = t.id WHERE t.parent_id IS NOT NULL
+), related AS (
+    SELECT tr.related_id AS id FROM topic_relations tr JOIN followed f ON f.id = tr.topic_id
+    UNION
+    SELECT tr.topic_id FROM topic_relations tr JOIN followed f ON f.id = tr.related_id
+    UNION
+    SELECT a.id FROM ancestors a
+), ranked AS (
+    SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
+        (uss.read_at IS NOT NULL) AS is_read,
+        (ub.story_id IS NOT NULL) AS is_bookmarked,
+        (CASE
+            WHEN EXISTS (SELECT 1 FROM story_topics st JOIN followed f ON f.id = st.topic_id WHERE st.story_id = s.id) THEN 0
+            WHEN EXISTS (SELECT 1 FROM story_topics st JOIN related r ON r.id = st.topic_id WHERE st.story_id = s.id) THEN 1
+            ELSE 2
+        END) AS tier
+    FROM stories s
+    LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = $6
+    LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = $6
+    WHERE s.published_at >= $7
 )
-SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
-    (ub.story_id IS NOT NULL)::boolean AS is_bookmarked,
+SELECT r.id, r.title, r.summary, r.kind, r.severity, r.importance, r.published_at, r.read_at,
+    r.is_bookmarked::boolean AS is_bookmarked,
+    r.tier::integer AS tier,
     ARRAY(
         SELECT tp.slug FROM story_topics stp JOIN topics tp ON tp.id = stp.topic_id
-        WHERE stp.story_id = s.id ORDER BY tp.slug
+        WHERE stp.story_id = r.id ORDER BY tp.slug
     )::text[] AS topics
-FROM stories s
-LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = $1
-LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = $1
-WHERE s.published_at >= $2
-    AND EXISTS (
-        SELECT 1 FROM story_topics st JOIN followed f ON f.id = st.topic_id WHERE st.story_id = s.id
+FROM ranked r
+WHERE $1::bigint IS NULL
+    OR r.is_read > $2::boolean
+    OR (r.is_read = $2::boolean AND r.tier > $3::integer)
+    OR (
+        r.is_read = $2::boolean AND r.tier = $3::integer
+        AND (r.published_at, r.id) < ($4::timestamptz, $1::bigint)
     )
-    AND (
-        $3::bigint IS NULL
-        OR (uss.read_at IS NOT NULL) > $4::boolean
-        OR (
-            (uss.read_at IS NOT NULL) = $4::boolean
-            AND (s.published_at, s.id) < ($5::timestamptz, $3::bigint)
-        )
-    )
-ORDER BY (uss.read_at IS NOT NULL) ASC, s.published_at DESC, s.id DESC
-LIMIT $6
+ORDER BY r.is_read ASC, r.tier ASC, r.published_at DESC, r.id DESC
+LIMIT $5
 `
 
 type ListTimelineParams struct {
-	UserID            int64
-	Since             time.Time
 	CursorID          *int64
 	CursorRead        *bool
+	CursorTier        *int32
 	CursorPublishedAt *time.Time
 	PageSize          int32
+	UserID            int64
+	Since             time.Time
 }
 
 type ListTimelineRow struct {
@@ -339,19 +251,23 @@ type ListTimelineRow struct {
 	PublishedAt  time.Time
 	ReadAt       *time.Time
 	IsBookmarked bool
+	Tier         int32
 	Topics       []string
 }
 
-// Stories tagged with any followed topic (or a descendant of one), unread first,
-// newest first within each group. Keyset pagination on (is_read, published_at, id).
+// Every story in the window, ranked by the user's interest: tier 0 is tagged with a followed
+// topic (or a descendant of one), tier 1 with a related topic (a relation neighbour or an
+// ancestor of a followed topic), tier 2 with anything else. Unread first, then by tier,
+// then newest first. Keyset pagination on (is_read, tier, published_at, id).
 func (q *Queries) ListTimeline(ctx context.Context, arg ListTimelineParams) ([]ListTimelineRow, error) {
 	rows, err := q.db.Query(ctx, listTimeline,
-		arg.UserID,
-		arg.Since,
 		arg.CursorID,
 		arg.CursorRead,
+		arg.CursorTier,
 		arg.CursorPublishedAt,
 		arg.PageSize,
+		arg.UserID,
+		arg.Since,
 	)
 	if err != nil {
 		return nil, err
@@ -370,6 +286,7 @@ func (q *Queries) ListTimeline(ctx context.Context, arg ListTimelineParams) ([]L
 			&i.PublishedAt,
 			&i.ReadAt,
 			&i.IsBookmarked,
+			&i.Tier,
 			&i.Topics,
 		); err != nil {
 			return nil, err
@@ -380,15 +297,6 @@ func (q *Queries) ListTimeline(ctx context.Context, arg ListTimelineParams) ([]L
 		return nil, err
 	}
 	return items, nil
-}
-
-const markStoriesDedupeChecked = `-- name: MarkStoriesDedupeChecked :exec
-UPDATE stories SET dedupe_checked_at = now() WHERE id = ANY($1::bigint[])
-`
-
-func (q *Queries) MarkStoriesDedupeChecked(ctx context.Context, ids []int64) error {
-	_, err := q.db.Exec(ctx, markStoriesDedupeChecked, ids)
-	return err
 }
 
 const markStoryRead = `-- name: MarkStoryRead :exec
@@ -418,54 +326,6 @@ type MarkStoryUnreadParams struct {
 
 func (q *Queries) MarkStoryUnread(ctx context.Context, arg MarkStoryUnreadParams) error {
 	_, err := q.db.Exec(ctx, markStoryUnread, arg.UserID, arg.StoryID)
-	return err
-}
-
-const moveStoryBookmarks = `-- name: MoveStoryBookmarks :exec
-INSERT INTO user_bookmarks (user_id, story_id, created_at)
-SELECT ub.user_id, $1::bigint, ub.created_at FROM user_bookmarks ub WHERE ub.story_id = $2
-ON CONFLICT (user_id, story_id) DO NOTHING
-`
-
-type MoveStoryBookmarksParams struct {
-	IntoID int64
-	FromID int64
-}
-
-func (q *Queries) MoveStoryBookmarks(ctx context.Context, arg MoveStoryBookmarksParams) error {
-	_, err := q.db.Exec(ctx, moveStoryBookmarks, arg.IntoID, arg.FromID)
-	return err
-}
-
-const moveStorySources = `-- name: MoveStorySources :exec
-INSERT INTO story_sources (story_id, raw_item_id, url, source_name)
-SELECT $1::bigint, ss.raw_item_id, ss.url, ss.source_name FROM story_sources ss WHERE ss.story_id = $2
-ON CONFLICT (story_id, url) DO NOTHING
-`
-
-type MoveStorySourcesParams struct {
-	IntoID int64
-	FromID int64
-}
-
-func (q *Queries) MoveStorySources(ctx context.Context, arg MoveStorySourcesParams) error {
-	_, err := q.db.Exec(ctx, moveStorySources, arg.IntoID, arg.FromID)
-	return err
-}
-
-const moveStoryTopics = `-- name: MoveStoryTopics :exec
-INSERT INTO story_topics (story_id, topic_id)
-SELECT $1::bigint, stp.topic_id FROM story_topics stp WHERE stp.story_id = $2
-ON CONFLICT (story_id, topic_id) DO NOTHING
-`
-
-type MoveStoryTopicsParams struct {
-	IntoID int64
-	FromID int64
-}
-
-func (q *Queries) MoveStoryTopics(ctx context.Context, arg MoveStoryTopicsParams) error {
-	_, err := q.db.Exec(ctx, moveStoryTopics, arg.IntoID, arg.FromID)
 	return err
 }
 

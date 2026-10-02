@@ -16,6 +16,7 @@ import (
 // cursor is the keyset position of the last item on a timeline page.
 type cursor struct {
 	IsRead      bool      `json:"r"`
+	Tier        int32     `json:"t"`
 	PublishedAt time.Time `json:"p"`
 	ID          int64     `json:"i"`
 }
@@ -31,13 +32,26 @@ func decodeCursor(s string) (cursor, error) {
 	if err != nil {
 		return c, fmt.Errorf("invalid cursor: %w", err)
 	}
-	if err := json.Unmarshal(b, &c); err != nil || c.ID <= 0 || c.PublishedAt.IsZero() {
+	if err := json.Unmarshal(b, &c); err != nil || c.ID <= 0 || c.PublishedAt.IsZero() || c.Tier < tierFollowed || c.Tier > tierExplore {
 		return c, errors.New("invalid cursor")
 	}
 	return c, nil
 }
 
-// GetTimeline returns a page of stories for the user's followed topics.
+// Timeline tiers, as ranked by ListTimeline.
+const (
+	tierFollowed = 0
+	tierRelated  = 1
+	tierExplore  = 2
+)
+
+var tierMatch = map[int32]StorySummaryMatch{
+	tierFollowed: StorySummaryMatchFollowed,
+	tierRelated:  StorySummaryMatchRelated,
+	tierExplore:  StorySummaryMatchExplore,
+}
+
+// GetTimeline returns a page of recent stories ranked by the user's interests.
 func (s *Server) GetTimeline(w http.ResponseWriter, r *http.Request, params GetTimelineParams) {
 	user := mustUser(r)
 
@@ -52,7 +66,7 @@ func (s *Server) GetTimeline(w http.ResponseWriter, r *http.Request, params GetT
 
 	arg := db.ListTimelineParams{
 		UserID:   user.ID,
-		Since:    s.now().Add(-s.timelineWindow),
+		Since:    s.now().Add(-s.opts.TimelineWindow),
 		PageSize: int32(limit + 1), //nolint:gosec // limit is bounded by maxPageSize
 	}
 	if params.Cursor != nil {
@@ -61,7 +75,7 @@ func (s *Server) GetTimeline(w http.ResponseWriter, r *http.Request, params GetT
 			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 			return
 		}
-		arg.CursorRead, arg.CursorPublishedAt, arg.CursorID = &c.IsRead, &c.PublishedAt, &c.ID
+		arg.CursorRead, arg.CursorTier, arg.CursorPublishedAt, arg.CursorID = &c.IsRead, &c.Tier, &c.PublishedAt, &c.ID
 	}
 
 	rows, err := s.q.ListTimeline(r.Context(), arg)
@@ -74,11 +88,16 @@ func (s *Server) GetTimeline(w http.ResponseWriter, r *http.Request, params GetT
 	if len(rows) > limit {
 		rows = rows[:limit]
 		last := rows[limit-1]
-		c := cursor{IsRead: last.ReadAt != nil, PublishedAt: last.PublishedAt, ID: last.ID}.encode()
+		c := cursor{IsRead: last.ReadAt != nil, Tier: last.Tier, PublishedAt: last.PublishedAt, ID: last.ID}.encode()
 		next = &c
 	}
 	items := make([]StorySummary, len(rows))
 	for i, row := range rows {
+		match, ok := tierMatch[row.Tier]
+		if !ok {
+			internalError(w, r, "list timeline", fmt.Errorf("unknown tier %d for story %d", row.Tier, row.ID))
+			return
+		}
 		items[i] = StorySummary{
 			Id:           row.ID,
 			Title:        row.Title,
@@ -91,6 +110,7 @@ func (s *Server) GetTimeline(w http.ResponseWriter, r *http.Request, params GetT
 			IsRead:       row.ReadAt != nil,
 			ReadAt:       row.ReadAt,
 			IsBookmarked: row.IsBookmarked,
+			Match:        &match,
 		}
 	}
 	writeStoryPage(w, items, next)

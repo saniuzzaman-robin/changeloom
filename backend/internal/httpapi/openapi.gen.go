@@ -38,6 +38,27 @@ func (e Severity) Valid() bool {
 	}
 }
 
+// Defines values for StoryMatch.
+const (
+	StoryMatchExplore  StoryMatch = "explore"
+	StoryMatchFollowed StoryMatch = "followed"
+	StoryMatchRelated  StoryMatch = "related"
+)
+
+// Valid indicates whether the value is a known member of the StoryMatch enum.
+func (e StoryMatch) Valid() bool {
+	switch e {
+	case StoryMatchExplore:
+		return true
+	case StoryMatchFollowed:
+		return true
+	case StoryMatchRelated:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for StoryKind.
 const (
 	Announcement StoryKind = "announcement"
@@ -62,6 +83,51 @@ func (e StoryKind) Valid() bool {
 	case Release:
 		return true
 	case Security:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StorySummaryMatch.
+const (
+	StorySummaryMatchExplore  StorySummaryMatch = "explore"
+	StorySummaryMatchFollowed StorySummaryMatch = "followed"
+	StorySummaryMatchRelated  StorySummaryMatch = "related"
+)
+
+// Valid indicates whether the value is a known member of the StorySummaryMatch enum.
+func (e StorySummaryMatch) Valid() bool {
+	switch e {
+	case StorySummaryMatchExplore:
+		return true
+	case StorySummaryMatchFollowed:
+		return true
+	case StorySummaryMatchRelated:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TopicRequestStatus.
+const (
+	Accepted TopicRequestStatus = "accepted"
+	Merged   TopicRequestStatus = "merged"
+	Pending  TopicRequestStatus = "pending"
+	Rejected TopicRequestStatus = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the TopicRequestStatus enum.
+func (e TopicRequestStatus) Valid() bool {
+	switch e {
+	case Accepted:
+		return true
+	case Merged:
+		return true
+	case Pending:
+		return true
+	case Rejected:
 		return true
 	default:
 		return false
@@ -118,20 +184,26 @@ type Severity string
 // Story defines model for Story.
 type Story struct {
 	// BodyMd Markdown body.
-	BodyMd       string        `json:"body_md"`
-	Id           int64         `json:"id"`
-	Importance   int           `json:"importance"`
-	IsBookmarked bool          `json:"is_bookmarked"`
-	IsRead       bool          `json:"is_read"`
-	Kind         StoryKind     `json:"kind"`
-	PublishedAt  time.Time     `json:"published_at"`
-	ReadAt       *time.Time    `json:"read_at,omitempty"`
-	Severity     *Severity     `json:"severity,omitempty"`
-	Sources      []StorySource `json:"sources"`
-	Summary      string        `json:"summary"`
-	Title        string        `json:"title"`
-	Topics       []string      `json:"topics"`
+	BodyMd       string    `json:"body_md"`
+	Id           int64     `json:"id"`
+	Importance   int       `json:"importance"`
+	IsBookmarked bool      `json:"is_bookmarked"`
+	IsRead       bool      `json:"is_read"`
+	Kind         StoryKind `json:"kind"`
+
+	// Match Timeline only: whether the story is in a followed topic, a topic related to one, or neither.
+	Match       *StoryMatch   `json:"match,omitempty"`
+	PublishedAt time.Time     `json:"published_at"`
+	ReadAt      *time.Time    `json:"read_at,omitempty"`
+	Severity    *Severity     `json:"severity,omitempty"`
+	Sources     []StorySource `json:"sources"`
+	Summary     string        `json:"summary"`
+	Title       string        `json:"title"`
+	Topics      []string      `json:"topics"`
 }
+
+// StoryMatch Timeline only: whether the story is in a followed topic, a topic related to one, or neither.
+type StoryMatch string
 
 // StoryKind defines model for StoryKind.
 type StoryKind string
@@ -144,18 +216,24 @@ type StorySource struct {
 
 // StorySummary defines model for StorySummary.
 type StorySummary struct {
-	Id           int64      `json:"id"`
-	Importance   int        `json:"importance"`
-	IsBookmarked bool       `json:"is_bookmarked"`
-	IsRead       bool       `json:"is_read"`
-	Kind         StoryKind  `json:"kind"`
-	PublishedAt  time.Time  `json:"published_at"`
-	ReadAt       *time.Time `json:"read_at,omitempty"`
-	Severity     *Severity  `json:"severity,omitempty"`
-	Summary      string     `json:"summary"`
-	Title        string     `json:"title"`
-	Topics       []string   `json:"topics"`
+	Id           int64     `json:"id"`
+	Importance   int       `json:"importance"`
+	IsBookmarked bool      `json:"is_bookmarked"`
+	IsRead       bool      `json:"is_read"`
+	Kind         StoryKind `json:"kind"`
+
+	// Match Timeline only: whether the story is in a followed topic, a topic related to one, or neither.
+	Match       *StorySummaryMatch `json:"match,omitempty"`
+	PublishedAt time.Time          `json:"published_at"`
+	ReadAt      *time.Time         `json:"read_at,omitempty"`
+	Severity    *Severity          `json:"severity,omitempty"`
+	Summary     string             `json:"summary"`
+	Title       string             `json:"title"`
+	Topics      []string           `json:"topics"`
 }
+
+// StorySummaryMatch Timeline only: whether the story is in a followed topic, a topic related to one, or neither.
+type StorySummaryMatch string
 
 // Topic defines model for Topic.
 type Topic struct {
@@ -170,6 +248,26 @@ type Topic struct {
 	// Slug Example: languages/go
 	Slug string `json:"slug"`
 }
+
+// TopicRequest defines model for TopicRequest.
+type TopicRequest struct {
+	CreatedAt time.Time `json:"created_at"`
+	Id        int64     `json:"id"`
+
+	// Note Reviewer note.
+	Note       *string    `json:"note,omitempty"`
+	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
+
+	// Status accepted means a new topic was created; merged means it maps to an existing one.
+	Status TopicRequestStatus `json:"status"`
+	Text   string             `json:"text"`
+
+	// Topic Slug of the topic the request was resolved to.
+	Topic *string `json:"topic,omitempty"`
+}
+
+// TopicRequestStatus accepted means a new topic was created; merged means it maps to an existing one.
+type TopicRequestStatus string
 
 // StoryID defines model for StoryID.
 type StoryID = int64
@@ -234,11 +332,20 @@ type GetTimelineParams struct {
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// CreateTopicRequestJSONBody defines parameters for CreateTopicRequest.
+type CreateTopicRequestJSONBody struct {
+	// Text What to follow, 2-100 characters after trimming.
+	Text string `json:"text"`
+}
+
 // PutMyDeviceJSONRequestBody defines body for PutMyDevice for application/json ContentType.
 type PutMyDeviceJSONRequestBody PutMyDeviceJSONBody
 
 // PutMyTopicsJSONRequestBody defines body for PutMyTopics for application/json ContentType.
 type PutMyTopicsJSONRequestBody PutMyTopicsJSONBody
+
+// CreateTopicRequestJSONRequestBody defines body for CreateTopicRequest for application/json ContentType.
+type CreateTopicRequestJSONRequestBody CreateTopicRequestJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -278,9 +385,15 @@ type ServerInterface interface {
 	// MarkStoryRead Mark a story read (idempotent; keeps the first read time).
 	// (PUT /v1/stories/{id}/read)
 	MarkStoryRead(w http.ResponseWriter, r *http.Request, id StoryID)
-	// GetTimeline Stories for the followed topics, unread first then newest first.
+	// GetTimeline Recent stories ranked by interest.
 	// (GET /v1/timeline)
 	GetTimeline(w http.ResponseWriter, r *http.Request, params GetTimelineParams)
+	// ListMyTopicRequests The signed-in user's topic requests, newest first.
+	// (GET /v1/topic-requests)
+	ListMyTopicRequests(w http.ResponseWriter, r *http.Request)
+	// CreateTopicRequest Ask for a topic to be added to the catalog.
+	// (POST /v1/topic-requests)
+	CreateTopicRequest(w http.ResponseWriter, r *http.Request)
 	// ListTopics List all topics.
 	// (GET /v1/topics)
 	ListTopics(w http.ResponseWriter, r *http.Request)
@@ -665,6 +778,34 @@ func (siw *ServerInterfaceWrapper) GetTimeline(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// ListMyTopicRequests operation middleware
+func (siw *ServerInterfaceWrapper) ListMyTopicRequests(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMyTopicRequests(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateTopicRequest operation middleware
+func (siw *ServerInterfaceWrapper) CreateTopicRequest(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateTopicRequest(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListTopics operation middleware
 func (siw *ServerInterfaceWrapper) ListTopics(w http.ResponseWriter, r *http.Request) {
 
@@ -813,6 +954,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/bookmarks", wrapper.ListBookmarks)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/stories/{id}/bookmark", wrapper.RemoveBookmark)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/stories/{id}/bookmark", wrapper.AddBookmark)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/topic-requests", wrapper.ListMyTopicRequests)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/topic-requests", wrapper.CreateTopicRequest)
 
 	return m
 }

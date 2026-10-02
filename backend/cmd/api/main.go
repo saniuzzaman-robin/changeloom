@@ -17,8 +17,7 @@ import (
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/auth"
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/config"
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/httpapi"
-	"github.com/saniuzzaman-robin/changeloom/backend/internal/topics"
-	"github.com/saniuzzaman-robin/changeloom/backend/seed"
+	"github.com/saniuzzaman-robin/changeloom/backend/internal/push"
 )
 
 const (
@@ -60,15 +59,26 @@ func run() error {
 	if err := pool.Ping(startupCtx); err != nil {
 		return fmt.Errorf("connect to database (is it running? try `make db-up`): %w", err)
 	}
-	n, err := topics.Sync(startupCtx, pool, seed.TopicsYAML)
-	if err != nil {
-		return fmt.Errorf("%w (have migrations been applied? try `make migrate`)", err)
+
+	opts := httpapi.Options{
+		TimelineWindow:         cfg.TimelineWindow,
+		TopicRequestMaxPending: cfg.TopicRequestMaxPending,
+		NotifySecret:           cfg.NotifySecret,
 	}
-	slog.Info("topics synced", "count", n)
+	if cfg.PushEnabled {
+		sender, err := push.NewFCMSender(ctx, cfg.FirebaseProjectID)
+		if err != nil {
+			return fmt.Errorf("push notifications: %w", err)
+		}
+		opts.Notifier = push.NewNotifier(pool, sender)
+	}
+	if cfg.NotifySecret == "" {
+		slog.Warn("NOTIFY_SECRET is empty: POST /internal/notify is disabled")
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewHandler(httpapi.NewServer(pool, cfg.TimelineWindow), verifier),
+		Handler:           httpapi.NewHandler(httpapi.NewServer(pool, opts), verifier),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 

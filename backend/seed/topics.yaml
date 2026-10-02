@@ -1,4 +1,5 @@
-# Topic tree synced into the `topics` table on API startup (upsert by slug; nothing is deleted).
+# Test/dev fixture: the curator owns the real topic catalog. Tests sync this tree into the
+# `topics` table (upsert by slug; nothing is deleted).
 # A child's slug must start with its parent's slug followed by "/".
 # Following a parent topic includes all of its descendants in the timeline.
 - slug: languages

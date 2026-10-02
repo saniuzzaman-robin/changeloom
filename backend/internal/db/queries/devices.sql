@@ -11,10 +11,9 @@ DELETE FROM device_tokens WHERE token = @token AND user_id = @user_id;
 DELETE FROM device_tokens WHERE token = ANY(@tokens::text[]);
 
 -- name: ListStoriesToNotify :many
--- Recent high-severity security stories that have not been pushed yet. Stories wait for
--- the near-duplicate check so a story that is about to be merged away is not pushed.
+-- Recent high-severity security stories that have not been pushed yet.
 SELECT id, title, summary FROM stories
-WHERE notified_at IS NULL AND dedupe_checked_at IS NOT NULL
+WHERE notified_at IS NULL
     AND kind = 'security' AND severity IN ('high', 'critical')
     AND created_at >= @since
 ORDER BY id;
