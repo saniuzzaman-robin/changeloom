@@ -19,7 +19,11 @@ data class Me(
     val id: Long,
     val email: String? = null,
     val topics: List<String>,
+    val stats: MeStats = MeStats(),
 )
+
+@Serializable
+data class MeStats(val saved: Long = 0, val read: Long = 0)
 
 @Serializable
 data class PutTopicsRequest(

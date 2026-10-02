@@ -55,5 +55,8 @@ class StoryPager(private val fetch: suspend (cursor: String?) -> TimelinePage) {
         s.copy(items = s.items.map { if (it.id == id) it.copy(isBookmarked = on) else it })
     }
 
+    /** Drops a story from the loaded list, e.g. one unsaved from the bookmarks list. */
+    fun remove(id: Long) = _state.update { s -> s.copy(items = s.items.filter { it.id != id }) }
+
     fun clearError() = _state.update { it.copy(error = null) }
 }

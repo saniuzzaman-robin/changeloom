@@ -51,4 +51,14 @@ class StoryPagerTest {
         pager.setBookmarked(2, false)
         assertEquals(listOf(true, false), pager.state.value.items.map { it.isBookmarked })
     }
+
+    @Test
+    fun removeDropsOnlyThatStoryAndKeepsCursor() = runTest {
+        val pager = StoryPager { TimelinePage(listOf(story(1), story(2), story(3)), "c1") }
+        pager.refresh()
+        pager.remove(2)
+        pager.remove(99) // unknown id: no change
+        assertEquals(listOf(1L, 3L), pager.state.value.items.map { it.id })
+        assertEquals("c1", pager.state.value.nextCursor)
+    }
 }

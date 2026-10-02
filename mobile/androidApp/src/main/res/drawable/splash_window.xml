@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pre-API 31 launch window: the launcher mark centred on the dark bg. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/changeloom_bg" />
+    <item android:drawable="@drawable/ic_launcher_foreground" android:width="200dp" android:height="200dp" android:gravity="center" />
+</layer-list>

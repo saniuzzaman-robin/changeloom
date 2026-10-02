@@ -6,12 +6,14 @@ import dev.changeloom.android.data.FileStoryCache
 import dev.changeloom.android.push.DeviceRegistrar
 import dev.changeloom.android.push.createNotificationChannel
 import dev.changeloom.android.ui.BookmarksViewModel
-import dev.changeloom.android.ui.OnboardingViewModel
+import dev.changeloom.android.ui.ProfileViewModel
 import dev.changeloom.android.ui.SearchViewModel
-import dev.changeloom.android.ui.SettingsViewModel
 import dev.changeloom.android.ui.SignInViewModel
 import dev.changeloom.android.ui.StoryDetailViewModel
 import dev.changeloom.android.ui.TimelineViewModel
+import dev.changeloom.android.ui.TopicCatalog
+import dev.changeloom.android.ui.TopicPickerViewModel
+import dev.changeloom.android.ui.theme.ThemePreferences
 import dev.changeloom.shared.auth.AuthRepository
 import dev.changeloom.shared.data.StoryCache
 import dev.changeloom.shared.di.sharedModule
@@ -34,12 +36,14 @@ class ChangeloomApp : Application() {
                 sharedModule(BuildConfig.API_BASE_URL, OkHttp.create()),
                 module {
                     single { FirebaseAuthRepository() } bind AuthRepository::class
+                    single { ThemePreferences(androidContext()) }
                     viewModelOf(::SignInViewModel)
                     single { FileStoryCache(File(androidContext().filesDir, "changeloom")) } bind StoryCache::class
-                    viewModelOf(::OnboardingViewModel)
+                    single { TopicCatalog(get()) }
+                    viewModelOf(::TopicPickerViewModel)
                     viewModelOf(::TimelineViewModel)
                     single { DeviceRegistrar(get()) }
-                    viewModelOf(::SettingsViewModel)
+                    viewModelOf(::ProfileViewModel)
                     viewModelOf(::SearchViewModel)
                     viewModelOf(::BookmarksViewModel)
                     viewModel { (id: Long) -> StoryDetailViewModel(id, get()) }

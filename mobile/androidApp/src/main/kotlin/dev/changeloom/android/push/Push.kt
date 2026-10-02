@@ -85,7 +85,7 @@ class ChangeloomMessagingService : FirebaseMessagingService() {
             this, storyId.hashCode(), open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notification = android.app.Notification.Builder(this, getString(R.string.security_channel_id))
-            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setSmallIcon(R.drawable.ic_stat_changeloom)
             .setContentTitle(message.notification?.title)
             .setContentText(message.notification?.body)
             .setContentIntent(pending)

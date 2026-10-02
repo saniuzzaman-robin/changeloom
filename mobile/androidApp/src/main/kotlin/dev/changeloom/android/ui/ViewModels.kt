@@ -1,27 +1,43 @@
 package dev.changeloom.android.ui
 
+import android.graphics.Bitmap
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.changeloom.android.data.fetchAvatar
 import dev.changeloom.android.push.DeviceRegistrar
+import dev.changeloom.android.ui.theme.ThemeMode
+import dev.changeloom.android.ui.theme.ThemePreferences
 import dev.changeloom.shared.auth.AuthRepository
 import dev.changeloom.shared.data.ChangeloomApi
+import dev.changeloom.shared.data.CheckState
+import dev.changeloom.shared.data.MeStats
 import dev.changeloom.shared.data.PagerState
 import dev.changeloom.shared.data.Story
 import dev.changeloom.shared.data.StoryPager
 import dev.changeloom.shared.data.TimelineRepository
 import dev.changeloom.shared.data.TimelineState
-import dev.changeloom.shared.data.Topic
+import dev.changeloom.shared.data.TopicSelection
+import dev.changeloom.shared.data.TopicTree
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.io.IOException
+
+private const val TAG = "Profile"
 
 data class SignInState(val busy: Boolean = false, val error: String? = null)
 
@@ -49,31 +65,64 @@ class SignInViewModel(private val auth: AuthRepository) : ViewModel() {
     }
 }
 
-data class OnboardingState(
+/** The topic tree only changes on backend deploys, so it is fetched once per process. */
+class TopicCatalog(private val api: ChangeloomApi) {
+    private val mutex = Mutex()
+    private var cached: TopicTree? = null
+
+    suspend fun tree(): TopicTree = mutex.withLock { cached ?: TopicTree(api.topics()).also { cached = it } }
+}
+
+data class TopicPickerState(
     val loading: Boolean = true,
     val saving: Boolean = false,
-    val topics: List<Topic> = emptyList(),
-    val selected: Set<String> = emptySet(),
-    val done: Boolean = false,
+    val selection: TopicSelection? = null,
+    /** What the server has saved for this user, minimised; empty means onboarding is still needed. */
+    val followed: List<String> = emptyList(),
+    val query: String = "",
+    val expanded: Set<String> = emptySet(),
+    /** Set after an edit (not onboarding) is saved; the screen closes and calls [TopicPickerViewModel.savedHandled]. */
+    val saved: Boolean = false,
     val error: String? = null,
-)
+) {
+    val dirty: Boolean get() = selection != null && selection.toFollowed() != followed
+}
 
-class OnboardingViewModel(private val api: ChangeloomApi) : ViewModel() {
-    private val _state = MutableStateFlow(OnboardingState())
-    val state: StateFlow<OnboardingState> = _state.asStateFlow()
+/**
+ * Followed topics for both onboarding (it also gates the main UI on [TopicPickerState.followed]) and
+ * editing. Reloads whenever the signed-in user changes, so a second account never sees the first's picks.
+ */
+class TopicPickerViewModel(
+    private val api: ChangeloomApi,
+    private val catalog: TopicCatalog,
+    private val repo: TimelineRepository,
+    auth: AuthRepository,
+) : ViewModel() {
+    private val _state = MutableStateFlow(TopicPickerState())
+    val state: StateFlow<TopicPickerState> = _state.asStateFlow()
+    private var loadJob: Job? = null
 
     init {
-        load()
+        viewModelScope.launch {
+            auth.currentUser.map { it?.uid }.distinctUntilChanged().collect { uid ->
+                loadJob?.cancel()
+                // Stays "loading" while signed out so the next sign-in never flashes the previous user's state.
+                _state.value = TopicPickerState()
+                if (uid != null) load()
+            }
+        }
     }
 
     fun load() {
+        loadJob?.cancel()
         _state.update { it.copy(loading = true, error = null) }
-        viewModelScope.launch {
+        loadJob = viewModelScope.launch {
             try {
-                val topics = api.topics()
-                val me = api.me()
+                val tree = catalog.tree()
+                val selection = TopicSelection.fromFollowed(tree, api.me().topics)
+                val partial = tree.roots.map { it.slug }.filter { selection.stateOf(it) == CheckState.Partial }
                 _state.update {
-                    it.copy(loading = false, topics = topics, selected = me.topics.toSet(), done = me.topics.isNotEmpty())
+                    it.copy(loading = false, selection = selection, followed = selection.toFollowed(), expanded = partial.toSet())
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -83,22 +132,44 @@ class OnboardingViewModel(private val api: ChangeloomApi) : ViewModel() {
         }
     }
 
-    fun toggle(slug: String) = _state.update {
-        it.copy(selected = if (slug in it.selected) it.selected - slug else it.selected + slug)
+    fun toggle(slug: String) = edit { it.toggle(slug) }
+    fun selectAll() = edit { it.selectAll() }
+    fun clear() = edit { it.clear() }
+
+    fun toggleExpanded(slug: String) = _state.update {
+        it.copy(expanded = if (slug in it.expanded) it.expanded - slug else it.expanded + slug)
     }
 
+    fun setQuery(text: String) = _state.update { it.copy(query = text) }
+
+    /** Drops unsaved edits, e.g. when leaving the edit screen without saving. */
+    fun discard() = _state.update { s ->
+        s.copy(selection = s.selection?.let { TopicSelection.fromFollowed(it.tree, s.followed) }, query = "", error = null)
+    }
+
+    fun savedHandled() = _state.update { it.copy(saved = false) }
+
     fun save() {
+        val selection = _state.value.selection ?: return
+        val slugs = selection.toFollowed()
+        val onboarding = _state.value.followed.isEmpty()
         _state.update { it.copy(saving = true, error = null) }
         viewModelScope.launch {
             try {
-                api.putMyTopics(_state.value.selected.sorted())
-                _state.update { it.copy(saving = false, done = true) }
+                api.putMyTopics(slugs)
+                // A new timeline view model refreshes on its own after onboarding; an edit must refresh the existing one.
+                if (!onboarding) viewModelScope.launch { repo.refresh() }
+                _state.update { it.copy(saving = false, followed = slugs, query = "", saved = !onboarding) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 _state.update { it.copy(saving = false, error = e.message ?: "Could not save topics") }
             }
         }
+    }
+
+    private fun edit(change: (TopicSelection) -> TopicSelection) = _state.update { s ->
+        s.selection?.let { s.copy(selection = change(it), saved = false) } ?: s
     }
 }
 
@@ -184,6 +255,12 @@ class BookmarksViewModel(api: ChangeloomApi, private val repo: TimelineRepositor
         viewModelScope.launch { if (!repo.setBookmarked(id, on)) pager.setBookmarked(id, !on) }
     }
 
+    /** Unsaves and drops the story from the list; a failed sync reloads the list to bring it back. */
+    fun remove(id: Long) {
+        pager.remove(id)
+        viewModelScope.launch { if (!repo.setBookmarked(id, false)) pager.refresh() }
+    }
+
     fun dismissError() = pager.clearError()
 }
 
@@ -229,62 +306,57 @@ class SearchViewModel(private val api: ChangeloomApi, private val repo: Timeline
     }
 }
 
-data class SettingsState(
-    val loading: Boolean = true,
-    val saving: Boolean = false,
-    val topics: List<Topic> = emptyList(),
-    val selected: Set<String> = emptySet(),
-    val saved: Boolean = false,
+data class ProfileState(
+    /** Null until the first `/v1/me` load succeeds. */
+    val stats: MeStats? = null,
     val error: String? = null,
 )
 
-class SettingsViewModel(
+class ProfileViewModel(
     private val api: ChangeloomApi,
     private val repo: TimelineRepository,
     private val auth: AuthRepository,
     private val registrar: DeviceRegistrar,
+    private val theme: ThemePreferences,
 ) : ViewModel() {
     val email: String? = auth.currentUser.value?.email
-    private val _state = MutableStateFlow(SettingsState())
-    val state: StateFlow<SettingsState> = _state.asStateFlow()
+    val displayName: String? = auth.currentUser.value?.displayName
+    val themeMode: StateFlow<ThemeMode> = theme.mode
+
+    private val _state = MutableStateFlow(ProfileState())
+    val state: StateFlow<ProfileState> = _state.asStateFlow()
+
+    /** The profile photo, or null while loading or when there isn't one (the avatar shows initials). */
+    private val _photo = MutableStateFlow<Bitmap?>(null)
+    val photo: StateFlow<Bitmap?> = _photo.asStateFlow()
 
     init {
-        load()
-    }
-
-    fun load() {
-        _state.update { it.copy(loading = true, error = null) }
-        viewModelScope.launch {
-            try {
-                val topics = api.topics()
-                val me = api.me()
-                _state.update { it.copy(loading = false, topics = topics, selected = me.topics.toSet()) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _state.update { it.copy(loading = false, error = e.message ?: "Could not load topics") }
+        auth.currentUser.value?.photoUrl?.let { url ->
+            viewModelScope.launch {
+                try {
+                    _photo.value = fetchAvatar(url)
+                } catch (e: IOException) {
+                    Log.w(TAG, "Couldn't load the profile photo; showing initials", e)
+                }
             }
         }
     }
 
-    fun toggle(slug: String) = _state.update {
-        it.copy(saved = false, selected = if (slug in it.selected) it.selected - slug else it.selected + slug)
-    }
-
-    fun save() {
-        _state.update { it.copy(saving = true, saved = false, error = null) }
+    /** Counts change whenever the user saves or reads a story, so the screen refreshes them each time it is shown. */
+    fun refresh() {
         viewModelScope.launch {
             try {
-                api.putMyTopics(_state.value.selected.sorted())
-                repo.refresh()
-                _state.update { it.copy(saving = false, saved = true) }
+                val stats = api.me().stats
+                _state.update { it.copy(stats = stats, error = null) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(saving = false, error = e.message ?: "Could not save topics") }
+                _state.update { it.copy(error = e.message ?: "Couldn't load your stats") }
             }
         }
     }
+
+    fun setThemeMode(mode: ThemeMode) = theme.setMode(mode)
 
     /** Stops pushes for this device and clears the local cache first, so a different account never sees this user's data. */
     fun signOut() {

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher mark drawing itself in (mirrors LoomMark(animate = true)); generated from the same geometry. -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt">
+    <aapt:attr name="android:drawable">
+        <vector
+            android:width="108dp" android:height="108dp"
+            android:viewportWidth="108" android:viewportHeight="108">
+            <group android:name="warps" android:pivotX="54" android:pivotY="54" android:scaleY="0">
+                <path android:pathData="M42.8,27.4 L42.8,80.6" android:strokeColor="#FF94A3B8"
+                    android:strokeWidth="4.9" android:strokeLineCap="round" />
+                <path android:pathData="M54,27.4 L54,80.6" android:strokeColor="#FF94A3B8"
+                    android:strokeWidth="4.9" android:strokeLineCap="round" />
+                <path android:pathData="M65.2,27.4 L65.2,80.6" android:strokeColor="#FF94A3B8"
+                    android:strokeWidth="4.9" android:strokeLineCap="round" />
+            </group>
+            <path android:name="threadHalo" android:pathData="M30.2,40 L73.6,40 L73.88,40.01 L74.16,40.02 L74.44,40.05 L74.72,40.09 L75,40.14 L75.28,40.2 L75.55,40.28 L75.82,40.36 L76.08,40.45 L76.34,40.56 L76.6,40.68 L76.85,40.8 L77.1,40.94 L77.34,41.08 L77.58,41.24 L77.81,41.4 L78.03,41.58 L78.24,41.76 L78.45,41.95 L78.65,42.15 L78.84,42.36 L79.02,42.57 L79.2,42.79 L79.36,43.02 L79.52,43.26 L79.66,43.5 L79.8,43.75 L79.92,44 L80.04,44.26 L80.15,44.52 L80.24,44.78 L80.32,45.05 L80.4,45.32 L80.46,45.6 L80.51,45.88 L80.55,46.16 L80.58,46.44 L80.59,46.72 L80.6,47 L80.59,47.28 L80.58,47.56 L80.55,47.84 L80.51,48.12 L80.46,48.4 L80.4,48.68 L80.32,48.95 L80.24,49.22 L80.15,49.48 L80.04,49.74 L79.92,50 L79.8,50.25 L79.66,50.5 L79.52,50.74 L79.36,50.98 L79.2,51.21 L79.02,51.43 L78.84,51.64 L78.65,51.85 L78.45,52.05 L78.24,52.24 L78.03,52.42 L77.81,52.6 L77.58,52.76 L77.34,52.92 L77.1,53.06 L76.85,53.2 L76.6,53.32 L76.34,53.44 L76.08,53.55 L75.82,53.64 L75.55,53.72 L75.28,53.8 L75,53.86 L74.72,53.91 L74.44,53.95 L74.16,53.98 L73.88,53.99 L73.6,54 L34.4,54 L34.12,54.01 L33.84,54.02 L33.56,54.05 L33.28,54.09 L33,54.14 L32.72,54.2 L32.45,54.28 L32.18,54.36 L31.92,54.45 L31.66,54.56 L31.4,54.68 L31.15,54.8 L30.9,54.94 L30.66,55.08 L30.42,55.24 L30.19,55.4 L29.97,55.58 L29.76,55.76 L29.55,55.95 L29.35,56.15 L29.16,56.36 L28.98,56.57 L28.8,56.79 L28.64,57.02 L28.48,57.26 L28.34,57.5 L28.2,57.75 L28.08,58 L27.96,58.26 L27.85,58.52 L27.76,58.78 L27.68,59.05 L27.6,59.32 L27.54,59.6 L27.49,59.88 L27.45,60.16 L27.42,60.44 L27.41,60.72 L27.4,61 L27.41,61.28 L27.42,61.56 L27.45,61.84 L27.49,62.12 L27.54,62.4 L27.6,62.68 L27.68,62.95 L27.76,63.22 L27.85,63.48 L27.96,63.74 L28.08,64 L28.2,64.25 L28.34,64.5 L28.48,64.74 L28.64,64.98 L28.8,65.21 L28.98,65.43 L29.16,65.64 L29.35,65.85 L29.55,66.05 L29.76,66.24 L29.97,66.42 L30.19,66.6 L30.42,66.76 L30.66,66.92 L30.9,67.06 L31.15,67.2 L31.4,67.32 L31.66,67.44 L31.92,67.55 L32.18,67.64 L32.45,67.72 L32.72,67.8 L33,67.86 L33.28,67.91 L33.56,67.95 L33.84,67.98 L34.12,67.99 L34.4,68 L77.8,68" android:strokeColor="#FF070709"
+                android:strokeWidth="11.2" android:strokeLineCap="round" android:strokeLineJoin="round" android:trimPathEnd="0" />
+            <path android:name="thread" android:pathData="M30.2,40 L73.6,40 L73.88,40.01 L74.16,40.02 L74.44,40.05 L74.72,40.09 L75,40.14 L75.28,40.2 L75.55,40.28 L75.82,40.36 L76.08,40.45 L76.34,40.56 L76.6,40.68 L76.85,40.8 L77.1,40.94 L77.34,41.08 L77.58,41.24 L77.81,41.4 L78.03,41.58 L78.24,41.76 L78.45,41.95 L78.65,42.15 L78.84,42.36 L79.02,42.57 L79.2,42.79 L79.36,43.02 L79.52,43.26 L79.66,43.5 L79.8,43.75 L79.92,44 L80.04,44.26 L80.15,44.52 L80.24,44.78 L80.32,45.05 L80.4,45.32 L80.46,45.6 L80.51,45.88 L80.55,46.16 L80.58,46.44 L80.59,46.72 L80.6,47 L80.59,47.28 L80.58,47.56 L80.55,47.84 L80.51,48.12 L80.46,48.4 L80.4,48.68 L80.32,48.95 L80.24,49.22 L80.15,49.48 L80.04,49.74 L79.92,50 L79.8,50.25 L79.66,50.5 L79.52,50.74 L79.36,50.98 L79.2,51.21 L79.02,51.43 L78.84,51.64 L78.65,51.85 L78.45,52.05 L78.24,52.24 L78.03,52.42 L77.81,52.6 L77.58,52.76 L77.34,52.92 L77.1,53.06 L76.85,53.2 L76.6,53.32 L76.34,53.44 L76.08,53.55 L75.82,53.64 L75.55,53.72 L75.28,53.8 L75,53.86 L74.72,53.91 L74.44,53.95 L74.16,53.98 L73.88,53.99 L73.6,54 L34.4,54 L34.12,54.01 L33.84,54.02 L33.56,54.05 L33.28,54.09 L33,54.14 L32.72,54.2 L32.45,54.28 L32.18,54.36 L31.92,54.45 L31.66,54.56 L31.4,54.68 L31.15,54.8 L30.9,54.94 L30.66,55.08 L30.42,55.24 L30.19,55.4 L29.97,55.58 L29.76,55.76 L29.55,55.95 L29.35,56.15 L29.16,56.36 L28.98,56.57 L28.8,56.79 L28.64,57.02 L28.48,57.26 L28.34,57.5 L28.2,57.75 L28.08,58 L27.96,58.26 L27.85,58.52 L27.76,58.78 L27.68,59.05 L27.6,59.32 L27.54,59.6 L27.49,59.88 L27.45,60.16 L27.42,60.44 L27.41,60.72 L27.4,61 L27.41,61.28 L27.42,61.56 L27.45,61.84 L27.49,62.12 L27.54,62.4 L27.6,62.68 L27.68,62.95 L27.76,63.22 L27.85,63.48 L27.96,63.74 L28.08,64 L28.2,64.25 L28.34,64.5 L28.48,64.74 L28.64,64.98 L28.8,65.21 L28.98,65.43 L29.16,65.64 L29.35,65.85 L29.55,66.05 L29.76,66.24 L29.97,66.42 L30.19,66.6 L30.42,66.76 L30.66,66.92 L30.9,67.06 L31.15,67.2 L31.4,67.32 L31.66,67.44 L31.92,67.55 L32.18,67.64 L32.45,67.72 L32.72,67.8 L33,67.86 L33.28,67.91 L33.56,67.95 L33.84,67.98 L34.12,67.99 L34.4,68 L77.8,68"
+                android:strokeWidth="7" android:strokeLineCap="round" android:strokeLineJoin="round" android:trimPathEnd="0">
+                <aapt:attr name="android:strokeColor">
+                    <gradient android:type="linear" android:startX="19" android:startY="19" android:endX="89" android:endY="89">
+                        <item android:offset="0" android:color="#FF6366F1" />
+                        <item android:offset="0.6" android:color="#FF06B6D4" />
+                        <item android:offset="1" android:color="#FF3B82F6" />
+                    </gradient>
+                </aapt:attr>
+            </path>
+            <group android:name="overs" android:pivotX="54" android:pivotY="54" android:scaleY="0">
+                <path android:pathData="M42.8,47.7 L42.8,60.3" android:strokeColor="#FF070709" android:strokeWidth="9.1" />
+                <path android:pathData="M42.8,47.7 L42.8,60.3" android:strokeColor="#FF94A3B8" android:strokeWidth="4.9" />
+                <path android:pathData="M54,33.7 L54,46.3 M54,61.7 L54,74.3" android:strokeColor="#FF070709" android:strokeWidth="9.1" />
+                <path android:pathData="M54,33.7 L54,46.3 M54,61.7 L54,74.3" android:strokeColor="#FF94A3B8" android:strokeWidth="4.9" />
+                <path android:pathData="M65.2,47.7 L65.2,60.3" android:strokeColor="#FF070709" android:strokeWidth="9.1" />
+                <path android:pathData="M65.2,47.7 L65.2,60.3" android:strokeColor="#FF94A3B8" android:strokeWidth="4.9" />
+            </group>
+        </vector>
+    </aapt:attr>
+    <target android:name="warps" android:animation="@animator/splash_warp_grow" />
+    <target android:name="overs" android:animation="@animator/splash_warp_grow" />
+    <target android:name="threadHalo" android:animation="@animator/splash_thread_weave" />
+    <target android:name="thread" android:animation="@animator/splash_thread_weave" />
+</animated-vector>

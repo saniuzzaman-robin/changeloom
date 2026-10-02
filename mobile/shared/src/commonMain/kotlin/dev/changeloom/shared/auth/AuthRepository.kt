@@ -2,7 +2,12 @@ package dev.changeloom.shared.auth
 
 import kotlinx.coroutines.flow.StateFlow
 
-data class AuthUser(val uid: String, val email: String?)
+data class AuthUser(
+    val uid: String,
+    val email: String?,
+    val displayName: String? = null,
+    val photoUrl: String? = null,
+)
 
 /** Platform-specific sign-in; the API client only needs [idToken]. */
 interface AuthRepository {

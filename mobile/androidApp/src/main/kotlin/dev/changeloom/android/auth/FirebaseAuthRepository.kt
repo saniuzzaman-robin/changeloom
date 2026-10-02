@@ -35,5 +35,11 @@ class FirebaseAuthRepository(
 
     override fun signOut() = auth.signOut()
 
-    private fun FirebaseUser.toAuthUser() = AuthUser(uid, email)
+    /** The account's own photo if one was set, else the one from a linked Google sign-in. */
+    private fun FirebaseUser.toAuthUser() = AuthUser(
+        uid,
+        email,
+        displayName?.takeIf { it.isNotBlank() },
+        (photoUrl ?: providerData.firstOrNull { it.providerId == GoogleAuthProvider.PROVIDER_ID }?.photoUrl)?.toString(),
+    )
 }

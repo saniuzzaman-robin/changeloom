@@ -4,6 +4,7 @@ import dev.changeloom.shared.auth.AuthRepository
 import dev.changeloom.shared.auth.AuthUser
 import dev.changeloom.shared.data.ApiException
 import dev.changeloom.shared.data.ChangeloomApi
+import dev.changeloom.shared.data.MeStats
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
@@ -49,6 +50,16 @@ class ChangeloomApiTest {
         }
         val api = ChangeloomApi(ChangeloomApi.createClient("http://api.test", engine), FakeAuth("tok"))
         assertEquals(listOf("a", "b"), api.putMyTopics(listOf("a", "b")).topics)
+    }
+
+    @Test
+    fun meParsesStatsAndDefaultsWhenAbsent() = runTest {
+        var body = """{"id":1,"topics":[],"stats":{"saved":3,"read":7}}"""
+        val engine = MockEngine { respond(body, headers = jsonHeaders) }
+        val api = ChangeloomApi(ChangeloomApi.createClient("http://api.test", engine), FakeAuth("tok"))
+        assertEquals(MeStats(saved = 3, read = 7), api.me().stats)
+        body = """{"id":1,"topics":[]}"""
+        assertEquals(MeStats(), api.me().stats)
     }
 
     @Test
