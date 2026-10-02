@@ -7,7 +7,7 @@
 - Never verified live: real Firebase tokens/FCM sends, Android emulator/lint, CI workflow, real deploy (Neon, Cloud Run).
 
 ## Gotchas
-- Dev Postgres on host port 5433 (`make db-up`); tests use `internal/dbtest.New(t)`.
+- Dev Postgres: `POSTGRES_MODE` in `.env` is `docker` (compose, host port from `POSTGRES_PORT`; `make db-up`) or `local` (installed server at `DATABASE_URL`; `psql` must be on PATH, e.g. `/Library/PostgreSQL/18/bin`). Tests use `internal/dbtest.New(t)`.
 - Android build: `ANDROID_HOME=~/Library/Android/sdk gradle :shared:testAndroidHostTest :androidApp:assembleDebug` (system gradle; wrapper download timed out).
 - Codegen: `make generate` (sqlc + oapi-codegen).
 - Dev auth `Bearer dev:<name>` only when `ENV=dev`; prod uses Firebase (`FIREBASE_PROJECT_ID`).

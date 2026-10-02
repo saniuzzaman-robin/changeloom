@@ -19,14 +19,35 @@ include $(CURATOR_ENV_FILE)
 export
 endif
 
+# Dev Postgres: "docker" (the docker-compose.yml service) or "local" (an installed server that
+# DATABASE_URL points at).
+POSTGRES_MODE ?= docker
+ifeq ($(filter $(POSTGRES_MODE),docker local),)
+$(error POSTGRES_MODE must be docker or local, got "$(POSTGRES_MODE)")
+endif
+
+ifeq ($(POSTGRES_MODE),local)
+PSQL := psql "$(DATABASE_URL)"
+else
+PSQL := docker compose exec -T postgres psql -U "$(POSTGRES_USER)" -d postgres
+endif
+
 .PHONY: db-up db-down migrate migrate-down migrate-status migrate-remote generate run-api build test lint fmt \
 	curator-db curator-migrate curator-seed curator-generate curator-build curator-test curator-lint curator-fmt
 
-db-up: ## Start local Postgres
+db-up: ## Start the dev Postgres (docker), or check the installed one is reachable (local)
+ifeq ($(POSTGRES_MODE),local)
+	@$(PSQL) -tAc 'SELECT 1' >/dev/null || { echo "Postgres at DATABASE_URL is unreachable: start your installed server and create the role and database (see .env.example)"; exit 1; }
+else
 	docker compose up -d --wait postgres
+endif
 
-db-down: ## Stop local Postgres (data volume is kept)
+db-down: ## Stop the dev Postgres (docker; data volume is kept)
+ifeq ($(POSTGRES_MODE),local)
+	@echo "POSTGRES_MODE=local: nothing to stop; manage your installed Postgres with its own tools"
+else
 	docker compose down
+endif
 
 GOOSE := cd $(BACKEND) && GOOSE_DRIVER=postgres GOOSE_DBSTRING="$(DATABASE_URL)" GOOSE_MIGRATION_DIR=migrations go tool goose
 
@@ -64,8 +85,8 @@ fmt: ## Format backend code
 CURATOR_RUN := cd $(CURATOR) && go run ./cmd/curator
 
 curator-db: ## Create the curator's local database on the dev Postgres (needs `make db-up`)
-	@docker compose exec -T postgres psql -U "$(POSTGRES_USER)" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$(CURATOR_DB)'" | grep -q 1 \
-		|| docker compose exec -T postgres createdb -U "$(POSTGRES_USER)" "$(CURATOR_DB)"
+	@$(PSQL) -tAc "SELECT 1 FROM pg_database WHERE datname = '$(CURATOR_DB)'" | grep -q 1 \
+		|| $(PSQL) -c 'CREATE DATABASE "$(CURATOR_DB)"'
 
 curator-migrate: ## Apply the backend and curator migrations to the curator's local DB
 	$(CURATOR_RUN) migrate
