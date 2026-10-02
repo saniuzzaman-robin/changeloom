@@ -28,6 +28,17 @@ android {
         buildConfig = true
     }
 
+    // Per-developer debug key so the SHA-1 registered in Firebase is unique to this app; falls back to the default debug key.
+    val changeloomDebugKeystore = file("${System.getProperty("user.home")}/.android/changeloom-debug.keystore")
+    if (changeloomDebugKeystore.exists()) {
+        signingConfigs.getByName("debug") {
+            storeFile = changeloomDebugKeystore
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
