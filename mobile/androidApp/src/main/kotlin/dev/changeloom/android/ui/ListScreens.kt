@@ -62,6 +62,7 @@ import dev.changeloom.android.ui.components.IconTile
 import dev.changeloom.android.ui.components.SecondaryButton
 import dev.changeloom.android.ui.components.SpotlightGlow
 import dev.changeloom.android.ui.components.StatusBanner
+import dev.changeloom.android.ui.components.StatusBarScrim
 import dev.changeloom.android.ui.components.TopicChip
 import dev.changeloom.android.ui.components.enter
 import dev.changeloom.android.ui.theme.ChangeloomTheme
@@ -122,8 +123,9 @@ internal fun SearchContent(
 
     Box(Modifier.fillMaxSize()) {
         SpotlightGlow(Modifier.fillMaxWidth().height(360.dp))
-        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))) {
-            Column(Modifier.padding(horizontal = 20.dp).padding(top = 16.dp)) {
+        // Side insets are applied per child: listPadding() already includes them for the results.
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))) {
+            Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = 20.dp).padding(top = 16.dp)) {
                 Eyebrow("Search", Modifier.enter(delayMillis = 0), color = c.primaryText)
                 Spacer(Modifier.height(8.dp))
                 Text("Find any change", Modifier.enter(delayMillis = 80), style = MaterialTheme.typography.headlineMedium, color = c.fg)
@@ -148,7 +150,13 @@ internal fun SearchContent(
                     message = "Try a library name, a version number or a broader keyword.",
                     art = { IconTile(Icons.Rounded.SearchOff) },
                 )
-                state.items.isEmpty() -> Column(Modifier.padding(horizontal = 20.dp).padding(top = 24.dp).enter(delayMillis = 240)) {
+                state.items.isEmpty() -> Column(
+                    Modifier
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 24.dp)
+                        .enter(delayMillis = 240),
+                ) {
                     Eyebrow("Try searching for")
                     Spacer(Modifier.height(12.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -319,6 +327,7 @@ internal fun SavedContent(
                 }
             }
         }
+        StatusBarScrim(listState.canScrollBackward)
     }
 }
 

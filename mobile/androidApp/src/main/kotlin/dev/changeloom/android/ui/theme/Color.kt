@@ -27,6 +27,10 @@ data class ChangeloomColors(
     val accent: Color,
     val success: Color,
     val glow: Color,
+    /**
+     * Bars over scrolling content (tab bar, top bar, system-bar scrims). The site's nav is 82% glass with a backdrop
+     * blur; Compose can't blur what's behind a view, so this is opaque instead, or text would show through.
+     */
     val navGlass: Color,
     val blue: Color,
     val rose: Color,
@@ -53,7 +57,7 @@ val DarkColors = ChangeloomColors(
     accent = Color(0xFF06B6D4),
     success = Color(0xFF10B981),
     glow = Color(0x2E6366F1),
-    navGlass = Color(0xD1070709),
+    navGlass = Color(0xFF070709),
     blue = Color(0xFF3B82F6),
     rose = Color(0xFFF43F5E),
     amber = Color(0xFFF59E0B),
@@ -79,7 +83,7 @@ val LightColors = ChangeloomColors(
     accent = Color(0xFF0284C7),
     success = Color(0xFF047857),
     glow = Color(0x1A4F46E5),
-    navGlass = Color(0xDBFFFFFF),
+    navGlass = Color(0xFFFFFFFF),
     blue = Color(0xFF2563EB),
     rose = Color(0xFFE11D48),
     amber = Color(0xFFD97706),

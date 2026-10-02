@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,7 +33,6 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -68,6 +69,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,6 +83,7 @@ import dev.changeloom.android.ui.components.GlassCard
 import dev.changeloom.android.ui.components.GridBackground
 import dev.changeloom.android.ui.components.ImportanceMeter
 import dev.changeloom.android.ui.components.KindPill
+import dev.changeloom.android.ui.components.NavigationBarScrim
 import dev.changeloom.android.ui.components.PrimaryButton
 import dev.changeloom.android.ui.components.SeverityDot
 import dev.changeloom.android.ui.components.SkeletonBlock
@@ -155,7 +158,7 @@ internal fun StoryDetailContent(
         } else {
             Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
                 if (hero != null) DetailHero(hero) else HeroSkeleton()
-                Column(Modifier.padding(horizontal = 20.dp)) {
+                Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = 20.dp)) {
                     when {
                         story != null -> {
                             MarkdownText(story.bodyMd, Modifier.enter(BODY_ENTER_DELAY))
@@ -176,6 +179,7 @@ internal fun StoryDetailContent(
                 Spacer(Modifier.height(ACTION_BAR_SPACE + navBottom))
             }
         }
+        NavigationBarScrim(Modifier.align(Alignment.BottomCenter))
         DetailTopBar(hero?.title, scroll, onBack, Modifier.align(Alignment.TopCenter))
         AnimatedVisibility(
             story != null,
@@ -245,11 +249,17 @@ private fun DetailHero(story: StorySummary) {
     }
 }
 
-/** Room for the status bar and the floating top bar above the hero. */
+/** Room for the status bar and the floating top bar above the hero, and for side insets in landscape. */
 @Composable
 private fun heroPadding(): PaddingValues {
-    val status = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    return PaddingValues(start = 20.dp, end = 20.dp, top = status + TOP_BAR_HEIGHT + 8.dp, bottom = 28.dp)
+    val safe = WindowInsets.safeDrawing.asPaddingValues()
+    val direction = LocalLayoutDirection.current
+    return PaddingValues(
+        start = safe.calculateStartPadding(direction) + 20.dp,
+        end = safe.calculateEndPadding(direction) + 20.dp,
+        top = safe.calculateTopPadding() + TOP_BAR_HEIGHT + 8.dp,
+        bottom = 28.dp,
+    )
 }
 
 @Composable

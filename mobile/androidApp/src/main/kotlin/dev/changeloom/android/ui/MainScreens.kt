@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -93,6 +95,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -114,6 +117,7 @@ import dev.changeloom.android.ui.components.SeverityDot
 import dev.changeloom.android.ui.components.SkeletonBlock
 import dev.changeloom.android.ui.components.SpotlightGlow
 import dev.changeloom.android.ui.components.StatusBanner
+import dev.changeloom.android.ui.components.StatusBarScrim
 import dev.changeloom.android.ui.components.TopicChip
 import dev.changeloom.android.ui.components.enter
 import dev.changeloom.android.ui.theme.ChangeloomTheme
@@ -391,6 +395,7 @@ internal fun FeedContent(
                 }
             }
         }
+        StatusBarScrim(listState.canScrollBackward)
     }
 }
 
@@ -645,14 +650,18 @@ internal fun LoadMoreEffect(listState: LazyListState, onLoadMore: () -> Unit) {
     }
 }
 
-/** List padding for a tab: below the status bar and above the tab bar ([shellPadding]). */
+/**
+ * List padding for a tab: clear of the status bar (when [top]), the tab bar ([shellPadding]) and any side
+ * insets (a 3-button nav bar or display cutout in landscape), so backgrounds stay full-bleed but content doesn't.
+ */
 @Composable
 internal fun listPadding(shellPadding: PaddingValues, top: Boolean = true): PaddingValues {
-    val status = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val safe = WindowInsets.safeDrawing.asPaddingValues()
+    val direction = LocalLayoutDirection.current
     return PaddingValues(
-        start = 20.dp,
-        end = 20.dp,
-        top = if (top) status + 8.dp else 8.dp,
+        start = safe.calculateStartPadding(direction) + 20.dp,
+        end = safe.calculateEndPadding(direction) + 20.dp,
+        top = if (top) safe.calculateTopPadding() + 8.dp else 8.dp,
         bottom = shellPadding.calculateBottomPadding() + 16.dp,
     )
 }

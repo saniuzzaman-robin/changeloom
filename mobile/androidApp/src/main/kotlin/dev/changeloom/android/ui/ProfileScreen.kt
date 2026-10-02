@@ -13,14 +13,18 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -72,6 +76,7 @@ import dev.changeloom.android.ui.components.GridBackground
 import dev.changeloom.android.ui.components.SecondaryButton
 import dev.changeloom.android.ui.components.SpotlightGlow
 import dev.changeloom.android.ui.components.StatusBanner
+import dev.changeloom.android.ui.components.StatusBarScrim
 import dev.changeloom.android.ui.components.TopicChip
 import dev.changeloom.android.ui.components.enter
 import dev.changeloom.android.ui.theme.ChangeloomTheme
@@ -131,64 +136,71 @@ internal fun ProfileContent(
     val c = ChangeloomTheme.colors
     val topicName = LocalTopicName.current
     var confirmSignOut by rememberSaveable { mutableStateOf(false) }
+    val scroll = rememberScrollState()
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(bottom = contentPadding.calculateBottomPadding() + 24.dp),
-    ) {
-        ProfileBanner(displayName, email, photo)
-        Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(28.dp)) {
-            Column(Modifier.enter(160)) {
-                Eyebrow("Your activity")
-                Spacer(Modifier.height(12.dp))
-                StatusBanner(state.error, Icons.Rounded.ErrorOutline, tone = BannerTone.Error, actionLabel = "Retry", onAction = onRetry)
-                if (state.error != null) Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatTile("Saved", state.stats?.saved, Icons.Rounded.Bookmark, c.primaryText, Modifier.weight(1f))
-                    StatTile("Read", state.stats?.read, Icons.Rounded.DoneAll, c.success, Modifier.weight(1f))
-                    StatTile("Topics", followed.size.toLong(), Icons.Rounded.Tag, c.accent, Modifier.weight(1f))
-                }
-            }
-
-            Column(Modifier.enter(240)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Eyebrow("Following", Modifier.weight(1f))
-                    TextButton(onEditTopics) {
-                        Icon(Icons.Rounded.Edit, contentDescription = null, Modifier.size(16.dp), tint = c.primaryText)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Edit topics", style = MaterialTheme.typography.labelLarge, color = c.primaryText)
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(scroll)
+                .padding(bottom = contentPadding.calculateBottomPadding() + 24.dp),
+        ) {
+            ProfileBanner(displayName, email, photo)
+            Column(
+                Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(28.dp),
+            ) {
+                Column(Modifier.enter(160)) {
+                    Eyebrow("Your activity")
+                    Spacer(Modifier.height(12.dp))
+                    StatusBanner(state.error, Icons.Rounded.ErrorOutline, tone = BannerTone.Error, actionLabel = "Retry", onAction = onRetry)
+                    if (state.error != null) Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        StatTile("Saved", state.stats?.saved, Icons.Rounded.Bookmark, c.primaryText, Modifier.weight(1f))
+                        StatTile("Read", state.stats?.read, Icons.Rounded.DoneAll, c.success, Modifier.weight(1f))
+                        StatTile("Topics", followed.size.toLong(), Icons.Rounded.Tag, c.accent, Modifier.weight(1f))
                     }
                 }
-                Spacer(Modifier.height(4.dp))
-                if (followed.isEmpty()) {
-                    Text("You're not following any topics yet.", style = MaterialTheme.typography.bodyMedium, color = c.fgMuted)
-                } else {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        followed.forEach { TopicChip(topicName(it)) }
+
+                Column(Modifier.enter(240)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Eyebrow("Following", Modifier.weight(1f))
+                        TextButton(onEditTopics) {
+                            Icon(Icons.Rounded.Edit, contentDescription = null, Modifier.size(16.dp), tint = c.primaryText)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Edit topics", style = MaterialTheme.typography.labelLarge, color = c.primaryText)
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    if (followed.isEmpty()) {
+                        Text("You're not following any topics yet.", style = MaterialTheme.typography.bodyMedium, color = c.fgMuted)
+                    } else {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            followed.forEach { TopicChip(topicName(it)) }
+                        }
                     }
                 }
-            }
 
-            Column(Modifier.enter(320)) {
-                Eyebrow("Appearance")
-                Spacer(Modifier.height(12.dp))
-                ThemeSwitch(themeMode, onThemeMode)
-            }
+                Column(Modifier.enter(320)) {
+                    Eyebrow("Appearance")
+                    Spacer(Modifier.height(12.dp))
+                    ThemeSwitch(themeMode, onThemeMode)
+                }
 
-            Column(Modifier.enter(400), horizontalAlignment = Alignment.CenterHorizontally) {
-                SecondaryButton(
-                    "Sign out",
-                    onClick = { confirmSignOut = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    icon = Icons.AutoMirrored.Rounded.Logout,
-                    contentColor = c.rose,
-                )
-                Spacer(Modifier.height(16.dp))
-                Eyebrow("Changeloom v$version")
+                Column(Modifier.enter(400), horizontalAlignment = Alignment.CenterHorizontally) {
+                    SecondaryButton(
+                        "Sign out",
+                        onClick = { confirmSignOut = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        icon = Icons.AutoMirrored.Rounded.Logout,
+                        contentColor = c.rose,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Eyebrow("Changeloom v$version")
+                }
             }
         }
+        StatusBarScrim(scroll.canScrollBackward)
     }
 
     if (confirmSignOut) {
@@ -222,6 +234,7 @@ private fun ProfileBanner(displayName: String?, email: String?, photo: ImageBitm
         Column(
             Modifier
                 .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                 .padding(start = 20.dp, end = 20.dp, top = status + 32.dp, bottom = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
