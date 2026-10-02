@@ -17,7 +17,9 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/catalog"
+	"github.com/saniuzzaman-robin/changeloom/curator/internal/claude"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/config"
+	"github.com/saniuzzaman-robin/changeloom/curator/internal/fetch"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/migrate"
 	"github.com/saniuzzaman-robin/changeloom/curator/seed"
 )
@@ -86,7 +88,12 @@ func run(args []string) error {
 			return fmt.Errorf("%w: requests needs pull or group", errUsage)
 		}
 		return fmt.Errorf("curator requests %s is not implemented yet", rest[0])
-	case "fetch", "sync", "run":
+	case "fetch":
+		if err := parse(flag.NewFlagSet("fetch", flag.ContinueOnError), rest); err != nil {
+			return err
+		}
+		return runFetch(ctx, cfg)
+	case "sync", "run":
 		return fmt.Errorf("curator %s is not implemented yet", cmd)
 	default:
 		return fmt.Errorf("%w: unknown command %q", errUsage, cmd)
@@ -142,6 +149,19 @@ func runSeed(ctx context.Context, cfg config.Config) error {
 	}
 	slog.InfoContext(ctx, "catalog seeded", "topics", res.Topics, "new_relations", res.Relations, "new_hints", res.Hints)
 	return nil
+}
+
+func runFetch(ctx context.Context, cfg config.Config) error {
+	pool, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	sum, err := fetch.New(pool, claude.New(cfg.Claude), cfg).Run(ctx)
+	slog.InfoContext(ctx, "fetch finished", "calls", sum.Calls, "failed", sum.Failed, "added", sum.Added,
+		"merged", sum.Merged, "rejected", sum.Rejected, "deferred_topics", len(sum.Deferred), "cost_usd", sum.CostUSD)
+	return err
 }
 
 // openPool connects to the database in the env var key and checks it is reachable.

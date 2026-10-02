@@ -26,6 +26,7 @@ type FetchRun struct {
 	StoriesAdded int32
 	Error        *string
 	CostUsd      *float64
+	TopicIds     []int64
 }
 
 type RequestInbox struct {

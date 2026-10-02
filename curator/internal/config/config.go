@@ -36,6 +36,12 @@ type Config struct {
 	MaxNewTopicsPerRun int
 	// ItemMaxAge drops stories published longer ago than this (CURATOR_ITEM_MAX_AGE_DAYS).
 	ItemMaxAge time.Duration
+	// MergeWindow is how far back a new story about the same CVE or project+version is merged
+	// into an existing one (CURATOR_MERGE_WINDOW_DAYS).
+	MergeWindow time.Duration
+	// UnfollowedInterval is the least time between fetches of a topic nobody follows
+	// (CURATOR_UNFOLLOWED_INTERVAL_HOURS). Followed topics are fetched on every run.
+	UnfollowedInterval time.Duration
 }
 
 // Claude configures the `claude -p` calls.
@@ -78,6 +84,8 @@ func Load() (Config, error) {
 		TopicsPerCall:      envInt(&errs, "CURATOR_TOPICS_PER_CALL", 5),
 		MaxNewTopicsPerRun: envInt(&errs, "CURATOR_MAX_NEW_TOPICS_PER_RUN", 5),
 		ItemMaxAge:         time.Duration(envInt(&errs, "CURATOR_ITEM_MAX_AGE_DAYS", 7)) * 24 * time.Hour,
+		MergeWindow:        time.Duration(envInt(&errs, "CURATOR_MERGE_WINDOW_DAYS", 14)) * 24 * time.Hour,
+		UnfollowedInterval: time.Duration(envInt(&errs, "CURATOR_UNFOLLOWED_INTERVAL_HOURS", 24)) * time.Hour,
 	}
 
 	if len(errs) > 0 {

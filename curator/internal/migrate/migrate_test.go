@@ -28,8 +28,8 @@ func TestLocalTracksCuratorMigrationsSeparately(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if curator != 1 || backend != 1 {
-		t.Fatalf("curator versions = %d, backend has 00001 = %d; want 1 and 1", curator, backend)
+	if curator != 2 || backend != 1 {
+		t.Fatalf("curator versions = %d, backend has 00001 = %d; want 2 and 1", curator, backend)
 	}
 	if _, err := pool.Exec(ctx, `SELECT topic_id, url FROM topic_hints LIMIT 0`); err != nil {
 		t.Fatalf("topic_hints missing: %v", err)
