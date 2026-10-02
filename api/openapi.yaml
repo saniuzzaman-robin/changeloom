@@ -276,7 +276,7 @@ components:
         description: {type: string}
     Me:
       type: object
-      required: [id, topics]
+      required: [id, topics, stats]
       properties:
         id: {type: integer, format: int64}
         email: {type: string}
@@ -284,6 +284,13 @@ components:
           type: array
           description: Followed topic slugs.
           items: {type: string}
+        stats: {$ref: "#/components/schemas/MeStats"}
+    MeStats:
+      type: object
+      required: [saved, read]
+      properties:
+        saved: {type: integer, format: int64, description: Number of bookmarked stories.}
+        read: {type: integer, format: int64, description: Number of stories marked read.}
     StoryKind:
       type: string
       enum: [release, breaking, security, deprecation, announcement, article]

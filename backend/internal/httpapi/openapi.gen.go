@@ -97,9 +97,19 @@ type Error struct {
 type Me struct {
 	Email *string `json:"email,omitempty"`
 	Id    int64   `json:"id"`
+	Stats MeStats `json:"stats"`
 
 	// Topics Followed topic slugs.
 	Topics []string `json:"topics"`
+}
+
+// MeStats defines model for MeStats.
+type MeStats struct {
+	// Read Number of stories marked read.
+	Read int64 `json:"read"`
+
+	// Saved Number of bookmarked stories.
+	Saved int64 `json:"saved"`
 }
 
 // Severity defines model for Severity.

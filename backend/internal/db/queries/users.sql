@@ -20,3 +20,8 @@ DELETE FROM user_topics WHERE user_id = @user_id;
 -- name: InsertUserTopics :exec
 INSERT INTO user_topics (user_id, topic_id)
 SELECT @user_id, unnest(@topic_ids::bigint[]);
+
+-- name: GetUserStats :one
+SELECT
+    (SELECT count(*) FROM user_bookmarks ub WHERE ub.user_id = @user_id)::bigint AS saved,
+    (SELECT count(*) FROM user_story_state uss WHERE uss.user_id = @user_id)::bigint AS read;

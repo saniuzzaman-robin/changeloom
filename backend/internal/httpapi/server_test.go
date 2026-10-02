@@ -269,6 +269,47 @@ func TestMeAndTopics(t *testing.T) {
 	}
 }
 
+func TestMeStats(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+	a := e.insertStory("A", now.Add(-2*time.Hour), "languages/go")
+	b := e.insertStory("B", now.Add(-1*time.Hour), "languages/go")
+	path := func(id int64, action string) string { return "/v1/stories/" + strconv.FormatInt(id, 10) + "/" + action }
+
+	var me httpapi.Me
+	e.do(http.MethodGet, "/v1/me", aliceToken, nil, &me)
+	if me.Stats != (httpapi.MeStats{}) {
+		t.Fatalf("new user stats = %+v, want zero", me.Stats)
+	}
+
+	for _, req := range []struct{ method, path string }{
+		{http.MethodPut, path(a, "bookmark")},
+		{http.MethodPut, path(b, "bookmark")},
+		{http.MethodPut, path(a, "read")},
+		{http.MethodPut, path(a, "read")}, // idempotent
+		{http.MethodPut, path(b, "bookmark")},
+	} {
+		if code := e.do(req.method, req.path, aliceToken, nil, nil); code != http.StatusNoContent {
+			t.Fatalf("%s %s: status %d", req.method, req.path, code)
+		}
+	}
+	e.do(http.MethodGet, "/v1/me", aliceToken, nil, &me)
+	if want := (httpapi.MeStats{Saved: 2, Read: 1}); me.Stats != want {
+		t.Fatalf("stats = %+v, want %+v", me.Stats, want)
+	}
+
+	// PUT /v1/me/topics returns the same stats, and other users' state doesn't count.
+	e.do(http.MethodPut, "/v1/me/topics", aliceToken, map[string]any{"topics": []string{"languages/go"}}, &me)
+	if want := (httpapi.MeStats{Saved: 2, Read: 1}); me.Stats != want {
+		t.Fatalf("stats after put topics = %+v, want %+v", me.Stats, want)
+	}
+	var bob httpapi.Me
+	e.do(http.MethodGet, "/v1/me", bobToken, nil, &bob)
+	if bob.Stats != (httpapi.MeStats{}) {
+		t.Fatalf("bob stats = %+v, want zero", bob.Stats)
+	}
+}
+
 func TestStoryDetailAndNotFound(t *testing.T) {
 	e := newEnv(t)
 	id := e.insertStory("detail", time.Now(), "languages/go", "security")

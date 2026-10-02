@@ -35,6 +35,24 @@ func (q *Queries) GetUserByFirebaseUID(ctx context.Context, firebaseUid string) 
 	return i, err
 }
 
+const getUserStats = `-- name: GetUserStats :one
+SELECT
+    (SELECT count(*) FROM user_bookmarks ub WHERE ub.user_id = $1)::bigint AS saved,
+    (SELECT count(*) FROM user_story_state uss WHERE uss.user_id = $1)::bigint AS read
+`
+
+type GetUserStatsRow struct {
+	Saved int64
+	Read  int64
+}
+
+func (q *Queries) GetUserStats(ctx context.Context, userID int64) (GetUserStatsRow, error) {
+	row := q.db.QueryRow(ctx, getUserStats, userID)
+	var i GetUserStatsRow
+	err := row.Scan(&i.Saved, &i.Read)
+	return i, err
+}
+
 const insertUserTopics = `-- name: InsertUserTopics :exec
 INSERT INTO user_topics (user_id, topic_id)
 SELECT $1, unnest($2::bigint[])

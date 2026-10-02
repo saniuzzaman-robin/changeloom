@@ -113,5 +113,15 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user auth.User)
 		internalError(w, r, "list user topics", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, Me{Id: user.ID, Email: user.Email, Topics: slugs})
+	stats, err := s.q.GetUserStats(r.Context(), user.ID)
+	if err != nil {
+		internalError(w, r, "get user stats", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, Me{
+		Id:     user.ID,
+		Email:  user.Email,
+		Topics: slugs,
+		Stats:  MeStats{Saved: stats.Saved, Read: stats.Read},
+	})
 }
