@@ -232,7 +232,7 @@ private fun Shell(tab: Tab, onTab: (Tab) -> Unit, onOpen: (Long) -> Unit, onEdit
         AnimatedContent(tab, transitionSpec = { tabTransition() }, label = "tabs") { current ->
             tabs.SaveableStateProvider(current.name) {
                 when (current) {
-                    Tab.Feed -> FeedScreen(onOpen, onProfile = { onTab(Tab.Profile) }, userEmail = profile.email, contentPadding = padding)
+                    Tab.Feed -> FeedScreen(onOpen, onProfile = { onTab(Tab.Profile) }, displayName = profile.displayName, userEmail = profile.email, contentPadding = padding)
                     Tab.Search -> SearchScreen(onOpen, contentPadding = padding)
                     Tab.Saved -> SavedScreen(onOpen, onBrowse = { onTab(Tab.Feed) }, contentPadding = padding)
                     Tab.Profile -> ProfileScreen(onEditTopics, contentPadding = padding)
@@ -290,6 +290,7 @@ private fun TabItem(tab: Tab, selected: Boolean, badge: Boolean, onClick: () -> 
 private fun FeedScreen(
     onOpen: (Long) -> Unit,
     onProfile: () -> Unit,
+    displayName: String?,
     userEmail: String?,
     contentPadding: PaddingValues,
     vm: TimelineViewModel = koinViewModel(),
@@ -297,6 +298,7 @@ private fun FeedScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     FeedContent(
         state = state,
+        displayName = displayName,
         userEmail = userEmail,
         contentPadding = contentPadding,
         onOpen = onOpen,
@@ -313,6 +315,7 @@ private fun FeedScreen(
 @Composable
 internal fun FeedContent(
     state: TimelineState,
+    displayName: String?,
     userEmail: String?,
     contentPadding: PaddingValues,
     onOpen: (Long) -> Unit,
@@ -354,7 +357,7 @@ internal fun FeedContent(
                 contentPadding = listPadding(contentPadding),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item(key = "header") { FeedHeader(userEmail, fresh.size, onProfile) }
+                item(key = "header") { FeedHeader(displayName, userEmail, fresh.size, onProfile) }
                 item(key = "banners") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         StatusBanner(if (state.offline) "Offline — showing saved stories" else null, Icons.Rounded.CloudOff, tone = BannerTone.Warning)
@@ -423,9 +426,9 @@ private fun LazyItemScope.FeedCard(
 }
 
 @Composable
-private fun FeedHeader(userEmail: String?, freshCount: Int, onProfile: () -> Unit) {
+private fun FeedHeader(displayName: String?, userEmail: String?, freshCount: Int, onProfile: () -> Unit) {
     val c = ChangeloomTheme.colors
-    val name = userEmail?.let(::firstNameOf)
+    val name = greetingName(displayName, userEmail)
     val today = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMM d", Locale.getDefault())) }
     Column(Modifier.padding(top = 8.dp, bottom = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -438,7 +441,7 @@ private fun FeedHeader(userEmail: String?, freshCount: Int, onProfile: () -> Uni
                 }
             }
             GradientAvatar(
-                userEmail ?: "?",
+                displayName ?: userEmail ?: "?",
                 Modifier.clip(CircleShape).clickable(onClickLabel = "Open profile", onClick = onProfile).enter(delayMillis = 120),
                 size = 48.dp,
             )
@@ -660,6 +663,10 @@ private fun greeting(now: LocalTime): String = when (now.hour) {
     else -> "Good evening"
 }
 
+/** First word of the account's display name ("Ada Lovelace" → "Ada"), else a guess from the email. */
+internal fun greetingName(displayName: String?, email: String?): String? =
+    displayName?.trim()?.split(Regex("\\s+"))?.firstOrNull { it.isNotBlank() } ?: email?.let(::firstNameOf)
+
 /** "jane.doe@x.dev" → "Jane". */
 internal fun firstNameOf(email: String): String? =
     email.substringBefore('@').split('.', '_', '-', '+').firstOrNull { it.isNotBlank() }
@@ -705,6 +712,7 @@ internal fun previewStories(now: Instant = Instant.now()): List<StorySummary> = 
 @Composable
 private fun FeedPreview(state: TimelineState) = FeedContent(
     state = state,
+    displayName = "Jane Doe",
     userEmail = "jane.doe@example.com",
     contentPadding = PaddingValues(bottom = 80.dp),
     onOpen = {}, onProfile = {}, onRefresh = {}, onLoadMore = {},
