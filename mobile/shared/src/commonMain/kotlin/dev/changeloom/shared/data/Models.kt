@@ -43,6 +43,8 @@ data class StorySummary(
     @SerialName("is_read") val isRead: Boolean,
     @SerialName("read_at") val readAt: String? = null,
     @SerialName("is_bookmarked") val isBookmarked: Boolean = false,
+    /** Timeline only: `followed`, `related` or `explore`; null elsewhere. */
+    val match: String? = null,
 )
 
 @Serializable
@@ -73,3 +75,21 @@ data class TimelinePage(
 
 @Serializable
 data class RegisterDeviceRequest(val token: String, val platform: String)
+
+@Serializable
+data class CreateTopicRequest(val text: String)
+
+@Serializable
+data class TopicRequest(
+    val id: Long,
+    val text: String,
+    /** `pending`, `accepted` (a new topic was created), `merged` (mapped to an existing topic) or `rejected`. */
+    val status: String,
+    val topic: String? = null,
+    val note: String? = null,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("resolved_at") val resolvedAt: String? = null,
+)
+
+@Serializable
+data class TopicRequestList(val items: List<TopicRequest>)

@@ -113,6 +113,8 @@ internal fun ProfileScreen(
         onEditTopics = onEditTopics,
         onThemeMode = vm::setThemeMode,
         onRetry = vm::refresh,
+        onRequestText = vm::setRequestText,
+        onSubmitRequest = vm::submitRequest,
         onSignOut = vm::signOut,
     )
 }
@@ -131,6 +133,8 @@ internal fun ProfileContent(
     onEditTopics: () -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
     onRetry: () -> Unit,
+    onRequestText: (String) -> Unit,
+    onSubmitRequest: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     val c = ChangeloomTheme.colors
@@ -179,6 +183,10 @@ internal fun ProfileContent(
                             followed.forEach { TopicChip(topicName(it)) }
                         }
                     }
+                }
+
+                Column(Modifier.enter(280)) {
+                    TopicRequestSection(state, onRequestText, onSubmitRequest)
                 }
 
                 Column(Modifier.enter(320)) {
@@ -341,6 +349,8 @@ private fun ProfilePreview(state: ProfileState, mode: ThemeMode) {
         onEditTopics = {},
         onThemeMode = {},
         onRetry = {},
+        onRequestText = {},
+        onSubmitRequest = {},
         onSignOut = {},
     )
 }

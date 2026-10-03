@@ -504,6 +504,10 @@ internal fun StoryCard(story: StorySummary, onOpen: () -> Unit, onToggleSave: ()
                 KindPill(story.kind)
                 SeverityDot(story.severity, Modifier.padding(start = 2.dp))
                 Spacer(Modifier.weight(1f))
+                // Only the timeline sets `match`; followed stories need no label.
+                if (story.match != null && story.match != "followed") {
+                    Eyebrow("Suggested", Modifier.padding(end = 8.dp), color = c.accent)
+                }
                 Eyebrow(relativeTime(story.publishedAt))
             }
             Spacer(Modifier.height(10.dp))

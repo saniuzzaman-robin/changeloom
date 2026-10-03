@@ -9,6 +9,7 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
@@ -105,5 +106,26 @@ class ChangeloomApiTest {
             ),
             seen,
         )
+    }
+
+    @Test
+    fun topicRequestsListAndCreate() = runTest {
+        val req = """{"id":7,"text":"Rust","status":"merged","topic":"lang/rust","note":"Already covered","created_at":"2026-09-01T00:00:00Z","resolved_at":"2026-09-02T00:00:00Z"}"""
+        var postBody: String? = null
+        val engine = MockEngine { request ->
+            if (request.method == HttpMethod.Post) {
+                postBody = (request.body as TextContent).text
+                respond(req, HttpStatusCode.Created, jsonHeaders)
+            } else {
+                respond("""{"items":[$req]}""", headers = jsonHeaders)
+            }
+        }
+        val api = ChangeloomApi(ChangeloomApi.createClient("http://api.test", engine), FakeAuth("tok"))
+        val created = api.requestTopic("Rust")
+        assertEquals("""{"text":"Rust"}""", postBody)
+        assertEquals("merged", created.status)
+        val list = api.topicRequests()
+        assertEquals(listOf("lang/rust"), list.map { it.topic })
+        assertEquals("Already covered", list.single().note)
     }
 }

@@ -9,6 +9,7 @@ import dev.changeloom.android.push.DeviceRegistrar
 import dev.changeloom.android.ui.theme.ThemeMode
 import dev.changeloom.android.ui.theme.ThemePreferences
 import dev.changeloom.shared.auth.AuthRepository
+import dev.changeloom.shared.data.ApiException
 import dev.changeloom.shared.data.ChangeloomApi
 import dev.changeloom.shared.data.CheckState
 import dev.changeloom.shared.data.MeStats
@@ -17,6 +18,7 @@ import dev.changeloom.shared.data.Story
 import dev.changeloom.shared.data.StoryPager
 import dev.changeloom.shared.data.TimelineRepository
 import dev.changeloom.shared.data.TimelineState
+import dev.changeloom.shared.data.TopicRequest
 import dev.changeloom.shared.data.TopicSelection
 import dev.changeloom.shared.data.TopicTree
 import kotlinx.coroutines.CancellationException
@@ -38,6 +40,8 @@ import kotlinx.coroutines.sync.withLock
 import java.io.IOException
 
 private const val TAG = "Profile"
+internal const val REQUEST_MIN_LENGTH = 2
+internal const val REQUEST_MAX_LENGTH = 100
 
 data class SignInState(val busy: Boolean = false, val error: String? = null)
 
@@ -310,6 +314,11 @@ data class ProfileState(
     /** Null until the first `/v1/me` load succeeds. */
     val stats: MeStats? = null,
     val error: String? = null,
+    /** The user's topic requests, newest first; null until the first load succeeds. */
+    val requests: List<TopicRequest>? = null,
+    val requestText: String = "",
+    val submittingRequest: Boolean = false,
+    val requestError: String? = null,
 )
 
 class ProfileViewModel(
@@ -352,6 +361,38 @@ class ProfileViewModel(
                 throw e
             } catch (e: Exception) {
                 _state.update { it.copy(error = e.message ?: "Couldn't load your stats") }
+            }
+            try {
+                val requests = api.topicRequests()
+                _state.update { it.copy(requests = requests) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Couldn't load topic requests", e)
+            }
+        }
+    }
+
+    fun setRequestText(text: String) = _state.update { it.copy(requestText = text, requestError = null) }
+
+    fun submitRequest() {
+        val text = _state.value.requestText.trim()
+        if (text.length < REQUEST_MIN_LENGTH || _state.value.submittingRequest) return
+        _state.update { it.copy(submittingRequest = true, requestError = null) }
+        viewModelScope.launch {
+            try {
+                val created = api.requestTopic(text)
+                _state.update { it.copy(submittingRequest = false, requestText = "", requests = listOf(created) + it.requests.orEmpty()) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val message = when ((e as? ApiException)?.status) {
+                    400 -> "Use $REQUEST_MIN_LENGTH to $REQUEST_MAX_LENGTH characters."
+                    409 -> "You already asked for that."
+                    429 -> "You have too many pending requests. Wait for some to be reviewed."
+                    else -> e.message ?: "Couldn't send your request"
+                }
+                _state.update { it.copy(submittingRequest = false, requestError = message) }
             }
         }
     }

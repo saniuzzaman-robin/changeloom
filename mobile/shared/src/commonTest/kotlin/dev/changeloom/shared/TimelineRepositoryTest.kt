@@ -43,8 +43,8 @@ private class MemoryCache(var timeline: List<StorySummary> = emptyList()) : Stor
 
 private val json = headersOf(HttpHeaders.ContentType, "application/json")
 
-private fun item(id: Long, at: String, read: Boolean) =
-    """{"id":$id,"title":"t$id","summary":"s","kind":"release","importance":3,"published_at":"$at","topics":["x"],"is_read":$read}"""
+private fun item(id: Long, at: String, read: Boolean, match: String? = null) =
+    """{"id":$id,"title":"t$id","summary":"s","kind":"release","importance":3,"published_at":"$at","topics":["x"],"is_read":$read${match?.let { ""","match":"$it"""" } ?: ""}}"""
 
 private fun page(vararg items: String, next: String? = null) =
     """{"items":[${items.joinToString(",")}]${next?.let { ""","next_cursor":"$it"""" } ?: ""}}"""
@@ -69,6 +69,25 @@ class TimelineRepositoryTest {
         assertEquals(listOf(1L, 2L, 3L), s.items.map { it.id })
         assertEquals("c1", s.nextCursor)
         assertEquals(3, cache.timeline.size)
+    }
+
+    @Test
+    fun markReadKeepsMatchTierOrder() = runTest {
+        val body = page(
+            item(1, "2026-09-01T10:00:00Z", false, "followed"),
+            item(2, "2026-09-05T10:00:00Z", false, "related"),
+            item(3, "2026-09-06T10:00:00Z", false, "explore"),
+            item(4, "2026-09-07T10:00:00Z", true, "followed"),
+        )
+        val repo = repo(MemoryCache()) { req ->
+            if (req.method == HttpMethod.Put) respond("", HttpStatusCode.NoContent) else respond(body, headers = json)
+        }
+        repo.refresh()
+        assertEquals("related", repo.state.value.items[1].match)
+        repo.setRead(3, true)
+        repo.setRead(3, false)
+        // Unread first (followed, related, explore by tier even though explore is newest), then read.
+        assertEquals(listOf(1L, 2L, 3L, 4L), repo.state.value.items.map { it.id })
     }
 
     @Test

@@ -17,9 +17,17 @@ data class TimelineState(
     val error: String? = null,
 )
 
-/** Timeline order: unread first, then newest first, then highest id — same as the server. */
+/** Followed topics first, then related ones, then the rest; a missing match (older server) counts as the rest. */
+internal fun matchTier(match: String?): Int = when (match) {
+    "followed" -> 0
+    "related" -> 1
+    else -> 2
+}
+
+/** Timeline order: unread first, then match tier, then newest first, then highest id — same as the server. */
 internal val timelineOrder: Comparator<StorySummary> =
     compareBy<StorySummary> { it.isRead }
+        .thenBy { matchTier(it.match) }
         .thenByDescending { Instant.parse(it.publishedAt) }
         .thenByDescending { it.id }
 

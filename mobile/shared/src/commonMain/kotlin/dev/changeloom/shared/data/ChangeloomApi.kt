@@ -10,6 +10,7 @@ import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.header
+import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -68,6 +69,16 @@ class ChangeloomApi(
     suspend fun addBookmark(id: Long) = client.put("v1/stories/$id/bookmark") { authorize() }.checkSuccess()
 
     suspend fun removeBookmark(id: Long) = client.delete("v1/stories/$id/bookmark") { authorize() }.checkSuccess()
+
+    suspend fun topicRequests(): List<TopicRequest> =
+        client.get("v1/topic-requests") { authorize() }.parse<TopicRequestList>().items
+
+    suspend fun requestTopic(text: String): TopicRequest =
+        client.post("v1/topic-requests") {
+            authorize()
+            contentType(ContentType.Application.Json)
+            setBody(CreateTopicRequest(text))
+        }.parse()
 
     suspend fun registerDevice(token: String, platform: String) =
         client.put("v1/me/devices") {
