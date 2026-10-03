@@ -95,6 +95,7 @@ import dev.changeloom.android.ui.theme.ChangeloomTextStyles
 import dev.changeloom.android.ui.theme.ChangeloomTheme
 import dev.changeloom.android.ui.theme.Durations
 import dev.changeloom.android.ui.theme.Radius
+import dev.changeloom.android.ui.theme.Spacing
 import dev.changeloom.android.ui.theme.ThemeMode
 import dev.changeloom.android.ui.theme.expoTween
 import dev.changeloom.android.ui.theme.kindColor
@@ -158,7 +159,7 @@ internal fun StoryDetailContent(
         } else {
             Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
                 if (hero != null) DetailHero(hero) else HeroSkeleton()
-                Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = 20.dp)) {
+                Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = Spacing.gutter)) {
                     when {
                         story != null -> {
                             MarkdownText(story.bodyMd, Modifier.enter(BODY_ENTER_DELAY))
@@ -255,8 +256,8 @@ private fun heroPadding(): PaddingValues {
     val safe = WindowInsets.safeDrawing.asPaddingValues()
     val direction = LocalLayoutDirection.current
     return PaddingValues(
-        start = safe.calculateStartPadding(direction) + 20.dp,
-        end = safe.calculateEndPadding(direction) + 20.dp,
+        start = safe.calculateStartPadding(direction) + Spacing.gutter,
+        end = safe.calculateEndPadding(direction) + Spacing.gutter,
         top = safe.calculateTopPadding() + TOP_BAR_HEIGHT + 8.dp,
         bottom = 28.dp,
     )

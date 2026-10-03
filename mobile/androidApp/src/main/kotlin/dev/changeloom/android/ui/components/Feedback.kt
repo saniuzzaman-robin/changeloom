@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -119,9 +118,9 @@ fun StatusBanner(
         Row(
             Modifier
                 .fillMaxWidth()
-                .clip(Radius.lg)
+                .clip(Radius.xl)
                 .background(color.copy(alpha = 0.10f))
-                .border(1.dp, color.copy(alpha = 0.25f), Radius.lg)
+                .border(1.dp, color.copy(alpha = 0.25f), Radius.xl)
                 .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -133,9 +132,7 @@ fun StatusBanner(
                 color = c.fg,
                 modifier = Modifier.weight(1f).padding(vertical = 8.dp),
             )
-            if (actionLabel != null) {
-                TextButton(onClick = onAction) { Text(actionLabel, color = color, style = MaterialTheme.typography.labelMedium) }
-            }
+            if (actionLabel != null) TextAction(actionLabel, onAction, color = color)
         }
     }
 }

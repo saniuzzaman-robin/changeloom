@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -22,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import dev.changeloom.android.ui.components.ChangeloomTextField
 import dev.changeloom.android.ui.components.Eyebrow
 import dev.changeloom.android.ui.components.PrimaryButton
 import dev.changeloom.android.ui.theme.ChangeloomTheme
@@ -42,28 +41,18 @@ internal fun TopicRequestSection(state: ProfileState, onText: (String) -> Unit, 
             color = c.fgMuted,
         )
         Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
+        ChangeloomTextField(
             value = state.requestText,
             onValueChange = { if (it.length <= REQUEST_MAX_LENGTH) onText(it) },
             modifier = Modifier.fillMaxWidth(),
             enabled = !state.submittingRequest,
-            placeholder = { Text("e.g. Rust, Kubernetes, Figma") },
+            placeholder = "e.g. Rust, Kubernetes, Figma",
             isError = state.requestError != null,
-            supportingText = state.requestError?.let { { Text(it) } },
+            supportingText = state.requestError,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
             keyboardActions = KeyboardActions(onSend = { if (canSubmit) onSubmit() }),
-            singleLine = true,
-            shape = Radius.lg,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = c.surface2,
-                unfocusedContainerColor = c.surface2,
-                disabledContainerColor = c.surface2,
-                focusedBorderColor = c.primary,
-                unfocusedBorderColor = c.lineStrong,
-                cursorColor = c.primary,
-            ),
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
         PrimaryButton(
             "Send request",
             onClick = onSubmit,

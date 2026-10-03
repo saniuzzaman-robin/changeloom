@@ -123,6 +123,7 @@ import dev.changeloom.android.ui.components.enter
 import dev.changeloom.android.ui.theme.ChangeloomTheme
 import dev.changeloom.android.ui.theme.Durations
 import dev.changeloom.android.ui.theme.Radius
+import dev.changeloom.android.ui.theme.Spacing
 import dev.changeloom.android.ui.theme.ThemeMode
 import dev.changeloom.android.ui.theme.expoTween
 import dev.changeloom.shared.data.StorySummary
@@ -490,13 +491,14 @@ internal fun StoryCard(story: StorySummary, onOpen: () -> Unit, onToggleSave: ()
     GlassCard(
         modifier.fillMaxWidth(),
         onClick = onOpen,
-        contentPadding = PaddingValues(start = 16.dp, end = 4.dp, top = 14.dp, bottom = 4.dp),
+        contentPadding = PaddingValues(start = Spacing.cardPadding, end = 4.dp, top = Spacing.cardPadding, bottom = 4.dp),
     ) {
         Column(
             Modifier.drawBehind {
                 // Unread accent: a gradient rail along the card's left edge.
                 if (accent > 0f) {
-                    drawRect(brand, topLeft = Offset(-16.dp.toPx(), -14.dp.toPx()), size = Size(3.dp.toPx(), size.height + 18.dp.toPx()), alpha = accent)
+                    val inset = Spacing.cardPadding.toPx()
+                    drawRect(brand, topLeft = Offset(-inset, -inset), size = Size(3.dp.toPx(), size.height + inset + 4.dp.toPx()), alpha = accent)
                 }
             },
         ) {
@@ -663,8 +665,8 @@ internal fun listPadding(shellPadding: PaddingValues, top: Boolean = true): Padd
     val safe = WindowInsets.safeDrawing.asPaddingValues()
     val direction = LocalLayoutDirection.current
     return PaddingValues(
-        start = safe.calculateStartPadding(direction) + 20.dp,
-        end = safe.calculateEndPadding(direction) + 20.dp,
+        start = safe.calculateStartPadding(direction) + Spacing.gutter,
+        end = safe.calculateEndPadding(direction) + Spacing.gutter,
         top = if (top) safe.calculateTopPadding() + 8.dp else 8.dp,
         bottom = shellPadding.calculateBottomPadding() + 16.dp,
     )

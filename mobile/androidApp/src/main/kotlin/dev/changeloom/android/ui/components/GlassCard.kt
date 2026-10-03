@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.unit.dp
 import dev.changeloom.android.ui.theme.ChangeloomTheme
 import dev.changeloom.android.ui.theme.Radius
+import dev.changeloom.android.ui.theme.Spacing
 
 /**
  * The site's card: `surface` fill, 1px `line` border, an inset top highlight in dark mode and a soft
@@ -34,7 +35,7 @@ fun GlassCard(
     shape: Shape = Radius.xl,
     border: Brush? = null,
     background: Color = ChangeloomTheme.colors.surface,
-    contentPadding: PaddingValues = PaddingValues(16.dp),
+    contentPadding: PaddingValues = PaddingValues(Spacing.cardPadding),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val c = ChangeloomTheme.colors

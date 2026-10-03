@@ -12,6 +12,9 @@ object Radius {
     val xl = RoundedCornerShape(16.dp)
     val xxl = RoundedCornerShape(24.dp)
     val pill = RoundedCornerShape(percent = 50)
+
+    /** Bottom sheet: rounded top corners only. */
+    val sheet = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
 }
 
 val ChangeloomShapes = Shapes(

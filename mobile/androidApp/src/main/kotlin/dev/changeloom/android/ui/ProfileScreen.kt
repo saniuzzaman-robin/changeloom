@@ -2,10 +2,12 @@ package dev.changeloom.android.ui
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -43,7 +46,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -77,11 +79,13 @@ import dev.changeloom.android.ui.components.SecondaryButton
 import dev.changeloom.android.ui.components.SpotlightGlow
 import dev.changeloom.android.ui.components.StatusBanner
 import dev.changeloom.android.ui.components.StatusBarScrim
+import dev.changeloom.android.ui.components.TextAction
 import dev.changeloom.android.ui.components.TopicChip
 import dev.changeloom.android.ui.components.enter
 import dev.changeloom.android.ui.theme.ChangeloomTheme
 import dev.changeloom.android.ui.theme.Durations
 import dev.changeloom.android.ui.theme.Radius
+import dev.changeloom.android.ui.theme.Spacing
 import dev.changeloom.android.ui.theme.ThemeMode
 import dev.changeloom.android.ui.theme.expoTween
 import dev.changeloom.shared.data.MeStats
@@ -151,7 +155,7 @@ internal fun ProfileContent(
         ) {
             ProfileBanner(displayName, email, photo)
             Column(
-                Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = 20.dp),
+                Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = Spacing.gutter),
                 verticalArrangement = Arrangement.spacedBy(28.dp),
             ) {
                 Column(Modifier.enter(160)) {
@@ -169,11 +173,7 @@ internal fun ProfileContent(
                 Column(Modifier.enter(240)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Eyebrow("Following", Modifier.weight(1f))
-                        TextButton(onEditTopics) {
-                            Icon(Icons.Rounded.Edit, contentDescription = null, Modifier.size(16.dp), tint = c.primaryText)
-                            Spacer(Modifier.width(6.dp))
-                            Text("Edit topics", style = MaterialTheme.typography.labelLarge, color = c.primaryText)
-                        }
+                        TextAction("Edit topics", onEditTopics, icon = Icons.Rounded.Edit)
                     }
                     Spacer(Modifier.height(4.dp))
                     if (followed.isEmpty()) {
@@ -215,12 +215,12 @@ internal fun ProfileContent(
         AlertDialog(
             onDismissRequest = { confirmSignOut = false },
             confirmButton = {
-                TextButton({
+                TextAction("Sign out", onClick = {
                     confirmSignOut = false
                     onSignOut()
-                }) { Text("Sign out", color = c.rose) }
+                }, color = c.rose)
             },
-            dismissButton = { TextButton({ confirmSignOut = false }) { Text("Cancel", color = c.fgMuted) } },
+            dismissButton = { TextAction("Cancel", onClick = { confirmSignOut = false }, color = c.fgMuted) },
             title = { Text("Sign out?") },
             text = { Text("This device stops getting notifications until you sign back in.") },
             shape = Radius.xxl,
@@ -243,7 +243,7 @@ private fun ProfileBanner(displayName: String?, email: String?, photo: ImageBitm
             Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                .padding(start = 20.dp, end = 20.dp, top = status + 32.dp, bottom = 32.dp),
+                .padding(start = Spacing.gutter, end = Spacing.gutter, top = status + 32.dp, bottom = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             GradientAvatar(displayName ?: email ?: name, Modifier.enter(0), size = 88.dp, photo = photo)
@@ -294,36 +294,48 @@ private fun StatTile(label: String, value: Long?, icon: ImageVector, tint: Color
     }
 }
 
+/** Segmented System / Light / Dark switch; a washed pill slides under the selected option. */
 @Composable
 private fun ThemeSwitch(mode: ThemeMode, onChange: (ThemeMode) -> Unit) {
     val c = ChangeloomTheme.colors
-    Row(
+    val options = ThemeMode.entries
+    BoxWithConstraints(
         Modifier
             .fillMaxWidth()
-            .clip(Radius.lg)
+            .clip(Radius.pill)
             .background(c.surface2)
-            .border(1.dp, c.line, Radius.lg)
-            .padding(4.dp)
-            .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+            .border(1.dp, c.line, Radius.pill)
+            .padding(4.dp),
     ) {
-        ThemeMode.entries.forEach { option ->
-            val selected = option == mode
-            val bg by animateColorAsState(if (selected) c.primary.copy(alpha = 0.16f) else Color.Transparent, expoTween(), label = "themeBg")
-            val fg by animateColorAsState(if (selected) c.primaryText else c.fgMuted, expoTween(), label = "themeFg")
-            Row(
-                Modifier
-                    .weight(1f)
-                    .clip(Radius.md)
-                    .background(bg)
-                    .selectable(selected, role = Role.RadioButton) { onChange(option) }
-                    .padding(vertical = 10.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(option.icon(), contentDescription = null, Modifier.size(18.dp), tint = fg)
-                Spacer(Modifier.width(8.dp))
-                Text(option.name, style = MaterialTheme.typography.labelLarge, color = fg)
+        val segment = maxWidth / options.size
+        val indicator by animateDpAsState(segment * mode.ordinal, expoTween(Durations.SLOW), label = "themeIndicator")
+        Box(
+            Modifier
+                .offset(x = indicator)
+                .width(segment)
+                .height(SEGMENT_HEIGHT)
+                .clip(Radius.pill)
+                .background(c.surface)
+                .background(ChangeloomTheme.gradients.wash)
+                .border(1.dp, c.primary.copy(alpha = 0.4f), Radius.pill),
+        )
+        Row(Modifier.selectableGroup()) {
+            options.forEach { option ->
+                val selected = option == mode
+                val fg by animateColorAsState(if (selected) c.primaryText else c.fgMuted, expoTween(), label = "themeFg")
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .height(SEGMENT_HEIGHT)
+                        .clip(Radius.pill)
+                        .selectable(selected, role = Role.RadioButton) { onChange(option) },
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(option.icon(), contentDescription = null, Modifier.size(18.dp), tint = fg)
+                    Spacer(Modifier.width(8.dp))
+                    Text(option.name, style = MaterialTheme.typography.labelLarge, color = fg)
+                }
             }
         }
     }
@@ -366,3 +378,5 @@ private fun ProfileDark() = ChangeloomTheme(ThemeMode.Dark) {
 private fun ProfileErrorLight() = ChangeloomTheme(ThemeMode.Light) {
     Box(Modifier.background(ChangeloomTheme.colors.bg)) { ProfilePreview(ProfileState(error = "Couldn't reach the server"), ThemeMode.Light) }
 }
+
+private val SEGMENT_HEIGHT = 40.dp

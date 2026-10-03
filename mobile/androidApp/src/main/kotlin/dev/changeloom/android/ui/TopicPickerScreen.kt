@@ -60,10 +60,7 @@ import androidx.compose.material.icons.rounded.Tag
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -86,6 +83,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.changeloom.android.ui.components.BannerTone
+import dev.changeloom.android.ui.components.ChangeloomTextField
 import dev.changeloom.android.ui.components.EmptyState
 import dev.changeloom.android.ui.components.Eyebrow
 import dev.changeloom.android.ui.components.GlassCard
@@ -97,12 +95,14 @@ import dev.changeloom.android.ui.components.PrimaryButton
 import dev.changeloom.android.ui.components.SkeletonBlock
 import dev.changeloom.android.ui.components.SpotlightGlow
 import dev.changeloom.android.ui.components.StatusBanner
+import dev.changeloom.android.ui.components.TextAction
 import dev.changeloom.android.ui.components.TopicChip
 import dev.changeloom.android.ui.components.enter
 import dev.changeloom.android.ui.components.shimmer
 import dev.changeloom.android.ui.theme.ChangeloomTheme
 import dev.changeloom.android.ui.theme.Durations
 import dev.changeloom.android.ui.theme.Radius
+import dev.changeloom.android.ui.theme.Spacing
 import dev.changeloom.android.ui.theme.ThemeMode
 import dev.changeloom.android.ui.theme.expoTween
 import dev.changeloom.shared.data.CheckState
@@ -174,19 +174,19 @@ internal fun TopicPickerContent(
                 state.query,
                 onQueryChange,
                 enabled = selection != null,
-                modifier = Modifier.padding(horizontal = 20.dp).padding(top = 20.dp).enter(delayMillis = 240),
+                modifier = Modifier.padding(horizontal = Spacing.gutter).padding(top = 20.dp).enter(delayMillis = 240),
             )
             StatusBanner(
                 state.error,
                 Icons.Rounded.ErrorOutline,
-                Modifier.padding(horizontal = 20.dp).padding(top = 12.dp),
+                Modifier.padding(horizontal = Spacing.gutter).padding(top = 12.dp),
                 tone = BannerTone.Error,
                 actionLabel = if (selection == null) "Retry" else null,
                 onAction = onRetry,
             )
             LazyColumn(
                 Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                contentPadding = PaddingValues(horizontal = Spacing.gutter, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 when {
@@ -219,12 +219,12 @@ internal fun TopicPickerContent(
 private fun PickerHeader(mode: TopicPickerMode, onExit: () -> Unit) {
     val c = ChangeloomTheme.colors
     val onboarding = mode == TopicPickerMode.Onboarding
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.gutter).padding(top = 8.dp)) {
         Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
             if (onboarding) {
                 LoomMark(Modifier.size(30.dp))
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = onExit) { Text("Sign out", style = MaterialTheme.typography.labelLarge, color = c.fgMuted) }
+                TextAction("Sign out", onExit, color = c.fgMuted)
             } else {
                 IconButton(onClick = onExit) {
                     Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = c.fg)
@@ -258,32 +258,19 @@ private fun PickerHeader(mode: TopicPickerMode, onExit: () -> Unit) {
 
 @Composable
 private fun SearchField(query: String, onChange: (String) -> Unit, enabled: Boolean, modifier: Modifier = Modifier) {
-    val c = ChangeloomTheme.colors
-    OutlinedTextField(
+    ChangeloomTextField(
         value = query,
         onValueChange = onChange,
         modifier = modifier.fillMaxWidth(),
         enabled = enabled,
-        placeholder = { Text("Search topics") },
-        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
-        trailingIcon = if (query.isEmpty()) {
+        placeholder = "Search topics",
+        leadingIcon = Icons.Rounded.Search,
+        trailing = if (query.isEmpty()) {
             null
         } else {
             { IconButton(onClick = { onChange("") }) { Icon(Icons.Rounded.Close, contentDescription = "Clear search") } }
         },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        singleLine = true,
-        shape = Radius.lg,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = c.surface2,
-            unfocusedContainerColor = c.surface2,
-            disabledContainerColor = c.surface2,
-            focusedBorderColor = c.primary,
-            unfocusedBorderColor = c.lineStrong,
-            focusedLeadingIconColor = c.primaryText,
-            unfocusedLeadingIconColor = c.fgSubtle,
-            cursorColor = c.primary,
-        ),
     )
 }
 
@@ -471,13 +458,11 @@ private fun PickerBar(
             .background(c.navGlass)
             .drawBehind { drawLine(c.line, Offset.Zero, Offset(size.width, 0f), 1.dp.toPx()) }
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(horizontal = Spacing.gutter, vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onSelectAll, enabled = editable) { Text("Select all", style = MaterialTheme.typography.labelLarge) }
-            TextButton(onClick = onClear, enabled = editable && selection?.isEmpty == false) {
-                Text("Clear", style = MaterialTheme.typography.labelLarge)
-            }
+            TextAction("Select all", onSelectAll, enabled = editable)
+            TextAction("Clear", onClear, enabled = editable && selection?.isEmpty == false)
             Spacer(Modifier.weight(1f))
             AnimatedContent(count, label = "selectedCount") { n ->
                 Eyebrow(if (n == 1) "1 topic" else "$n topics", color = if (n > 0) c.primaryText else c.fgSubtle)

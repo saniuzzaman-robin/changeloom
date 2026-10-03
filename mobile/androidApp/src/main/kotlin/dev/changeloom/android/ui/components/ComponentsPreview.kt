@@ -10,8 +10,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.AlternateEmail
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import dev.changeloom.android.ui.theme.ChangeloomTheme
+import dev.changeloom.android.ui.theme.Spacing
 import dev.changeloom.android.ui.theme.ThemeMode
 
 @Composable
@@ -28,14 +32,21 @@ private fun Gallery() {
     Box(Modifier.background(c.bg)) {
         GridBackground(Modifier.matchParentSize())
         SpotlightGlow(Modifier.matchParentSize())
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.padding(Spacing.gutter), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 LoomMark(Modifier.size(56.dp))
                 GradientText("Changeloom", style = MaterialTheme.typography.displaySmall)
             }
             WordRiseText("Every release that matters, woven into one feed.", style = MaterialTheme.typography.titleMedium, color = c.fgMuted)
-            PrimaryButton("Continue", onClick = {}, modifier = Modifier.fillMaxWidth())
+            PrimaryButton("Continue", onClick = {}, modifier = Modifier.fillMaxWidth(), trailingIcon = Icons.AutoMirrored.Rounded.ArrowForward)
+            PrimaryButton("Save", onClick = {}, modifier = Modifier.fillMaxWidth(), enabled = false)
             SecondaryButton("Create account", onClick = {}, modifier = Modifier.fillMaxWidth())
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextAction("Edit topics", onClick = {}, icon = Icons.Rounded.Edit)
+                TextAction("Cancel", onClick = {}, color = c.fgMuted)
+            }
+            ChangeloomTextField("", onValueChange = {}, label = "Email", placeholder = "you@example.com", leadingIcon = Icons.Rounded.AlternateEmail)
+            ChangeloomTextField("ru", onValueChange = {}, isError = true, supportingText = "At least 3 characters")
             GlassCard(onClick = {}) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     KindPill("security")
@@ -63,10 +74,10 @@ private fun Gallery() {
     }
 }
 
-@Preview(name = "Dark", heightDp = 900)
+@Preview(name = "Dark", heightDp = 1250)
 @Composable
 private fun GalleryDark() = ChangeloomTheme(ThemeMode.Dark) { Gallery() }
 
-@Preview(name = "Light", heightDp = 900)
+@Preview(name = "Light", heightDp = 1250)
 @Composable
 private fun GalleryLight() = ChangeloomTheme(ThemeMode.Light) { Gallery() }
