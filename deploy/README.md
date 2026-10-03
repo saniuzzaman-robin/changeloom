@@ -276,11 +276,17 @@ them (see Continuous deployment). Play rejects a `versionCode` it has seen befor
     the commit the image was built from, then migrates, deploys, checks and promotes the same way.
 - `.github/workflows/android-release.yml`
   - **Staging:** pushes to `main` that touch `mobile/` build the signed staging APK and send it to
-    Firebase App Distribution.
+    Firebase App Distribution. Its `versionName` is the last release plus the build, e.g.
+    `1.2.3-staging.45+abc1234` (run 45, commit abc1234; `0.0.0-staging…` before the first release).
   - **Prod:** a `v1.2.3` tag (after approval) builds the signed prod AAB with `versionName` 1.2.3 and
     uploads it to Play's internal track. Promote it in Play Console.
   - `versionCode` is the workflow's run number plus the optional repo variable
     `ANDROID_VERSION_CODE_OFFSET`. Set the offset above any `versionCode` you uploaded by hand.
+- **Cutting a release:** `make release` lists the commits since the last `v*` tag and proposes the next
+  version from their conventional-commit types (`feat` → minor, `fix`/`perf` → patch, `type!:` or
+  `BREAKING CHANGE:` → major). After you confirm, it tags `main` and pushes the tag, which starts the prod
+  release above. It refuses unless `main` is clean and matches `origin/main`. `make release DRY_RUN=1` only
+  shows the proposal; `make release VERSION=1.4.0` picks the number yourself (it must be above the last).
 
 The workflows reach GCP through Workload Identity Federation, so there are no service account keys.
 **One-time setup, per env.** These commands change IAM and create resources; read them, then run them

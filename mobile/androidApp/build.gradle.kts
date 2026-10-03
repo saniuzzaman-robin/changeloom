@@ -50,6 +50,12 @@ fun admobProperty(name: String): String? =
 // Debug builds only: the hashed device id UMP logs, to test the EEA consent form from anywhere.
 val umpTestDeviceId = providers.gradleProperty("changeloom.umpTestDeviceId").orNull.orEmpty()
 
+// CI names staging builds after the last release and the build: -Pchangeloom.stagingBuild=<run>+<commit> makes
+// versionName 1.2.3-staging.45+abc1234 (with -Pchangeloom.versionName=1.2.3). Semver pre-release/build characters only.
+val stagingBuild = providers.gradleProperty("changeloom.stagingBuild").orNull?.also {
+    if (!Regex("[0-9A-Za-z.+-]+").matches(it)) throw GradleException("changeloom.stagingBuild must look like 45+abc1234, got \"$it\"")
+}
+
 // Release signing (both envs use the same upload key), never committed: mobile/keystore.properties
 // with storeFile (relative to mobile/), storePassword, keyAlias and keyPassword.
 val keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -95,7 +101,7 @@ android {
             // Its own app, so staging and prod install side by side and can register the same signing keys
             // (Google sign-in needs each package + SHA-1 pair to be unique across projects).
             applicationIdSuffix = ".staging"
-            versionNameSuffix = "-staging"
+            versionNameSuffix = "-staging" + stagingBuild?.let { ".$it" }.orEmpty()
         }
         create("prod") {
             dimension = "env"

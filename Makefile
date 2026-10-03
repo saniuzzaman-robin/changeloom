@@ -47,7 +47,7 @@ GRADLE ?= ./gradlew
 
 .PHONY: db-up db-down migrate migrate-down migrate-status migrate-remote generate run-api build test lint fmt \
 	curator-db curator-migrate curator-seed curator-generate curator-build curator-test curator-lint curator-fmt \
-	deploy-api android-apk android-bundle
+	deploy-api android-apk android-bundle release
 
 db-up: ## Start the dev Postgres (docker), or check the installed one is reachable (local)
 ifeq ($(POSTGRES_MODE),local)
@@ -130,3 +130,6 @@ android-apk: ## Build the signed release APK for DEPLOY_ENV (androidApp/build/ou
 
 android-bundle: ## Build the signed release AAB for DEPLOY_ENV, for Play Console (androidApp/build/outputs/bundle/<env>Release)
 	cd $(MOBILE) && $(GRADLE) :androidApp:bundle$(DEPLOY_FLAVOR)Release
+
+release: ## Propose the next app version from commits since the last v* tag, then tag main and push it (asks first; VERSION=x.y.z overrides, DRY_RUN=1 only shows)
+	deploy/release.sh $(if $(VERSION),--version $(VERSION)) $(if $(DRY_RUN),--dry-run)
