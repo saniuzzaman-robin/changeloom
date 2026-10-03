@@ -30,7 +30,13 @@ private const val UNREGISTER_TIMEOUT_MS = 5_000L
 /** Intent extra (and FCM data key) holding the id of the story a notification is about. */
 const val EXTRA_STORY_ID = "story_id"
 
-/** Registers this device's FCM token with the API. Failures are logged: push is best-effort. */
+/**
+ * Registers this device's FCM token with the API. Failures are logged: push is best-effort.
+ *
+ * FirebaseMessaging.getToken() is deprecated in favour of register()/FIDs, which also needs api, schema and
+ * manifest changes (and the backend sender on FIDs), so it is suppressed until that migration is done.
+ */
+@Suppress("DEPRECATION")
 class DeviceRegistrar(private val api: ChangeloomApi) {
     /** Registers [token], or the current FCM token when null. */
     suspend fun register(token: String? = null) {
