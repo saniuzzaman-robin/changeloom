@@ -1,0 +1,25 @@
+# Cloud Monitoring alert policy; create it with the commands in deploy/README.md (Monitoring), which
+# replace __SERVICE__ with CLOUD_RUN_SERVICE.
+displayName: "changeloom api: slow responses"
+combiner: OR
+documentation:
+  mimeType: text/markdown
+  content: >
+    The api's p95 latency stayed above 2s for 10 minutes. With little traffic, cold starts
+    (min instances 0) and POST /internal/notify (which sends push notifications) can push p95 up on
+    their own; check Cloud Trace for slow spans before acting.
+conditions:
+  - displayName: "p95 latency above 2s for 10 min"
+    conditionThreshold:
+      filter: >-
+        resource.type = "cloud_run_revision" AND resource.labels.service_name = "__SERVICE__"
+        AND metric.type = "run.googleapis.com/request_latencies"
+      aggregations:
+        - alignmentPeriod: 300s
+          perSeriesAligner: ALIGN_PERCENTILE_95
+          crossSeriesReducer: REDUCE_MAX
+      comparison: COMPARISON_GT
+      thresholdValue: 2000
+      duration: 600s
+      trigger:
+        count: 1

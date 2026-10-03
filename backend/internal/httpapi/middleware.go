@@ -9,13 +9,22 @@ import (
 	"runtime/debug"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/logging"
 )
 
 // withTrace stores the request's trace in its context, so every log entry for it carries the trace.
+// When tracing sampled this request, entries point at its server span so they show under it in
+// Cloud Trace; otherwise they use the trace headers Cloud Run sent.
 func withTrace(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r.WithContext(logging.WithTrace(r.Context(), logging.TraceFromRequest(r))))
+		t := logging.TraceFromRequest(r)
+		if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() && sc.IsSampled() {
+			t = logging.Trace{TraceID: sc.TraceID().String(), SpanID: sc.SpanID().String()}
+		}
+		next.ServeHTTP(w, r.WithContext(logging.WithTrace(r.Context(), t)))
 	})
 }
 
@@ -100,13 +109,18 @@ func withTimeout(d time.Duration, next http.Handler) http.Handler {
 }
 
 // jsonFallback answers requests that match no route with the API's JSON error instead of the mux's
-// plain-text 404 and 405 (keeping the Allow header).
+// plain-text 404 and 405 (keeping the Allow header). It names the request's span after the matched
+// route, which keeps span names few (no IDs from the path); without tracing the span is a no-op.
 func jsonFallback(mux *http.ServeMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if h, pattern := mux.Handler(r); pattern == "" {
+		h, pattern := mux.Handler(r)
+		if pattern == "" {
 			h.ServeHTTP(&fallbackWriter{ResponseWriter: w}, r)
 			return
 		}
+		span := trace.SpanFromContext(r.Context())
+		span.SetName(pattern)
+		span.SetAttributes(attribute.String("http.route", pattern))
 		mux.ServeHTTP(w, r)
 	})
 }

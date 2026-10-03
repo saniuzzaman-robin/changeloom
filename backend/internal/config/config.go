@@ -51,6 +51,13 @@ type Config struct {
 	// and per signed-in user on each instance (RATE_LIMIT_IP_PER_MIN, RATE_LIMIT_USER_PER_MIN).
 	RateLimitIPPerMin   int
 	RateLimitUserPerMin int
+	// OTelEnabled exports traces to Cloud Trace (OTEL_ENABLED). It needs FIREBASE_PROJECT_ID (the
+	// GCP project), OTEL_EXPORTER_OTLP_ENDPOINT and Application Default Credentials.
+	OTelEnabled bool
+	// OTelSampleRatio is the fraction of requests traced (OTEL_SAMPLE_RATIO, 0 to 1).
+	OTelSampleRatio float64
+	// ServiceName names the service in traces: K_SERVICE, which Cloud Run sets, or "changeloom-api".
+	ServiceName string
 }
 
 // Load reads configuration from the environment and validates it.
@@ -103,6 +110,14 @@ func Load() (Config, error) {
 	requestTimeout := envDuration(&errs, "REQUEST_TIMEOUT", 30*time.Second)
 	rateLimitIP := envInt(&errs, "RATE_LIMIT_IP_PER_MIN", 300)
 	rateLimitUser := envInt(&errs, "RATE_LIMIT_USER_PER_MIN", 120)
+	otelEnabled := envBool(&errs, "OTEL_ENABLED")
+	sampleRatio := envRatio(&errs, "OTEL_SAMPLE_RATIO", 0.1)
+	if otelEnabled && firebaseProjectID == "" {
+		errs = append(errs, errors.New("FIREBASE_PROJECT_ID is required when OTEL_ENABLED=true: traces go to that GCP project (see .env.example)"))
+	}
+	if otelEnabled && getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "") == "" {
+		errs = append(errs, errors.New("OTEL_EXPORTER_OTLP_ENDPOINT is required when OTEL_ENABLED=true, e.g. https://telemetry.googleapis.com (see .env.example)"))
+	}
 	if pushEnabled && firebaseProjectID == "" {
 		errs = append(errs, errors.New("FIREBASE_PROJECT_ID is required when FCM_ENABLED=true (see .env.example)"))
 	}
@@ -127,6 +142,9 @@ func Load() (Config, error) {
 		RequestTimeout:         requestTimeout,
 		RateLimitIPPerMin:      rateLimitIP,
 		RateLimitUserPerMin:    rateLimitUser,
+		OTelEnabled:            otelEnabled,
+		OTelSampleRatio:        sampleRatio,
+		ServiceName:            getenv("K_SERVICE", "changeloom-api"),
 	}, nil
 }
 
@@ -157,6 +175,17 @@ func envDuration(errs *[]error, key string, fallback time.Duration) time.Duratio
 		return fallback
 	}
 	return d
+}
+
+// envRatio reads a fraction between 0 and 1, appending to errs when it is invalid.
+func envRatio(errs *[]error, key string, fallback float64) float64 {
+	raw := getenv(key, strconv.FormatFloat(fallback, 'f', -1, 64))
+	f, err := strconv.ParseFloat(raw, 64)
+	if err != nil || f < 0 || f > 1 {
+		*errs = append(*errs, fmt.Errorf("%s must be a number from 0 to 1, got %q", key, raw))
+		return fallback
+	}
+	return f
 }
 
 // envBool reads a boolean setting (default false), appending to errs when it is invalid.

@@ -13,12 +13,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/auth"
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/config"
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/httpapi"
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/logging"
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/push"
+	"github.com/saniuzzaman-robin/changeloom/backend/internal/telemetry"
 )
 
 const (
@@ -61,11 +63,22 @@ func run() error {
 		return err
 	}
 
+	shutdownTracing := func(context.Context) error { return nil }
+	if cfg.OTelEnabled {
+		if shutdownTracing, err = telemetry.Setup(ctx, cfg.FirebaseProjectID, cfg.ServiceName, cfg.OTelSampleRatio); err != nil {
+			return fmt.Errorf("tracing: %w", err)
+		}
+		slog.Info("tracing enabled", "sample_ratio", cfg.OTelSampleRatio)
+	}
+
 	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
 		return fmt.Errorf("parse DATABASE_URL: %w", err)
 	}
 	poolCfg.MaxConns = cfg.DBMaxConns
+	if cfg.OTelEnabled {
+		poolCfg.ConnConfig.Tracer = telemetry.NewPgxTracer()
+	}
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return fmt.Errorf("configure database pool: %w", err)
@@ -97,9 +110,14 @@ func run() error {
 		slog.Warn("NOTIFY_SECRET is empty: POST /internal/notify is disabled")
 	}
 
+	handler := httpapi.NewHandler(httpapi.NewServer(pool, opts), verifier)
+	if cfg.OTelEnabled {
+		// otelhttp names the span after the method; the handler renames it to the matched route.
+		handler = otelhttp.NewHandler(handler, "api")
+	}
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewHandler(httpapi.NewServer(pool, opts), verifier),
+		Handler:           handler,
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      cfg.RequestTimeout + writeSlack,
@@ -112,18 +130,29 @@ func run() error {
 		errCh <- srv.ListenAndServe()
 	}()
 
+	var serveErr error
 	select {
-	case err := <-errCh:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
+	case serveErr = <-errCh:
+		if errors.Is(serveErr, http.ErrServerClosed) {
+			serveErr = nil
 		}
-		return err
 	case <-ctx.Done():
 		slog.Info("shutting down api")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		return srv.Shutdown(shutdownCtx)
 	}
+	// The server shutdown and the span flush share one budget, under Cloud Run's 10s.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if ctx.Err() != nil {
+		serveErr = srv.Shutdown(shutdownCtx)
+	}
+	return errors.Join(serveErr, flushTraces(shutdownCtx, shutdownTracing))
+}
+
+func flushTraces(ctx context.Context, shutdown func(context.Context) error) error {
+	if err := shutdown(ctx); err != nil {
+		return fmt.Errorf("flush traces: %w", err)
+	}
+	return nil
 }
 
 // newVerifier picks the token verifier: the dev stub in dev, Firebase in staging and prod.

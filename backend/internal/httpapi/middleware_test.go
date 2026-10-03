@@ -11,6 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/auth"
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/logging"
 )
@@ -133,5 +138,57 @@ func TestBadParamNamesParameterOnly(t *testing.T) {
 	e := decodeError(t, rec)
 	if rec.Code != http.StatusBadRequest || e.Message != `invalid value for parameter "limit"` {
 		t.Errorf("badParam = %d %q", rec.Code, e.Message)
+	}
+}
+
+func TestRequestSpanIsNamedAfterRoute(t *testing.T) {
+	captureLogs(t)
+	rec := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
+	h := otelhttp.NewHandler(NewHandler(NewServer(nil, Options{}), auth.DevVerifier{}), "request", otelhttp.WithTracerProvider(tp))
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/health", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/nope", nil))
+
+	spans := rec.Ended()
+	if len(spans) != 2 || spans[0].Name() != "GET /health" || spans[1].Name() != "GET" {
+		names := make([]string, len(spans))
+		for i, s := range spans {
+			names[i] = s.Name()
+		}
+		t.Fatalf("span names = %q, want [GET /health GET]", names)
+	}
+}
+
+func TestLogsUseSampledSpan(t *testing.T) {
+	// With a project the handler logs the span ID, which tells the two cases apart.
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(logging.NewHandler(&logs, slog.LevelInfo, "proj")))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	h := withTrace(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		slog.InfoContext(r.Context(), "inside")
+	}))
+	traceID, _ := trace.TraceIDFromHex("0af7651916cd43dd8448eb211c80319c")
+	spanID, _ := trace.SpanIDFromHex("00f067aa0ba902b7")
+	for _, tc := range []struct {
+		name     string
+		flags    trace.TraceFlags
+		wantSpan string
+	}{
+		{"sampled span", trace.FlagsSampled, "00f067aa0ba902b7"},
+		{"unsampled span falls back to the header", 0, "b7ad6b7169203331"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logs.Reset()
+			sc := trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: spanID, TraceFlags: tc.flags})
+			req := httptest.NewRequestWithContext(trace.ContextWithSpanContext(t.Context(), sc), http.MethodGet, "/", nil)
+			req.Header.Set("traceparent", "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
+			h.ServeHTTP(httptest.NewRecorder(), req)
+			if want := `"logging.googleapis.com/spanId":"` + tc.wantSpan + `"`; !strings.Contains(logs.String(), want) {
+				t.Errorf("log lacks %s:\n%s", want, logs.String())
+			}
+		})
 	}
 }

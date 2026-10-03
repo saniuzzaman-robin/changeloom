@@ -1,0 +1,23 @@
+# Cloud Monitoring alert policy on the notify_received log-based metric; create both with the
+# commands in deploy/README.md (Monitoring), which replace __SERVICE__ with CLOUD_RUN_SERVICE.
+displayName: "changeloom curator: no sync for 12h"
+combiner: OR
+documentation:
+  mimeType: text/markdown
+  content: >
+    The api has logged no "notify received" for 12 hours. The curator calls POST /internal/notify
+    after every sync (3-4 times a day), so it has stopped running or can't reach the api. On the
+    Mac: `launchctl list | grep changeloom` and ~/Library/Logs/changeloom-curator.log.
+conditions:
+  - displayName: "no notify received for 12h"
+    conditionAbsent:
+      filter: >-
+        resource.type = "cloud_run_revision" AND resource.labels.service_name = "__SERVICE__"
+        AND metric.type = "logging.googleapis.com/user/notify_received"
+      aggregations:
+        - alignmentPeriod: 3600s
+          perSeriesAligner: ALIGN_SUM
+          crossSeriesReducer: REDUCE_SUM
+      duration: 43200s
+      trigger:
+        count: 1

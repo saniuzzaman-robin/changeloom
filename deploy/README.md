@@ -84,6 +84,76 @@ make deploy-api DEPLOY_ENV=prod          # committed code only; asks you to type
   gcloud run services update-traffic changeloom-api --to-revisions <revision>=100 --project "$P" --region "$R"
   ```
 
+## Monitoring (per env; prod first, staging optional)
+
+These commands create billable resources and change IAM. Read them, then run them yourself. Load the
+env's settings first so `P`, `CLOUD_RUN_SERVICE` and `MAX_INSTANCES` match the deploy:
+
+```sh
+set -a; source deploy/prod.env; set +a; P=$GCP_PROJECT
+gcloud services enable monitoring.googleapis.com logging.googleapis.com cloudtrace.googleapis.com \
+  telemetry.googleapis.com billingbudgets.googleapis.com --project "$P"
+```
+
+1. **Tracing.** The api sends traces over OTLP to `OTEL_EXPORTER_OTLP_ENDPOINT` when
+   `OTEL_ENABLED=true` in `deploy/<env>.env`. Its sample rate is `OTEL_SAMPLE_RATIO`: staging's example
+   uses 1, prod's 0.1. **IAM:** the runtime service account needs the traces writer role:
+   ```sh
+   gcloud projects add-iam-policy-binding "$P" \
+     --member "serviceAccount:$SERVICE_ACCOUNT" --role roles/telemetry.tracesWriter
+   ```
+   Redeploy afterwards (`make deploy-api`). Cloud Run gives the instance CPU only while it serves
+   requests, so spans can sit in the buffer until the next request or shutdown, which flushes them.
+2. **Notification channel** (where alerts go). Create an email channel in the console (Monitoring →
+   Alerting → Edit notification channels), or with the beta component
+   (`gcloud components install beta`):
+   ```sh
+   gcloud beta monitoring channels create --project "$P" --display-name "changeloom alerts" \
+     --type email --channel-labels email_address=<you@example.com>
+   CHANNEL=$(gcloud beta monitoring channels list --project "$P" \
+     --filter 'displayName="changeloom alerts"' --format 'value(name)')
+   ```
+3. **Uptime check** on `/health` every 15 minutes. Each check can wake a scaled-to-zero instance, so
+   don't make it more frequent. Alert on it in the console (Monitoring → Uptime checks → the check →
+   Create alert), choosing `$CHANNEL`.
+   ```sh
+   HOST=$(gcloud run services describe "$CLOUD_RUN_SERVICE" --project "$P" --region "$GCP_REGION" \
+     --format 'value(status.url)' | sed 's|https://||')
+   gcloud monitoring uptime create "changeloom api health" --project "$P" \
+     --resource-type uptime-url --resource-labels "host=$HOST,project_id=$P" \
+     --protocol https --path /health --period 15
+   ```
+4. **Alert policies** from `deploy/monitoring/`:
+   - 5xx responses
+   - p95 latency
+   - instances at `MAX_INSTANCES`
+   - no `notify received` log line for 12h, which means the curator stopped. This policy needs its
+     log-based metric, so create the metric first.
+   ```sh
+   gcloud logging metrics create notify_received --project "$P" \
+     --description "POST /internal/notify calls from the curator" \
+     --log-filter "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"$CLOUD_RUN_SERVICE\" AND jsonPayload.message=\"notify received\""
+   mkdir -p /tmp/changeloom-monitoring
+   for f in deploy/monitoring/*.yaml; do
+     out=/tmp/changeloom-monitoring/$(basename "$f")
+     sed -e "s/__SERVICE__/$CLOUD_RUN_SERVICE/g" -e "s/__MAX_INSTANCES__/$MAX_INSTANCES/g" "$f" > "$out"
+     gcloud monitoring policies create --project "$P" --notification-channels "$CHANNEL" --policy-from-file "$out"
+   done
+   ```
+   The 12h absence alert also fires while the curator is intentionally off; snooze it then.
+5. **Error Reporting.** The api's error logs show up there automatically. Turn on notifications in the
+   console: Error Reporting → Configure notifications → `$CHANNEL`.
+6. **Billing budget.** Alerts the billing account's admins by email at 50%, 90% and 100% of the
+   amount. **Billing:** pick an amount that fits; the free tiers should keep normal use near 0.
+   ```sh
+   gcloud billing budgets create --billing-account <BILLING_ACCOUNT_ID> \
+     --display-name "changeloom $P" --budget-amount 10USD --filter-projects "projects/$P" \
+     --threshold-rule percent=0.5 --threshold-rule percent=0.9 --threshold-rule percent=1.0
+   ```
+
+When `curator run` fails on the Mac, it also shows a macOS notification and exits non-zero. Details
+are in `~/Library/Logs/changeloom-curator.log`.
+
 ## Android app
 
 Per-env api URLs go in `~/.gradle/gradle.properties` (or `-P` on the command line):

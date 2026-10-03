@@ -44,6 +44,11 @@ if [[ -n $(git -C "$root" status --porcelain -- backend) ]]; then
 	commit="$commit-dirty"
 fi
 
+env_vars="ENV=$env,FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID,FCM_ENABLED=$FCM_ENABLED,LOG_LEVEL=$LOG_LEVEL,TIMELINE_WINDOW_DAYS=$TIMELINE_WINDOW_DAYS,TOPIC_REQUEST_MAX_PENDING=$TOPIC_REQUEST_MAX_PENDING"
+if [[ ${OTEL_ENABLED:-false} == true ]]; then
+	env_vars+=",OTEL_ENABLED=true,OTEL_SAMPLE_RATIO=${OTEL_SAMPLE_RATIO:-0.1},OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+fi
+
 secrets="DATABASE_URL=$DATABASE_URL_SECRET:latest"
 if [[ -n ${NOTIFY_SECRET_SECRET:-} ]]; then
 	secrets+=",NOTIFY_SECRET=$NOTIFY_SECRET_SECRET:latest"
@@ -58,7 +63,7 @@ cmd=(
 	--min-instances "$MIN_INSTANCES"
 	--max-instances "$MAX_INSTANCES"
 	--allow-unauthenticated
-	--set-env-vars "ENV=$env,FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID,FCM_ENABLED=$FCM_ENABLED,LOG_LEVEL=$LOG_LEVEL,TIMELINE_WINDOW_DAYS=$TIMELINE_WINDOW_DAYS,TOPIC_REQUEST_MAX_PENDING=$TOPIC_REQUEST_MAX_PENDING"
+	--set-env-vars "$env_vars"
 	--set-secrets "$secrets"
 	--labels "env=$env,commit=$commit"
 )

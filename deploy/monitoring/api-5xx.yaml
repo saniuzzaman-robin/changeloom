@@ -1,0 +1,26 @@
+# Cloud Monitoring alert policy; create it with the commands in deploy/README.md (Monitoring), which
+# replace __SERVICE__ with CLOUD_RUN_SERVICE.
+displayName: "changeloom api: server errors"
+combiner: OR
+documentation:
+  mimeType: text/markdown
+  content: >
+    The api returned more than 5 server errors (5xx) in 5 minutes. Check Error Reporting and the
+    api's logs for the serving revision; roll back with `gcloud run services update-traffic` if a
+    deploy caused it.
+conditions:
+  - displayName: "more than 5 responses with 5xx in 5 min"
+    conditionThreshold:
+      filter: >-
+        resource.type = "cloud_run_revision" AND resource.labels.service_name = "__SERVICE__"
+        AND metric.type = "run.googleapis.com/request_count"
+        AND metric.labels.response_code_class = "5xx"
+      aggregations:
+        - alignmentPeriod: 300s
+          perSeriesAligner: ALIGN_SUM
+          crossSeriesReducer: REDUCE_SUM
+      comparison: COMPARISON_GT
+      thresholdValue: 5
+      duration: 0s
+      trigger:
+        count: 1

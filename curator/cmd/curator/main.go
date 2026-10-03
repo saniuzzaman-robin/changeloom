@@ -60,6 +60,9 @@ func main() {
 		os.Exit(2)
 	case err != nil:
 		slog.Error("curator failed", "err", err)
+		if len(os.Args) > 1 && os.Args[1] == "run" {
+			alertFailure(err)
+		}
 		os.Exit(1)
 	}
 }

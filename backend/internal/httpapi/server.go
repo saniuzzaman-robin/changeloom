@@ -201,6 +201,8 @@ func (s *Server) notify(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid notify secret")
 		return
 	}
+	// Monitoring alerts when this line is absent for 12h: the curator has stopped calling.
+	slog.InfoContext(r.Context(), "notify received")
 	sent, remaining := 0, 0
 	if s.opts.Notifier != nil {
 		var err error

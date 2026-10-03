@@ -1,0 +1,25 @@
+# Cloud Monitoring alert policy; create it with the commands in deploy/README.md (Monitoring), which
+# replace __SERVICE__ and __MAX_INSTANCES__ from deploy/<env>.env.
+displayName: "changeloom api: at max instances"
+combiner: OR
+documentation:
+  mimeType: text/markdown
+  content: >
+    The api has run at its MAX_INSTANCES for 10 minutes, so Cloud Run may be turning requests away
+    with 429. Check for a traffic spike or slow requests, then raise MAX_INSTANCES in
+    deploy/<env>.env (keeping MAX_INSTANCES x DB_MAX_CONNS under Neon's connection limit).
+conditions:
+  - displayName: "instances at MAX_INSTANCES for 10 min"
+    conditionThreshold:
+      filter: >-
+        resource.type = "cloud_run_revision" AND resource.labels.service_name = "__SERVICE__"
+        AND metric.type = "run.googleapis.com/container/instance_count"
+      aggregations:
+        - alignmentPeriod: 60s
+          perSeriesAligner: ALIGN_MAX
+          crossSeriesReducer: REDUCE_SUM
+      comparison: COMPARISON_GE
+      thresholdValue: __MAX_INSTANCES__
+      duration: 600s
+      trigger:
+        count: 1

@@ -11,16 +11,22 @@ import (
 func setBase(t *testing.T) {
 	t.Helper()
 	for k, v := range map[string]string{
-		"ENV":                       "dev",
-		"DATABASE_URL":              "postgres://localhost/test",
-		"PORT":                      "",
-		"FIREBASE_PROJECT_ID":       "",
-		"FCM_ENABLED":               "",
-		"DB_MAX_CONNS":              "",
-		"REQUEST_TIMEOUT":           "",
-		"TIMELINE_WINDOW_DAYS":      "",
-		"TOPIC_REQUEST_MAX_PENDING": "",
-		"LOG_LEVEL":                 "",
+		"ENV":                         "dev",
+		"DATABASE_URL":                "postgres://localhost/test",
+		"PORT":                        "",
+		"FIREBASE_PROJECT_ID":         "",
+		"FCM_ENABLED":                 "",
+		"DB_MAX_CONNS":                "",
+		"REQUEST_TIMEOUT":             "",
+		"TIMELINE_WINDOW_DAYS":        "",
+		"TOPIC_REQUEST_MAX_PENDING":   "",
+		"LOG_LEVEL":                   "",
+		"RATE_LIMIT_IP_PER_MIN":       "",
+		"RATE_LIMIT_USER_PER_MIN":     "",
+		"OTEL_ENABLED":                "",
+		"OTEL_SAMPLE_RATIO":           "",
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "",
+		"K_SERVICE":                   "",
 	} {
 		t.Setenv(k, v)
 	}
@@ -78,6 +84,9 @@ func TestLoadRejectsBadPoolAndTimeout(t *testing.T) {
 		{"REQUEST_TIMEOUT", "-1s"},
 		{"RATE_LIMIT_IP_PER_MIN", "0"},
 		{"RATE_LIMIT_USER_PER_MIN", "many"},
+		{"OTEL_SAMPLE_RATIO", "1.5"},
+		{"OTEL_SAMPLE_RATIO", "-0.1"},
+		{"OTEL_ENABLED", "yes please"},
 	} {
 		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
 			setBase(t)
@@ -94,5 +103,30 @@ func TestLoadHostedNeedsFirebaseProject(t *testing.T) {
 	t.Setenv("ENV", "prod")
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "FIREBASE_PROJECT_ID") {
 		t.Fatalf("Load() error = %v, want FIREBASE_PROJECT_ID required", err)
+	}
+}
+
+func TestLoadTracing(t *testing.T) {
+	setBase(t)
+	cfg, err := Load()
+	if err != nil || cfg.OTelEnabled || cfg.OTelSampleRatio != 0.1 || cfg.ServiceName != "changeloom-api" {
+		t.Fatalf("Load() = enabled %v, ratio %v, service %q, err %v; want off, 0.1, changeloom-api", cfg.OTelEnabled, cfg.OTelSampleRatio, cfg.ServiceName, err)
+	}
+
+	t.Setenv("OTEL_ENABLED", "true")
+	_, err = Load()
+	for _, key := range []string{"FIREBASE_PROJECT_ID", "OTEL_EXPORTER_OTLP_ENDPOINT"} {
+		if err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("enabled without settings: Load() error = %v, want %s required", err, key)
+		}
+	}
+
+	t.Setenv("FIREBASE_PROJECT_ID", "proj")
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://telemetry.example")
+	t.Setenv("OTEL_SAMPLE_RATIO", "1")
+	t.Setenv("K_SERVICE", "api-staging")
+	cfg, err = Load()
+	if err != nil || !cfg.OTelEnabled || cfg.OTelSampleRatio != 1 || cfg.ServiceName != "api-staging" {
+		t.Fatalf("Load() = enabled %v, ratio %v, service %q, err %v; want on, 1, api-staging", cfg.OTelEnabled, cfg.OTelSampleRatio, cfg.ServiceName, err)
 	}
 }
