@@ -3,8 +3,8 @@
 ## Status
 - P0–P8 done (backend, ingestion, AI, auth, deploy, Android app, FCM/discovery/dedupe/search/bookmarks).
 - **P9 iOS: deferred** by the user. Not started; don't work on it unless asked (iOS targets, SwiftUI/CMP app, Sign in with Apple, APNs, TestFlight).
-- Local Claude curator + Neon/Cloud Run done in code (hosted setup is the user's Phase 8); production hardening H1–H9 done in code (user steps and unverified items in `PLAN-hosting.md` and `deploy/README.md`). The RSS/Gemini worker pipeline is deleted; the backend is the `api` binary only, and content comes from the curator (`curator/`, separate Go module; `migrate`/`seed`/`fetch`/`requests`/`sync`/`run` all implemented).
-- Never verified live: real Firebase tokens/FCM sends, Android emulator/lint, CI workflow, real deploy (Neon, Cloud Run).
+- Local Claude curator + Neon/Cloud Run done in code (hosted setup is the user's Phase 8); production hardening H1–H9 done in code (user steps in `deploy/README.md`). The RSS/Gemini worker pipeline is deleted; the backend is the `api` binary only, and content comes from the curator (`curator/`, separate Go module; `migrate`/`seed`/`fetch`/`requests`/`sync`/`run` all implemented).
+- Never verified live: real Firebase tokens/FCM sends, Android emulator/lint, CI workflow, real deploy (Neon, Cloud Run), ads/UMP consent, in-app update/review, App Check tokens, account deletion against real Firebase. Still pending for the user: Macrobenchmark numbers and baseline profile; App Links (`/s/{id}`) need a domain for `assetlinks.json`.
 
 ## Gotchas
 - Dev Postgres: `POSTGRES_MODE` in `.env` is `docker` (compose, host port from `POSTGRES_PORT`; `make db-up`) or `local` (installed server at `DATABASE_URL`; `psql` must be on PATH, e.g. `/Library/PostgreSQL/18/bin`). Tests use `internal/dbtest.New(t)`.
