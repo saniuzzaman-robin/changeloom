@@ -13,3 +13,7 @@
 # Credential Manager loads its Play Services provider by class name.
 -if class androidx.credentials.CredentialManager
 -keep class androidx.credentials.playservices.** { *; }
+# Room creates each database's generated <Name>_Impl reflectively through its no-arg constructor. The old Room the ads
+# SDK brings in (2.2.5, for WorkManager) keeps only the class, and full-mode R8 then drops the constructor, so
+# WorkManager's start-up crashes with "Failed to create an instance of androidx.work.impl.WorkDatabase".
+-keep class * extends androidx.room.RoomDatabase { <init>(); }
