@@ -99,6 +99,9 @@ func run() error {
 		RateLimitPerIP:         cfg.RateLimitIPPerMin,
 		RateLimitPerUser:       cfg.RateLimitUserPerMin,
 	}
+	if err := addAppCheck(ctx, cfg, &opts); err != nil {
+		return err
+	}
 	if cfg.PushEnabled {
 		sender, err := push.NewFCMSender(ctx, cfg.FirebaseProjectID)
 		if err != nil {
@@ -152,6 +155,26 @@ func flushTraces(ctx context.Context, shutdown func(context.Context) error) erro
 	if err := shutdown(ctx); err != nil {
 		return fmt.Errorf("flush traces: %w", err)
 	}
+	return nil
+}
+
+// addAppCheck checks App Check tokens outside dev. Its public keys are fetched at startup; when
+// that fails the api still starts, unchecked, unless APPCHECK_ENFORCE is on.
+func addAppCheck(ctx context.Context, cfg config.Config, opts *httpapi.Options) error {
+	if cfg.Env == config.EnvDev {
+		return nil
+	}
+	appCheck, err := auth.NewFirebaseAppCheck(ctx, cfg.FirebaseProjectID)
+	if err != nil {
+		if cfg.AppCheckEnforce {
+			return fmt.Errorf("app check: %w", err)
+		}
+		slog.Warn("app check disabled: couldn't fetch its public keys", "err", err)
+		return nil
+	}
+	opts.AppCheck = appCheck
+	opts.AppCheckEnforce = cfg.AppCheckEnforce
+	slog.Info("app check enabled", "enforce", cfg.AppCheckEnforce)
 	return nil
 }
 

@@ -47,6 +47,10 @@ type Options struct {
 	// but health checks) and a signed-in user (on /v1/) may make; zero disables that limit.
 	RateLimitPerIP   int
 	RateLimitPerUser int
+	// AppCheck checks the App Check token on /v1/ requests; nil skips the check (dev). Unless
+	// AppCheckEnforce is set, a missing or invalid token is only logged.
+	AppCheck        auth.AppCheckVerifier
+	AppCheckEnforce bool
 }
 
 // Server implements ServerInterface.
@@ -84,7 +88,7 @@ func NewHandler(s *Server, verifier auth.Verifier) http.Handler {
 		BaseRouter:       mux,
 		ErrorHandlerFunc: badParam,
 	})
-	h := noStore(s.authenticate(verifier, jsonFallback(mux)))
+	h := noStore(s.checkApp(s.authenticate(verifier, jsonFallback(mux))))
 	if s.ipLimiter != nil {
 		h = limitIP(s.ipLimiter, h)
 	}
@@ -160,6 +164,39 @@ func (s *Server) authenticate(verifier auth.Verifier, next http.Handler) http.Ha
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), user)))
+	})
+}
+
+// checkApp checks the Firebase App Check token on /v1/ requests, before the bearer token. Rejections
+// are 403s: a 401 would make the app refresh its ID token and then sign the user out. Until
+// Options.AppCheckEnforce is on, it logs what it would reject, so the share of requests without a
+// valid token is known before enforcing.
+func (s *Server) checkApp(next http.Handler) http.Handler {
+	if s.opts.AppCheck == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/v1/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		problem := ""
+		if token := r.Header.Get(auth.AppCheckHeader); token == "" {
+			problem = "missing"
+		} else if err := s.opts.AppCheck.VerifyAppCheck(token); err != nil {
+			problem = "invalid"
+			if !errors.Is(err, auth.ErrInvalidToken) {
+				slog.ErrorContext(r.Context(), "verify app check token", "err", err)
+			}
+		}
+		if problem != "" {
+			if s.opts.AppCheckEnforce {
+				writeError(w, http.StatusForbidden, "app_check_failed", "missing or invalid App Check token")
+				return
+			}
+			slog.InfoContext(r.Context(), "app check would reject", "app_check", problem)
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 

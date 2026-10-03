@@ -27,6 +27,7 @@ func setBase(t *testing.T) {
 		"OTEL_SAMPLE_RATIO":           "",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "",
 		"K_SERVICE":                   "",
+		"APPCHECK_ENFORCE":            "",
 	} {
 		t.Setenv(k, v)
 	}
@@ -128,5 +129,23 @@ func TestLoadTracing(t *testing.T) {
 	cfg, err = Load()
 	if err != nil || !cfg.OTelEnabled || cfg.OTelSampleRatio != 1 || cfg.ServiceName != "api-staging" {
 		t.Fatalf("Load() = enabled %v, ratio %v, service %q, err %v; want on, 1, api-staging", cfg.OTelEnabled, cfg.OTelSampleRatio, cfg.ServiceName, err)
+	}
+}
+
+func TestLoadAppCheck(t *testing.T) {
+	setBase(t)
+	if cfg, err := Load(); err != nil || cfg.AppCheckEnforce {
+		t.Fatalf("Load() = enforce %v, err %v; want off by default", cfg.AppCheckEnforce, err)
+	}
+
+	t.Setenv("APPCHECK_ENFORCE", "true")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "APPCHECK_ENFORCE") {
+		t.Fatalf("enforced in dev: Load() error = %v, want APPCHECK_ENFORCE rejected", err)
+	}
+
+	t.Setenv("ENV", "prod")
+	t.Setenv("FIREBASE_PROJECT_ID", "proj")
+	if cfg, err := Load(); err != nil || !cfg.AppCheckEnforce {
+		t.Fatalf("Load() = enforce %v, err %v; want on", cfg.AppCheckEnforce, err)
 	}
 }

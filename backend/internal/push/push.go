@@ -25,6 +25,9 @@ const (
 	maxBodyRunes = 160
 	// maxStoriesPerRun bounds one Run so it fits in a request; the caller repeats until none remain.
 	maxStoriesPerRun = 10
+	// alertChannelID is the Android app's high-importance notification channel (push.kt). Only
+	// high-severity security stories are pushed, so every message goes there.
+	alertChannelID = "story_alerts"
 )
 
 // Message is one notification for a set of device tokens.
@@ -71,7 +74,10 @@ func (s *FCMSender) Send(ctx context.Context, msg Message) ([]string, error) {
 		Tokens:       msg.Tokens, //nolint:staticcheck // registration tokens, not FIDs
 		Notification: &messaging.Notification{Title: msg.Title, Body: msg.Body},
 		Data:         map[string]string{"story_id": strconv.FormatInt(msg.StoryID, 10)},
-		Android:      &messaging.AndroidConfig{Priority: "high"},
+		Android: &messaging.AndroidConfig{
+			Priority:     "high",
+			Notification: &messaging.AndroidNotification{ChannelID: alertChannelID},
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("send multicast: %w", err)

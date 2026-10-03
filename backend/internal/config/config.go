@@ -56,6 +56,10 @@ type Config struct {
 	OTelEnabled bool
 	// OTelSampleRatio is the fraction of requests traced (OTEL_SAMPLE_RATIO, 0 to 1).
 	OTelSampleRatio float64
+	// AppCheckEnforce rejects /v1/ requests without a valid Firebase App Check token
+	// (APPCHECK_ENFORCE). Off, staging and prod still check tokens and log what would be rejected.
+	// Dev never checks them.
+	AppCheckEnforce bool
 	// ServiceName names the service in traces: K_SERVICE, which Cloud Run sets, or "changeloom-api".
 	ServiceName string
 }
@@ -118,6 +122,10 @@ func Load() (Config, error) {
 	if otelEnabled && getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "") == "" {
 		errs = append(errs, errors.New("OTEL_EXPORTER_OTLP_ENDPOINT is required when OTEL_ENABLED=true, e.g. https://telemetry.googleapis.com (see .env.example)"))
 	}
+	appCheckEnforce := envBool(&errs, "APPCHECK_ENFORCE")
+	if appCheckEnforce && env == EnvDev {
+		errs = append(errs, errors.New("APPCHECK_ENFORCE=true needs ENV=staging or prod: dev doesn't check App Check tokens"))
+	}
 	if pushEnabled && firebaseProjectID == "" {
 		errs = append(errs, errors.New("FIREBASE_PROJECT_ID is required when FCM_ENABLED=true (see .env.example)"))
 	}
@@ -144,6 +152,7 @@ func Load() (Config, error) {
 		RateLimitUserPerMin:    rateLimitUser,
 		OTelEnabled:            otelEnabled,
 		OTelSampleRatio:        sampleRatio,
+		AppCheckEnforce:        appCheckEnforce,
 		ServiceName:            getenv("K_SERVICE", "changeloom-api"),
 	}, nil
 }
