@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.changeloom.android.ui.theme.ChangeloomTheme
 import dev.changeloom.android.ui.theme.Durations
@@ -194,8 +195,9 @@ fun IconTile(
     modifier: Modifier = Modifier,
     brush: Brush = ChangeloomTheme.gradients.brand,
     tint: Color = Color.White,
+    size: Dp = 44.dp,
 ) {
-    Box(modifier.size(44.dp).clip(Radius.lg).background(brush), contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+    Box(modifier.size(size).clip(Radius.lg).background(brush), contentAlignment = Alignment.Center) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(size / 2))
     }
 }

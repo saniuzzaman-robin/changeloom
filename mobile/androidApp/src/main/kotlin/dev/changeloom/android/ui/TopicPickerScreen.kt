@@ -21,9 +21,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -219,38 +216,18 @@ internal fun TopicPickerContent(
         GridBackground(Modifier.fillMaxWidth().height(360.dp))
         SpotlightGlow(Modifier.fillMaxWidth().height(420.dp))
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))) {
-            PickerHeader(mode, professionStep, state.professions.isNotEmpty(), onEditProfessions = { onStep(PickerStep.Professions) }, onExit)
+            PickerHeader(mode, professionStep, onExit)
             SearchField(
                 state.query,
                 onQueryChange,
                 placeholder = stringResource(if (professionStep) R.string.search_professions else R.string.search_topics),
                 enabled = selection != null,
-                modifier = Modifier.padding(horizontal = Spacing.gutter).padding(top = 20.dp).enter(delayMillis = 240),
+                modifier = Modifier.padding(horizontal = Spacing.gutter).padding(top = 12.dp).enter(delayMillis = 240),
             )
-            if (!professionStep && state.professions.isNotEmpty() && selection != null) {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier
-                        .padding(horizontal = Spacing.gutter)
-                        .padding(top = 12.dp)
-                        .heightIn(max = 112.dp)
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    state.professions.forEach { profession ->
-                        TopicChip(
-                            profession.name,
-                            compact = true,
-                            selected = profession.slug in state.selectedProfessions,
-                            onClick = { onToggleProfession(profession.slug) },
-                        )
-                    }
-                }
-            }
             StatusBanner(
                 state.error,
                 Icons.Rounded.ErrorOutline,
-                Modifier.padding(horizontal = Spacing.gutter).padding(top = 12.dp),
+                Modifier.padding(horizontal = Spacing.gutter).padding(top = 8.dp),
                 tone = BannerTone.Error,
                 actionLabel = if (selection == null) stringResource(R.string.retry) else null,
                 onAction = onRetry,
@@ -258,8 +235,8 @@ internal fun TopicPickerContent(
             LazyColumn(
                 Modifier.weight(1f).fillMaxWidth(),
                 state = listState,
-                contentPadding = PaddingValues(horizontal = Spacing.gutter, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(horizontal = Spacing.gutter, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 when {
                     selection == null -> if (state.loading) items(SKELETON_CARDS) { SkeletonTopicCard() }
@@ -311,7 +288,7 @@ internal fun TopicPickerContent(
             if (professionStep) {
                 ProfessionBar(state, onNext = { onStep(PickerStep.Topics) })
             } else {
-                PickerBar(mode, state, onSelectAll, onClear, onSave)
+                PickerBar(mode, state, onSelectAll, onClear, onSave, onEditProfessions = { onStep(PickerStep.Professions) })
             }
         }
     }
@@ -321,14 +298,12 @@ internal fun TopicPickerContent(
 private fun PickerHeader(
     mode: TopicPickerMode,
     professionStep: Boolean,
-    hasProfessions: Boolean,
-    onEditProfessions: () -> Unit,
     onExit: () -> Unit,
 ) {
     val c = ChangeloomTheme.colors
     val onboarding = mode == TopicPickerMode.Onboarding
-    Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.gutter).padding(top = 8.dp)) {
-        Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.gutter).padding(top = 0.dp)) {
+        Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
             if (onboarding) {
                 LoomMark(Modifier.size(30.dp))
                 Spacer(Modifier.weight(1f))
@@ -339,26 +314,26 @@ private fun PickerHeader(
                 }
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(4.dp))
         val eyebrow = when {
             professionStep -> R.string.professions_eyebrow
             onboarding -> R.string.topics_onboarding_eyebrow
             else -> R.string.topics_edit_eyebrow
         }
         Eyebrow(stringResource(eyebrow), Modifier.enter(delayMillis = 0), color = c.primaryText)
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
         Column(Modifier.enter(delayMillis = 80)) {
             if (professionStep) {
-                Text(stringResource(R.string.professions_title_1), style = MaterialTheme.typography.headlineLarge, color = c.fg)
-                GradientText(stringResource(R.string.professions_title_2), style = MaterialTheme.typography.headlineLarge)
+                Text(stringResource(R.string.professions_title_1), style = MaterialTheme.typography.headlineMedium, color = c.fg)
+                GradientText(stringResource(R.string.professions_title_2), style = MaterialTheme.typography.headlineMedium)
             } else if (onboarding) {
-                Text(stringResource(R.string.topics_onboarding_title_1), style = MaterialTheme.typography.headlineLarge, color = c.fg)
-                GradientText(stringResource(R.string.topics_onboarding_title_2), style = MaterialTheme.typography.headlineLarge)
+                Text(stringResource(R.string.topics_onboarding_title_1), style = MaterialTheme.typography.headlineMedium, color = c.fg)
+                GradientText(stringResource(R.string.topics_onboarding_title_2), style = MaterialTheme.typography.headlineMedium)
             } else {
-                Text(stringResource(R.string.edit_topics), style = MaterialTheme.typography.headlineLarge, color = c.fg)
+                Text(stringResource(R.string.edit_topics), style = MaterialTheme.typography.headlineMedium, color = c.fg)
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
         Text(
             when {
                 professionStep -> stringResource(R.string.professions_body)
@@ -369,7 +344,6 @@ private fun PickerHeader(
             style = MaterialTheme.typography.bodyMedium,
             color = c.fgMuted,
         )
-        if (!professionStep && hasProfessions) TextAction(stringResource(R.string.edit_professions), onEditProfessions, icon = Icons.Rounded.Edit)
     }
 }
 
@@ -424,6 +398,9 @@ private fun SectionLabel(text: String) {
     Eyebrow(text, Modifier.padding(top = 4.dp), color = ChangeloomTheme.colors.fgSubtle)
 }
 
+private val PICKER_CARD_PADDING = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+private val PICKER_TILE_SIZE = 36.dp
+
 @Composable
 private fun ProfessionCard(profession: Profession, picked: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val c = ChangeloomTheme.colors
@@ -432,15 +409,15 @@ private fun ProfessionCard(profession: Profession, picked: Boolean, onClick: () 
         modifier.fillMaxWidth(),
         onClick = onClick,
         border = SolidColor(border),
+        contentPadding = PICKER_CARD_PADDING,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconTile(professionIcon(profession.slug))
-            Spacer(Modifier.width(14.dp))
+            IconTile(professionIcon(profession.slug), size = PICKER_TILE_SIZE)
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(profession.name, style = MaterialTheme.typography.titleMedium, color = c.fg)
+                Text(profession.name, style = MaterialTheme.typography.titleSmall, color = c.fg)
                 if (profession.description.isNotBlank()) {
-                    Spacer(Modifier.height(2.dp))
-                    Text(profession.description, style = MaterialTheme.typography.bodySmall, color = c.fgMuted, maxLines = 2)
+                    Text(profession.description, style = MaterialTheme.typography.bodySmall, color = c.fgMuted, maxLines = 1)
                 }
             }
             TriStateCheck(
@@ -463,7 +440,7 @@ private fun ProfessionBar(state: TopicPickerState, onNext: () -> Unit) {
             .background(c.navGlass)
             .drawBehind { drawLine(c.line, Offset.Zero, Offset(size.width, 0f), 1.dp.toPx()) }
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
-            .padding(horizontal = Spacing.gutter, vertical = 12.dp),
+            .padding(horizontal = Spacing.gutter, vertical = 8.dp),
     ) {
         Eyebrow(
             stringResource(R.string.professions_selected, count),
@@ -507,13 +484,13 @@ private fun RootTopicCard(
         modifier.fillMaxWidth(),
         onClick = if (hasChildren) onExpand else { { onToggle(root.slug) } },
         border = SolidColor(border),
+        contentPadding = PICKER_CARD_PADDING,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconTile(topicIcon(root.slug))
-            Spacer(Modifier.width(14.dp))
+            IconTile(topicIcon(root.slug), size = PICKER_TILE_SIZE)
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(root.name, style = MaterialTheme.typography.titleMedium, color = c.fg)
-                Spacer(Modifier.height(2.dp))
+                Text(root.name, style = MaterialTheme.typography.titleSmall, color = c.fg)
                 Eyebrow(
                     when {
                         !hasChildren -> stringResource(if (state == CheckState.Checked) R.string.following else R.string.single_topic)
@@ -537,10 +514,10 @@ private fun RootTopicCard(
         if (root.description.isNotBlank()) {
             Text(
                 root.description,
-                Modifier.padding(top = 10.dp),
+                Modifier.padding(top = 6.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = c.fgMuted,
-                maxLines = 2,
+                maxLines = 1,
             )
         }
         AnimatedVisibility(
@@ -639,6 +616,7 @@ private fun PickerBar(
     onSelectAll: () -> Unit,
     onClear: () -> Unit,
     onSave: () -> Unit,
+    onEditProfessions: () -> Unit,
 ) {
     val c = ChangeloomTheme.colors
     val selection = state.selection
@@ -651,11 +629,14 @@ private fun PickerBar(
             .background(c.navGlass)
             .drawBehind { drawLine(c.line, Offset.Zero, Offset(size.width, 0f), 1.dp.toPx()) }
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
-            .padding(horizontal = Spacing.gutter, vertical = 12.dp),
+            .padding(horizontal = Spacing.gutter, vertical = 8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextAction(stringResource(R.string.select_all), onSelectAll, enabled = editable)
             TextAction(stringResource(R.string.clear), onClear, enabled = editable && selection?.isEmpty == false)
+            if (state.professions.isNotEmpty()) {
+                TextAction(stringResource(R.string.back_to_professions), onEditProfessions, enabled = editable, icon = Icons.Rounded.Edit)
+            }
             Spacer(Modifier.weight(1f))
             AnimatedContent(count, label = "selectedCount") { n ->
                 Eyebrow(pluralStringResource(R.plurals.topic_count, n, n), color = if (n > 0) c.primaryText else c.fgSubtle)
