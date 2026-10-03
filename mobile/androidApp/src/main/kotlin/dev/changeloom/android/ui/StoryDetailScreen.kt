@@ -59,11 +59,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -209,8 +213,21 @@ private fun DetailHero(story: StorySummary) {
     val tint = kindColor(story.kind)
     Box(Modifier.fillMaxWidth()) {
         SpotlightGlow(Modifier.matchParentSize(), color = tint.copy(alpha = if (c.isDark) 0.24f else 0.14f), center = Offset(0.15f, 0f))
-        GridBackground(Modifier.matchParentSize(), fadeCenter = Offset(0.3f, 0f), fadeRadius = 0.85f)
-        Column(Modifier.padding(heroPadding())) {
+        val padding = heroPadding()
+        // Only behind the top bar and the head of the hero, fading out before the lede so the reading text stays clean.
+        GridBackground(
+            Modifier
+                .fillMaxWidth()
+                .height(padding.calculateTopPadding() + GRID_FADE_DEPTH)
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithContent {
+                    drawContent()
+                    drawRect(Brush.verticalGradient(listOf(Color.Black, Color.Transparent)), blendMode = BlendMode.DstIn)
+                },
+            fadeCenter = Offset(0.3f, 0f),
+            fadeRadius = 0.85f,
+        )
+        Column(Modifier.padding(padding)) {
             Row(Modifier.enter(0), verticalAlignment = Alignment.CenterVertically) {
                 KindPill(story.kind)
                 if (story.severity != null) {
@@ -239,14 +256,6 @@ private fun DetailHero(story: StorySummary) {
                 ) { story.topics.forEach { TopicChip(topicName(it)) } }
             }
         }
-        // Hairline that fades out at both ends, separating the hero from the body.
-        Box(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(Brush.horizontalGradient(listOf(Color.Transparent, c.lineStrong, Color.Transparent))),
-        )
     }
 }
 
@@ -493,6 +502,7 @@ private fun DetailErrorLight() = ChangeloomTheme(ThemeMode.Light) {
 private val TOP_BAR_HEIGHT = 56.dp
 private val ACTION_BAR_SPACE = 104.dp
 private val TITLE_COLLAPSE_OFFSET = 180.dp
+private val GRID_FADE_DEPTH = 112.dp
 private const val LEDE_ENTER_DELAY = 80
 private const val META_ENTER_DELAY = 160
 private const val BODY_ENTER_DELAY = 220
