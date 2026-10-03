@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -40,14 +41,23 @@ type Config struct {
 	NotifySecret string
 	// TopicRequestMaxPending caps the pending topic requests per user (TOPIC_REQUEST_MAX_PENDING).
 	TopicRequestMaxPending int
+	// DBMaxConns caps the database pool per instance (DB_MAX_CONNS). Keep it at or below the
+	// connections Neon allows divided by the max Cloud Run instances.
+	DBMaxConns int32
+	// RequestTimeout bounds each request, including its database queries (REQUEST_TIMEOUT, a Go
+	// duration). It must leave room for POST /internal/notify, which sends every pending push.
+	RequestTimeout time.Duration
 }
 
 // Load reads configuration from the environment and validates it.
 func Load() (Config, error) {
 	var errs []error
 
-	env := Env(getenv("ENV", string(EnvDev)))
-	if env != EnvDev && env != EnvStaging && env != EnvProd {
+	// No default: a missing ENV must not silently enable dev auth.
+	env := Env(getenv("ENV", ""))
+	if env == "" {
+		errs = append(errs, fmt.Errorf("ENV is required: %q, %q or %q (see .env.example)", EnvDev, EnvStaging, EnvProd))
+	} else if env != EnvDev && env != EnvStaging && env != EnvProd {
 		errs = append(errs, fmt.Errorf("ENV must be %q, %q or %q, got %q", EnvDev, EnvStaging, EnvProd, env))
 	}
 
@@ -81,6 +91,12 @@ func Load() (Config, error) {
 
 	pushEnabled := envBool(&errs, "FCM_ENABLED")
 	topicRequestMaxPending := envInt(&errs, "TOPIC_REQUEST_MAX_PENDING", 10)
+	dbMaxConns := envInt(&errs, "DB_MAX_CONNS", 10)
+	if dbMaxConns > math.MaxInt32 {
+		errs = append(errs, fmt.Errorf("DB_MAX_CONNS is too large, got %d", dbMaxConns))
+		dbMaxConns = 1
+	}
+	requestTimeout := envDuration(&errs, "REQUEST_TIMEOUT", 30*time.Second)
 	if pushEnabled && firebaseProjectID == "" {
 		errs = append(errs, errors.New("FIREBASE_PROJECT_ID is required when FCM_ENABLED=true (see .env.example)"))
 	}
@@ -101,6 +117,8 @@ func Load() (Config, error) {
 
 		NotifySecret:           strings.TrimSpace(os.Getenv("NOTIFY_SECRET")),
 		TopicRequestMaxPending: topicRequestMaxPending,
+		DBMaxConns:             int32(dbMaxConns),
+		RequestTimeout:         requestTimeout,
 	}, nil
 }
 
@@ -120,6 +138,17 @@ func envInt(errs *[]error, key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// envDuration reads a positive Go duration setting (e.g. "30s"), appending to errs when it is invalid.
+func envDuration(errs *[]error, key string, fallback time.Duration) time.Duration {
+	raw := getenv(key, fallback.String())
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		*errs = append(*errs, fmt.Errorf("%s must be a positive duration like 30s, got %q", key, raw))
+		return fallback
+	}
+	return d
 }
 
 // envBool reads a boolean setting (default false), appending to errs when it is invalid.

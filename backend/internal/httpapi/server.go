@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -39,6 +40,8 @@ type Options struct {
 	NotifySecret string
 	// Notifier is called by POST /internal/notify; nil when push is disabled.
 	Notifier Notifier
+	// RequestTimeout bounds each request's context; zero means no limit.
+	RequestTimeout time.Duration
 }
 
 // Server implements ServerInterface.
@@ -57,17 +60,43 @@ func NewServer(pool *pgxpool.Pool, opts Options) *Server {
 }
 
 // NewHandler routes all API operations and requires a verified bearer token on /v1/ paths.
-// POST /internal/notify sits outside /v1/ and checks its own shared secret.
+// POST /internal/notify sits outside /v1/ and checks its own shared secret. Every request is
+// traced, logged and protected from panics, and bounded by Options.RequestTimeout.
 func NewHandler(s *Server, verifier auth.Verifier) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(http.MethodPost+" /internal/notify", s.notify)
-	h := HandlerWithOptions(s, StdHTTPServerOptions{
-		BaseRouter: mux,
-		ErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
-			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
-		},
+	HandlerWithOptions(s, StdHTTPServerOptions{
+		BaseRouter:       mux,
+		ErrorHandlerFunc: badParam,
 	})
-	return s.authenticate(verifier, h)
+	h := s.authenticate(verifier, jsonFallback(mux))
+	if s.opts.RequestTimeout > 0 {
+		h = withTimeout(s.opts.RequestTimeout, h)
+	}
+	return withTrace(observe(h))
+}
+
+// badParam reports a request parameter that failed to bind, naming the parameter but not echoing
+// the parser's internals.
+func badParam(w http.ResponseWriter, _ *http.Request, err error) {
+	msg := "invalid request parameters"
+	var (
+		format   *InvalidParamFormatError
+		required *RequiredParamError
+		tooMany  *TooManyValuesForParamError
+		unmarsh  *UnmarshalingParamError
+	)
+	switch {
+	case errors.As(err, &format):
+		msg = fmt.Sprintf("invalid value for parameter %q", format.ParamName)
+	case errors.As(err, &required):
+		msg = fmt.Sprintf("missing required parameter %q", required.ParamName)
+	case errors.As(err, &tooMany):
+		msg = fmt.Sprintf("too many values for parameter %q", tooMany.ParamName)
+	case errors.As(err, &unmarsh):
+		msg = fmt.Sprintf("invalid value for parameter %q", unmarsh.ParamName)
+	}
+	writeError(w, http.StatusBadRequest, "bad_request", msg)
 }
 
 // authenticate verifies the bearer token on /v1/ requests and attaches the user,
@@ -129,7 +158,7 @@ func mustUser(r *http.Request) auth.User {
 // notify sends pending push notifications. It is called by the curator after a sync.
 func (s *Server) notify(w http.ResponseWriter, r *http.Request) {
 	if s.opts.NotifySecret == "" {
-		http.NotFound(w, r)
+		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 		return
 	}
 	token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -149,7 +178,23 @@ func (s *Server) notify(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"sent": sent})
 }
 
-// GetHealthz reports liveness.
-func (s *Server) GetHealthz(w http.ResponseWriter, _ *http.Request) {
+// GetHealthz reports liveness; kept for existing callers of the old path.
+func (s *Server) GetHealthz(w http.ResponseWriter, r *http.Request) {
+	s.GetHealth(w, r)
+}
+
+// GetHealth reports liveness without checking dependencies, so a database outage doesn't get
+// healthy instances restarted.
+func (s *Server) GetHealth(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
+// GetReady reports whether the database is reachable.
+func (s *Server) GetReady(w http.ResponseWriter, r *http.Request) {
+	if err := s.pool.Ping(r.Context()); err != nil {
+		slog.WarnContext(r.Context(), "readiness check: database unreachable", "err", err)
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "database unreachable")
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }

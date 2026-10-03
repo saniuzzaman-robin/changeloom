@@ -351,8 +351,10 @@ func TestAuthRequired(t *testing.T) {
 			t.Errorf("token %q: status %d, want 401", token, code)
 		}
 	}
-	if code := e.do(http.MethodGet, "/healthz", "", nil, nil); code != http.StatusOK {
-		t.Errorf("healthz: status %d, want 200", code)
+	for _, path := range []string{"/healthz", "/health", "/ready"} {
+		if code := e.do(http.MethodGet, path, "", nil, nil); code != http.StatusOK {
+			t.Errorf("%s: status %d, want 200", path, code)
+		}
 	}
 }
 

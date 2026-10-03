@@ -67,7 +67,7 @@ Release to staging, check it, then release the same commit to prod:
 ```sh
 make migrate-remote                      # staging DB: pending backend migrations
 make deploy-api                          # Cloud Build from backend/, deploy to staging Cloud Run
-curl -fsS https://<staging url>/healthz
+curl -fsS https://<staging url>/ready
 
 make migrate-remote DEPLOY_ENV=prod
 make deploy-api DEPLOY_ENV=prod          # committed code only; asks you to type 'prod'

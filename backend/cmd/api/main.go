@@ -17,13 +17,20 @@ import (
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/auth"
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/config"
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/httpapi"
+	"github.com/saniuzzaman-robin/changeloom/backend/internal/logging"
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/push"
 )
 
 const (
 	readHeaderTimeout = 5 * time.Second
-	shutdownTimeout   = 10 * time.Second
-	startupDBTimeout  = 10 * time.Second
+	// readTimeout covers the whole request body, which handlers cap at 1 MiB.
+	readTimeout = 15 * time.Second
+	// writeSlack is how much longer than REQUEST_TIMEOUT a handler gets to write its response.
+	writeSlack  = 5 * time.Second
+	idleTimeout = 120 * time.Second
+	// shutdownTimeout stays under Cloud Run's 10s between SIGTERM and SIGKILL.
+	shutdownTimeout  = 8 * time.Second
+	startupDBTimeout = 10 * time.Second
 )
 
 func main() {
@@ -38,7 +45,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel})))
+	// Hosted environments run in the GCP project that is also the Firebase project (deploy/README.md),
+	// which is where Cloud Run's traces live.
+	traceProject := ""
+	if cfg.Env != config.EnvDev {
+		traceProject = cfg.FirebaseProjectID
+	}
+	slog.SetDefault(slog.New(logging.NewHandler(os.Stdout, cfg.LogLevel, traceProject)))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -48,7 +61,12 @@ func run() error {
 		return err
 	}
 
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("parse DATABASE_URL: %w", err)
+	}
+	poolCfg.MaxConns = cfg.DBMaxConns
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return fmt.Errorf("configure database pool: %w", err)
 	}
@@ -64,6 +82,7 @@ func run() error {
 		TimelineWindow:         cfg.TimelineWindow,
 		TopicRequestMaxPending: cfg.TopicRequestMaxPending,
 		NotifySecret:           cfg.NotifySecret,
+		RequestTimeout:         cfg.RequestTimeout,
 	}
 	if cfg.PushEnabled {
 		sender, err := push.NewFCMSender(ctx, cfg.FirebaseProjectID)
@@ -80,6 +99,9 @@ func run() error {
 		Addr:              cfg.HTTPAddr,
 		Handler:           httpapi.NewHandler(httpapi.NewServer(pool, opts), verifier),
 		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      cfg.RequestTimeout + writeSlack,
+		IdleTimeout:       idleTimeout,
 	}
 
 	errCh := make(chan error, 1)

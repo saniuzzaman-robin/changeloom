@@ -16,7 +16,27 @@ paths:
       security: []
       responses:
         "200":
-          description: Server is up.
+          description: Server is up. Kept for existing callers; prefer /health.
+  /health:
+    get:
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: Server is up (liveness; no dependencies checked).
+  /ready:
+    get:
+      operationId: getReady
+      security: []
+      responses:
+        "200":
+          description: Server can reach the database.
+        "503":
+          description: The database is unreachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/topics:
     get:
       operationId: listTopics
