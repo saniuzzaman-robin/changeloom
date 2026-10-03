@@ -20,11 +20,22 @@ android {
 
     targetProjectPath = ":androidApp"
 
-    // Mirrors :androidApp's flavors so each env gets its own profile tasks.
+    buildFeatures {
+        buildConfig = true
+    }
+
+    // Mirrors :androidApp's flavors so each env gets its own profile tasks. TARGET_APP_ID is that flavor's
+    // application id (staging adds a suffix).
     flavorDimensions += "env"
     productFlavors {
-        create("staging") { dimension = "env" }
-        create("prod") { dimension = "env" }
+        create("staging") {
+            dimension = "env"
+            buildConfigField("String", "TARGET_APP_ID", "\"dev.changeloom.android.staging\"")
+        }
+        create("prod") {
+            dimension = "env"
+            buildConfigField("String", "TARGET_APP_ID", "\"dev.changeloom.android\"")
+        }
     }
 }
 

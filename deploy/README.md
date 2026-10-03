@@ -9,7 +9,7 @@ Cloud Run service and Android app.
 | api `ENV` | `dev` (dev auth: `Bearer dev:<name>`) | `staging` (Firebase auth) | `prod` (Firebase auth) |
 | api settings | root `.env` | `deploy/staging.env` (CI: GitHub variable) | `deploy/prod.env` (CI: GitHub variable) |
 | Database | dev Postgres (`make db-up`) | Neon, staging | Neon, prod |
-| Android flavor | `staging`/`prod` debug, local api by default | `staging`: `dev.changeloom.android` (same id as prod, so one replaces the other on a device), "Changeloom Staging" | `prod`: `dev.changeloom.android` |
+| Android flavor | `staging`/`prod` debug, local api by default | `staging`: `dev.changeloom.android.staging` (installs beside prod), "Changeloom Staging" | `prod`: `dev.changeloom.android` |
 | Curator target | local DB | `--env staging` | `--env prod` |
 
 Make targets that touch a hosted env take `DEPLOY_ENV=staging|prod`, which **defaults to staging**.
@@ -33,8 +33,10 @@ These commands create cloud resources and may cost money. Read them, then run th
    an Android app with the env's application id (table above). Add the SHA-1 of every key that signs
    that app: your debug key (`~/.android/changeloom-debug.keystore` if you use one), the upload key,
    and for prod the Play app signing key (Play Console → Test and release → App integrity).
-   Download `google-services.json`: staging's goes to `mobile/androidApp/google-services.json`, shared by
-   staging and all debug builds; prod's goes to `mobile/androidApp/src/prod/google-services.json`.
+   The two app ids differ, so both projects can list the same debug and upload keys.
+   Download `google-services.json`: staging's goes to `mobile/androidApp/src/staging/google-services.json`
+   and prod's to `mobile/androidApp/src/prod/google-services.json` (debug builds of each flavor use their
+   env's file).
    Release builds report to Crashlytics, Analytics and Performance Monitoring (debug builds don't):
    link Google Analytics to the Firebase project (Project settings → Integrations), and declare crash
    logs, diagnostics and app interactions in Play's Data safety form.

@@ -14,7 +14,8 @@ plugins {
 val envs = listOf("staging", "prod")
 
 // Firebase config, never committed: src/<env>/google-services.json from each env's Firebase project,
-// else the shared google-services.json next to this file (used by staging and all debug builds).
+// else the shared google-services.json next to this file. Each file must have a client for its flavor's
+// application id: dev.changeloom.android.staging (staging project) or dev.changeloom.android (prod project).
 // Without config a variant still builds, but the app crashes at launch (Firebase is not
 // initialized); release builds require it (see verify<Env>ReleaseConfig below).
 val googleServicesFiles = envs.associateWith { env ->
@@ -91,6 +92,9 @@ android {
     productFlavors {
         create("staging") {
             dimension = "env"
+            // Its own app, so staging and prod install side by side and can register the same signing keys
+            // (Google sign-in needs each package + SHA-1 pair to be unique across projects).
+            applicationIdSuffix = ".staging"
             versionNameSuffix = "-staging"
         }
         create("prod") {

@@ -11,8 +11,8 @@ private const val STORY_CARD = "story_card"
 private const val STORY_DETAIL = "story_detail"
 private const val WAIT_MS = 15_000L
 
-/** :androidApp's application id, the same for every flavor. */
-const val targetAppId = "dev.changeloom.android"
+/** :androidApp's application id for the flavor under test. */
+const val targetAppId = BuildConfig.TARGET_APP_ID
 
 /** Cold-starts the app and waits for the timeline. The device must already be signed in with followed topics. */
 fun MacrobenchmarkScope.startAndWaitForFeed() {
