@@ -137,6 +137,7 @@ fun TopicChip(
     label: String,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
+    compact: Boolean = false,
     onClick: (() -> Unit)? = null,
 ) {
     val c = ChangeloomTheme.colors
@@ -146,12 +147,12 @@ fun TopicChip(
     var m = modifier.clip(Radius.pill).background(bg).border(1.dp, border, Radius.pill)
     if (onClick != null) m = m.clickable(role = Role.Checkbox, onClick = onClick)
     Row(
-        m.padding(horizontal = 12.dp, vertical = 7.dp),
+        m.padding(horizontal = if (compact) 9.dp else 12.dp, vertical = if (compact) 4.dp else 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AnimatedVisibility(selected, enter = fadeIn() + expandHorizontally(), exit = fadeOut() + shrinkHorizontally()) {
             Icon(Icons.Rounded.Check, contentDescription = null, tint = fg, modifier = Modifier.padding(end = 5.dp).size(14.dp))
         }
-        Text(label, style = MaterialTheme.typography.labelMedium, color = fg, maxLines = 1)
+        Text(label, style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium, color = fg, maxLines = 1)
     }
 }

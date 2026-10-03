@@ -116,7 +116,7 @@ paths:
   /v1/me/professions:
     put:
       operationId: putMyProfessions
-      summary: Replace the user's professions (at most 3).
+      summary: Replace the user's professions.
       description: Stories in a profession's areas rank above everything except followed topics.
       requestBody:
         required: true

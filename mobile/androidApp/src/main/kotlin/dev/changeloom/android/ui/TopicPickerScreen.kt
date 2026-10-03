@@ -19,7 +19,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -183,6 +187,7 @@ fun TopicPickerScreen(mode: TopicPickerMode, onExit: () -> Unit, vm: TopicPicker
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun TopicPickerContent(
     state: TopicPickerState,
@@ -222,6 +227,26 @@ internal fun TopicPickerContent(
                 enabled = selection != null,
                 modifier = Modifier.padding(horizontal = Spacing.gutter).padding(top = 20.dp).enter(delayMillis = 240),
             )
+            if (!professionStep && state.professions.isNotEmpty() && selection != null) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .padding(horizontal = Spacing.gutter)
+                        .padding(top = 12.dp)
+                        .heightIn(max = 112.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    state.professions.forEach { profession ->
+                        TopicChip(
+                            profession.name,
+                            compact = true,
+                            selected = profession.slug in state.selectedProfessions,
+                            onClick = { onToggleProfession(profession.slug) },
+                        )
+                    }
+                }
+            }
             StatusBanner(
                 state.error,
                 Icons.Rounded.ErrorOutline,
@@ -250,7 +275,6 @@ internal fun TopicPickerContent(
                         ProfessionCard(
                             profession,
                             picked = picked,
-                            enabled = picked || state.selectedProfessions.size < MAX_PROFESSIONS,
                             onClick = { onToggleProfession(profession.slug) },
                         )
                     }
@@ -337,7 +361,7 @@ private fun PickerHeader(
         Spacer(Modifier.height(8.dp))
         Text(
             when {
-                professionStep -> stringResource(R.string.professions_body, MAX_PROFESSIONS)
+                professionStep -> stringResource(R.string.professions_body)
                 onboarding -> stringResource(R.string.topics_onboarding_body)
                 else -> stringResource(R.string.topics_edit_body)
             },
@@ -401,12 +425,12 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun ProfessionCard(profession: Profession, picked: Boolean, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun ProfessionCard(profession: Profession, picked: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val c = ChangeloomTheme.colors
     val border by animateColorAsState(if (picked) c.primary.copy(alpha = 0.5f) else c.line, expoTween(Durations.MEDIUM), label = "professionBorder")
     GlassCard(
-        modifier.fillMaxWidth().graphicsLayer { alpha = if (enabled) 1f else 0.5f },
-        onClick = if (enabled) onClick else { {} },
+        modifier.fillMaxWidth(),
+        onClick = onClick,
         border = SolidColor(border),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -422,7 +446,7 @@ private fun ProfessionCard(profession: Profession, picked: Boolean, enabled: Boo
             TriStateCheck(
                 if (picked) CheckState.Checked else CheckState.Unchecked,
                 label = stringResource(R.string.follow_topic, profession.name),
-                onClick = if (enabled) onClick else { {} },
+                onClick = onClick,
             )
         }
     }
@@ -442,7 +466,7 @@ private fun ProfessionBar(state: TopicPickerState, onNext: () -> Unit) {
             .padding(horizontal = Spacing.gutter, vertical = 12.dp),
     ) {
         Eyebrow(
-            stringResource(R.string.professions_selected, count, MAX_PROFESSIONS),
+            stringResource(R.string.professions_selected, count),
             color = if (count > 0) c.primaryText else c.fgSubtle,
         )
         Spacer(Modifier.height(8.dp))

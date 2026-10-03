@@ -419,7 +419,7 @@ type ServerInterface interface {
 	// PutMyDevice Register (or refresh) a push notification token for this device.
 	// (PUT /v1/me/devices)
 	PutMyDevice(w http.ResponseWriter, r *http.Request)
-	// PutMyProfessions Replace the user's professions (at most 3).
+	// PutMyProfessions Replace the user's professions.
 	// (PUT /v1/me/professions)
 	PutMyProfessions(w http.ResponseWriter, r *http.Request)
 	// PutMyTopics Replace the set of followed topics.

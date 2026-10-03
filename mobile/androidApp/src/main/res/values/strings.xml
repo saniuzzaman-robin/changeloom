@@ -169,12 +169,12 @@
     <string name="search_professions">Search professions</string>
     <string name="professions_title_1">What do you</string>
     <string name="professions_title_2">do?</string>
-    <string name="professions_body">Pick up to %1$d. We\'ll suggest the areas that matter to you and rank them first in your feed.</string>
+    <string name="professions_body">Pick as many as you like. We\'ll suggest the areas that matter to you and rank them first in your feed.</string>
     <string name="professions_eyebrow">Your profession</string>
     <string name="professions_empty_title">No professions match</string>
     <string name="professions_empty_body">Try a broader term, or skip this step.</string>
     <string name="professions_limit">You can pick up to %1$d professions.</string>
-    <string name="professions_selected">%1$d of %2$d chosen</string>
+    <string name="professions_selected">%1$d chosen</string>
     <string name="professions_next">Next</string>
     <string name="professions_skip">Skip</string>
     <string name="edit_professions">Edit professions</string>

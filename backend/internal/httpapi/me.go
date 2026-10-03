@@ -170,9 +170,6 @@ func (s *Server) PutMyTopics(w http.ResponseWriter, r *http.Request) {
 	s.writeMe(w, r, user)
 }
 
-// maxProfessions is how many professions a user may pick.
-const maxProfessions = 3
-
 // PutMyProfessions replaces the user's professions.
 func (s *Server) PutMyProfessions(w http.ResponseWriter, r *http.Request) {
 	user := mustUser(r)
@@ -189,10 +186,6 @@ func (s *Server) PutMyProfessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slugs := slices.Compact(slices.Sorted(slices.Values(body.Professions)))
-	if len(slugs) > maxProfessions {
-		writeError(w, http.StatusBadRequest, "bad_request", fmt.Sprintf("at most %d professions", maxProfessions))
-		return
-	}
 
 	var unknown []string
 	err := pgx.BeginFunc(r.Context(), s.pool, func(tx pgx.Tx) error {

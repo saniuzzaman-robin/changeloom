@@ -809,9 +809,6 @@ func TestPutMyProfessions(t *testing.T) {
 	if code, _ := put("software-engineer", "nope"); code != http.StatusBadRequest {
 		t.Fatalf("unknown profession: status %d, want 400", code)
 	}
-	if code, _ := put("a", "b", "c", "d"); code != http.StatusBadRequest {
-		t.Fatalf("four professions: status %d, want 400", code)
-	}
 	if code := e.do(http.MethodGet, "/v1/me", aliceToken, nil, &me); code != http.StatusOK || !slices.Equal(me.Professions, []string{"data-scientist"}) {
 		t.Fatalf("after rejected puts: status %d, professions %v", code, me.Professions)
 	}

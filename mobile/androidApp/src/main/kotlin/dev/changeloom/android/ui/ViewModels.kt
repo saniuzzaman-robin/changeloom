@@ -156,8 +156,6 @@ class TopicCatalog(private val api: ChangeloomApi) {
 /** The picker's two steps: pick professions, then topics (the professions' areas come first). */
 enum class PickerStep { Professions, Topics }
 
-internal const val MAX_PROFESSIONS = 3
-
 data class TopicPickerState(
     val loading: Boolean = true,
     val saving: Boolean = false,
@@ -168,7 +166,7 @@ data class TopicPickerState(
     val expanded: Set<String> = emptySet(),
     val step: PickerStep = PickerStep.Topics,
     val professions: List<Profession> = emptyList(),
-    /** Chosen profession slugs, at most [MAX_PROFESSIONS], in the order they were picked. */
+    /** Chosen profession slugs, in the order they were picked. */
     val selectedProfessions: List<String> = emptyList(),
     /** The professions the server has saved. */
     val savedProfessions: List<String> = emptyList(),
@@ -250,8 +248,7 @@ class TopicPickerViewModel(
         s.copy(
             selectedProfessions = when {
                 slug in chosen -> chosen - slug
-                chosen.size < MAX_PROFESSIONS -> chosen + slug
-                else -> chosen
+                else -> chosen + slug
             },
             saved = false,
         )
