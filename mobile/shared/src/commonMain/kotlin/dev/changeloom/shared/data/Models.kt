@@ -12,7 +12,16 @@ data class Topic(
 )
 
 @Serializable
-data class TopicList(val items: List<Topic>)
+data class Profession(
+    val slug: String,
+    val name: String,
+    val description: String = "",
+    /** Root topic slugs (areas) this profession suggests, in display order. */
+    val topics: List<String> = emptyList(),
+)
+
+@Serializable
+data class TopicList(val items: List<Topic>, val professions: List<Profession> = emptyList())
 
 /** The api's error body (`Error` in api/openapi.yaml). */
 @Serializable
@@ -23,6 +32,7 @@ data class Me(
     val id: Long,
     val email: String? = null,
     val topics: List<String>,
+    val professions: List<String> = emptyList(),
     val stats: MeStats = MeStats(),
 )
 
@@ -33,6 +43,14 @@ data class MeStats(val saved: Long = 0, val read: Long = 0)
 data class PutTopicsRequest(
     @SerialName("topics") val topics: List<String>,
 )
+
+@Serializable
+data class PutProfessionsRequest(
+    @SerialName("professions") val professions: List<String>,
+)
+
+@Serializable
+data class RecordViewsRequest(val ids: List<Long>)
 
 @Serializable
 data class StorySummary(
@@ -47,7 +65,7 @@ data class StorySummary(
     @SerialName("is_read") val isRead: Boolean,
     @SerialName("read_at") val readAt: String? = null,
     @SerialName("is_bookmarked") val isBookmarked: Boolean = false,
-    /** Timeline only: `followed`, `related` or `explore`; null elsewhere. */
+    /** Timeline only: `followed`, `profession`, `related` or `explore`; null elsewhere. */
     val match: String? = null,
 )
 

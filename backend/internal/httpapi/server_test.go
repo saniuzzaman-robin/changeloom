@@ -336,8 +336,8 @@ func TestTimelineCursorPagination(t *testing.T) {
 func TestTimelineRejectsBadParams(t *testing.T) {
 	e := newEnv(t)
 	for _, q := range []string{"limit=0", "limit=101", "limit=abc", "cursor=not-a-cursor", "cursor=e30",
-		// Tier 3 is out of range.
-		"cursor=eyJyIjpmYWxzZSwidCI6MywicCI6IjIwMjYtMDEtMDFUMDA6MDA6MDBaIiwiaSI6MX0",
+		// Tier 4 is out of range.
+		"cursor=eyJyIjpmYWxzZSwidCI6NCwicCI6IjIwMjYtMDEtMDFUMDA6MDA6MDBaIiwiaSI6MX0",
 	} {
 		if code := e.do(http.MethodGet, "/v1/timeline?"+q, aliceToken, nil, nil); code != http.StatusBadRequest {
 			t.Errorf("GET /v1/timeline?%s: status %d, want 400", q, code)
@@ -766,5 +766,161 @@ func TestRateLimits(t *testing.T) {
 	}
 	if code := ipLimited.do(http.MethodGet, "/health", "", nil, nil); code != http.StatusOK {
 		t.Fatalf("health check over the IP limit: status %d, want 200", code)
+	}
+}
+
+func TestTopicsIncludeProfessions(t *testing.T) {
+	e := newEnv(t)
+	var got struct {
+		Professions []httpapi.Profession `json:"professions"`
+	}
+	if code := e.do(http.MethodGet, "/v1/topics", aliceToken, nil, &got); code != http.StatusOK {
+		t.Fatalf("topics: status %d", code)
+	}
+	if len(got.Professions) != 2 || got.Professions[0].Slug != "software-engineer" || got.Professions[1].Slug != "data-scientist" {
+		t.Fatalf("professions = %+v, want software-engineer then data-scientist", got.Professions)
+	}
+	if want := []string{"web", "mobile", "cloud", "languages", "devtools"}; !slices.Equal(got.Professions[0].Topics, want) {
+		t.Fatalf("software-engineer topics = %v, want %v", got.Professions[0].Topics, want)
+	}
+}
+
+func TestPutMyProfessions(t *testing.T) {
+	e := newEnv(t)
+	put := func(slugs ...string) (int, httpapi.Me) {
+		var me httpapi.Me
+		code := e.do(http.MethodPut, "/v1/me/professions", aliceToken, map[string]any{"professions": slugs}, &me)
+		return code, me
+	}
+
+	if code, me := put("software-engineer", "data-scientist"); code != http.StatusOK || !slices.Equal(me.Professions, []string{"software-engineer", "data-scientist"}) {
+		t.Fatalf("put: status %d, professions %v", code, me.Professions)
+	}
+	// The set is replaced, not merged.
+	if code, me := put("data-scientist"); code != http.StatusOK || !slices.Equal(me.Professions, []string{"data-scientist"}) {
+		t.Fatalf("replace: status %d, professions %v", code, me.Professions)
+	}
+	var me httpapi.Me
+	if code := e.do(http.MethodGet, "/v1/me", aliceToken, nil, &me); code != http.StatusOK || !slices.Equal(me.Professions, []string{"data-scientist"}) {
+		t.Fatalf("get me: status %d, professions %v", code, me.Professions)
+	}
+
+	// A rejected request leaves the saved professions alone.
+	if code, _ := put("software-engineer", "nope"); code != http.StatusBadRequest {
+		t.Fatalf("unknown profession: status %d, want 400", code)
+	}
+	if code, _ := put("a", "b", "c", "d"); code != http.StatusBadRequest {
+		t.Fatalf("four professions: status %d, want 400", code)
+	}
+	if code := e.do(http.MethodGet, "/v1/me", aliceToken, nil, &me); code != http.StatusOK || !slices.Equal(me.Professions, []string{"data-scientist"}) {
+		t.Fatalf("after rejected puts: status %d, professions %v", code, me.Professions)
+	}
+	if code, me := put([]string{}...); code != http.StatusOK || len(me.Professions) != 0 {
+		t.Fatalf("clear: status %d, professions %v", code, me.Professions)
+	}
+}
+
+func TestRecordStoryViews(t *testing.T) {
+	e := newEnv(t)
+	s1 := e.insertStory("one", time.Now(), "languages/go")
+	s2 := e.insertStory("two", time.Now(), "web/react")
+	count := func() int {
+		var n int
+		if err := e.pool.QueryRow(t.Context(), `SELECT count(*) FROM story_views`).Scan(&n); err != nil {
+			t.Fatalf("count views: %v", err)
+		}
+		return n
+	}
+
+	body := map[string]any{"ids": []int64{s1, s2, 999999}}
+	for range 2 {
+		if code := e.do(http.MethodPost, "/v1/stories/views", aliceToken, body, nil); code != http.StatusNoContent {
+			t.Fatalf("record views: status %d", code)
+		}
+	}
+	if got := count(); got != 2 {
+		t.Fatalf("views after repeats = %d, want 2 (idempotent, unknown id ignored)", got)
+	}
+	if code := e.do(http.MethodPost, "/v1/stories/views", bobToken, map[string]any{"ids": []int64{s1}}, nil); code != http.StatusNoContent {
+		t.Fatalf("bob views: status %d", code)
+	}
+	if got := count(); got != 3 {
+		t.Fatalf("views with a second viewer = %d, want 3", got)
+	}
+
+	tooMany := make([]int64, 101)
+	for i := range tooMany {
+		tooMany[i] = s1
+	}
+	if code := e.do(http.MethodPost, "/v1/stories/views", aliceToken, map[string]any{"ids": tooMany}, nil); code != http.StatusBadRequest {
+		t.Fatalf("101 ids: status %d, want 400", code)
+	}
+	if code := e.do(http.MethodPost, "/v1/stories/views", aliceToken, map[string]any{}, nil); code != http.StatusBadRequest {
+		t.Fatalf("missing ids: status %d, want 400", code)
+	}
+}
+
+func TestProfessionEndpointsRequireAuth(t *testing.T) {
+	e := newEnv(t)
+	for _, tc := range []struct {
+		method, path string
+		body         any
+	}{
+		{http.MethodGet, "/v1/topics", nil},
+		{http.MethodPut, "/v1/me/professions", map[string]any{"professions": []string{}}},
+		{http.MethodPost, "/v1/stories/views", map[string]any{"ids": []int64{1}}},
+	} {
+		for _, token := range []string{"", "not-a-valid-token"} {
+			if code := e.do(tc.method, tc.path, token, tc.body, nil); code != http.StatusUnauthorized {
+				t.Errorf("%s %s with token %q: status %d, want 401", tc.method, tc.path, token, code)
+			}
+		}
+	}
+}
+
+func TestTimelineProfessionTier(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now().Truncate(time.Second)
+	// data-scientist maps to ai, databases and languages. Newer stories sit in lower tiers, so
+	// the expected order can only come from the tiers.
+	followed := e.insertStory("followed", now.Add(-4*time.Hour), "web/react")
+	profession := e.insertStory("profession", now.Add(-3*time.Hour), "databases/postgres")
+	related := e.insertStory("related", now.Add(-2*time.Hour), "cloud/aws")
+	explore := e.insertStory("explore", now.Add(-1*time.Hour), "security/advisories")
+
+	e.follow(aliceToken, "web/react")
+	e.relate("web/react", "cloud/aws")
+	if code := e.do(http.MethodPut, "/v1/me/professions", aliceToken, map[string]any{"professions": []string{"data-scientist"}}, nil); code != http.StatusOK {
+		t.Fatalf("put professions: status %d", code)
+	}
+
+	want := []int64{followed, profession, related, explore}
+	wantMatch := []httpapi.StorySummaryMatch{
+		httpapi.StorySummaryMatchFollowed, httpapi.StorySummaryMatchProfession,
+		httpapi.StorySummaryMatchRelated, httpapi.StorySummaryMatchExplore,
+	}
+	got := e.timeline(aliceToken, 50, "").Items
+	if !slices.Equal(ids(got), want) {
+		t.Fatalf("timeline order = %v, want %v", ids(got), want)
+	}
+	for i, it := range got {
+		if it.Match == nil || *it.Match != wantMatch[i] {
+			t.Errorf("story %d (%s): match = %v, want %s", it.Id, it.Title, it.Match, wantMatch[i])
+		}
+	}
+
+	// The cursor carries the profession tier across page boundaries.
+	var paged []int64
+	cursor := ""
+	for range len(want) + 1 {
+		page := e.timeline(aliceToken, 1, cursor)
+		paged = append(paged, ids(page.Items)...)
+		if page.NextCursor == nil {
+			break
+		}
+		cursor = *page.NextCursor
+	}
+	if !slices.Equal(paged, want) {
+		t.Fatalf("paged order = %v, want %v", paged, want)
 	}
 }

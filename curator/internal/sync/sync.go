@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/saniuzzaman-robin/changeloom/curator/internal/catalog"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/config"
 )
 
@@ -20,9 +21,10 @@ const batchSize = 500
 
 // Result counts what Push wrote.
 type Result struct {
-	Topics     int
-	Stories    int
-	Tombstones int
+	Topics      int
+	Professions int
+	Stories     int
+	Tombstones  int
 	// SkippedTombstones are tombstones whose target story is not in the hosted DB; they are
 	// retried on the next sync.
 	SkippedTombstones int
@@ -67,8 +69,9 @@ func watermarkKey(env config.Env) string { return string(env) + ":stories" }
 
 // Push writes the local topics, changed stories, tombstones and request decisions for env to the
 // hosted DB in one transaction, then records on the local side what was pushed. It is idempotent:
-// a failure after the hosted commit only means the next push repeats the same writes.
-func Push(ctx context.Context, local, remote *pgxpool.Pool, env config.Env) (Result, error) {
+// a failure after the hosted commit only means the next push repeats the same writes. Stories
+// published before minPublished are not pushed: the hosted DB prunes them anyway.
+func Push(ctx context.Context, local, remote *pgxpool.Pool, env config.Env, minPublished time.Time) (Result, error) {
 	var res Result
 
 	var watermark time.Time
@@ -81,7 +84,11 @@ func Push(ctx context.Context, local, remote *pgxpool.Pool, env config.Env) (Res
 	if err != nil {
 		return res, err
 	}
-	stories, err := readStories(ctx, local, watermark)
+	professions, err := readProfessions(ctx, local)
+	if err != nil {
+		return res, err
+	}
+	stories, err := readStories(ctx, local, watermark, minPublished)
 	if err != nil {
 		return res, err
 	}
@@ -97,6 +104,9 @@ func Push(ctx context.Context, local, remote *pgxpool.Pool, env config.Env) (Res
 	var pushedTombstones []pgtype.UUID
 	err = pgx.BeginFunc(ctx, remote, func(tx pgx.Tx) error {
 		if err := pushTopics(ctx, tx, topics, relations); err != nil {
+			return err
+		}
+		if err := pushProfessions(ctx, tx, professions); err != nil {
 			return err
 		}
 		for start := 0; start < len(stories); start += batchSize {
@@ -115,7 +125,7 @@ func Push(ctx context.Context, local, remote *pgxpool.Pool, env config.Env) (Res
 		return res, fmt.Errorf("push to %s: %w", env, err)
 	}
 	res = Result{
-		Topics: len(topics), Stories: len(stories), Tombstones: len(pushedTombstones),
+		Topics: len(topics), Professions: len(professions), Stories: len(stories), Tombstones: len(pushedTombstones),
 		SkippedTombstones: len(tombstones) - len(pushedTombstones), Decisions: len(decisions),
 	}
 
@@ -184,11 +194,29 @@ func readTopics(ctx context.Context, local *pgxpool.Pool) ([]topicRow, [][2]stri
 	return topics, relations, nil
 }
 
-func readStories(ctx context.Context, local *pgxpool.Pool, since time.Time) ([]storyRow, error) {
+func readProfessions(ctx context.Context, local *pgxpool.Pool) ([]catalog.Profession, error) {
+	rows, err := local.Query(ctx, `
+		SELECT p.slug, p.name, p.description,
+		       COALESCE(array_agg(t.slug ORDER BY pt.position) FILTER (WHERE t.id IS NOT NULL), '{}')
+		FROM professions p
+		LEFT JOIN profession_topics pt ON pt.profession_id = p.id
+		LEFT JOIN topics t ON t.id = pt.topic_id
+		GROUP BY p.id ORDER BY p.position, p.id`)
+	if err != nil {
+		return nil, fmt.Errorf("read professions: %w", err)
+	}
+	professions, err := pgx.CollectRows(rows, pgx.RowToStructByPos[catalog.Profession])
+	if err != nil {
+		return nil, fmt.Errorf("read professions: %w", err)
+	}
+	return professions, nil
+}
+
+func readStories(ctx context.Context, local *pgxpool.Pool, since, minPublished time.Time) ([]storyRow, error) {
 	rows, err := local.Query(ctx, `
 		SELECT id, uid, title, summary, body_md, kind, severity, importance, published_at,
 		       dedupe_keys, model, prompt_version, created_at, updated_at
-		FROM stories WHERE updated_at > $1 ORDER BY updated_at, id`, since)
+		FROM stories WHERE updated_at > $1 AND published_at >= $2 ORDER BY updated_at, id`, since, minPublished)
 	if err != nil {
 		return nil, fmt.Errorf("read changed stories: %w", err)
 	}
@@ -267,6 +295,17 @@ func pushTopics(ctx context.Context, tx pgx.Tx, topics []topicRow, relations [][
 		JOIN topics a ON a.slug = x.a JOIN topics b ON b.slug = x.b
 		ON CONFLICT DO NOTHING`, as, bs); err != nil {
 		return fmt.Errorf("insert topic relations: %w", err)
+	}
+	return nil
+}
+
+// pushProfessions upserts every profession by slug and replaces its topic list. Professions are
+// never deleted remotely, because users pick them.
+func pushProfessions(ctx context.Context, tx pgx.Tx, professions []catalog.Profession) error {
+	for i, p := range professions {
+		if err := catalog.UpsertProfession(ctx, tx, p, i); err != nil {
+			return err
+		}
 	}
 	return nil
 }

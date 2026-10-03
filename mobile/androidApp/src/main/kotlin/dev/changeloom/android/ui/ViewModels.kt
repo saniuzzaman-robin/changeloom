@@ -20,14 +20,17 @@ import dev.changeloom.shared.data.ChangeloomApi
 import dev.changeloom.shared.data.CheckState
 import dev.changeloom.shared.data.MeStats
 import dev.changeloom.shared.data.PagerState
+import dev.changeloom.shared.data.Profession
 import dev.changeloom.shared.data.Story
 import dev.changeloom.shared.data.StoryCache
 import dev.changeloom.shared.data.StoryPager
 import dev.changeloom.shared.data.TimelineRepository
 import dev.changeloom.shared.data.TimelineState
+import dev.changeloom.shared.data.TopicList
 import dev.changeloom.shared.data.TopicRequest
 import dev.changeloom.shared.data.TopicSelection
 import dev.changeloom.shared.data.TopicTree
+import dev.changeloom.shared.data.ViewTracker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -46,6 +49,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.IOException
 
+private const val VIEW_FLUSH_INTERVAL_MS = 30_000L
 private const val TAG_SIGN_IN = "SignIn"
 private const val TAG_TOPICS = "Topics"
 private const val TAG_STORY = "Story"
@@ -140,10 +144,19 @@ class SignInViewModel(
 /** The topic tree only changes on backend deploys, so it is fetched once per process. */
 class TopicCatalog(private val api: ChangeloomApi) {
     private val mutex = Mutex()
-    private var cached: TopicTree? = null
+    private var cached: TopicList? = null
 
-    suspend fun tree(): TopicTree = mutex.withLock { cached ?: TopicTree(api.topics()).also { cached = it } }
+    private suspend fun list(): TopicList = mutex.withLock { cached ?: api.topicList().also { cached = it } }
+
+    suspend fun tree(): TopicTree = TopicTree(list().items)
+
+    suspend fun professions(): List<Profession> = list().professions
 }
+
+/** The picker's two steps: pick professions, then topics (the professions' areas come first). */
+enum class PickerStep { Professions, Topics }
+
+internal const val MAX_PROFESSIONS = 3
 
 data class TopicPickerState(
     val loading: Boolean = true,
@@ -153,11 +166,18 @@ data class TopicPickerState(
     val followed: List<String> = emptyList(),
     val query: String = "",
     val expanded: Set<String> = emptySet(),
+    val step: PickerStep = PickerStep.Topics,
+    val professions: List<Profession> = emptyList(),
+    /** Chosen profession slugs, at most [MAX_PROFESSIONS], in the order they were picked. */
+    val selectedProfessions: List<String> = emptyList(),
+    /** The professions the server has saved. */
+    val savedProfessions: List<String> = emptyList(),
     /** Set after an edit (not onboarding) is saved; the screen closes and calls [TopicPickerViewModel.savedHandled]. */
     val saved: Boolean = false,
     val error: String? = null,
 ) {
-    val dirty: Boolean get() = selection != null && selection.toFollowed() != followed
+    val dirty: Boolean
+        get() = selection != null && (selection.toFollowed() != followed || selectedProfessions != savedProfessions)
 }
 
 /**
@@ -191,17 +211,30 @@ class TopicPickerViewModel(
                 _state.update { if (it.followed.isEmpty()) it.copy(followed = cached) else it }
             }
             try {
-                val (tree, me) = coroutineScope {
-                    val tree = async { catalog.tree() }
+                val (loaded, me) = coroutineScope {
+                    val loaded = async { catalog.tree() to catalog.professions() }
                     val me = async { api.me() }
-                    tree.await() to me.await()
+                    loaded.await() to me.await()
                 }
+                val (tree, professions) = loaded
+                val known = professions.mapTo(mutableSetOf()) { it.slug }
+                val mine = me.professions.filter { it in known }
                 val selection = TopicSelection.fromFollowed(tree, me.topics)
                 val partial = tree.roots.map { it.slug }.filter { selection.stateOf(it) == CheckState.Partial }
                 val followed = selection.toFollowed()
                 cache.saveFollowed(followed)
                 _state.update {
-                    it.copy(loading = false, selection = selection, followed = followed, expanded = partial.toSet())
+                    it.copy(
+                        loading = false,
+                        selection = selection,
+                        followed = followed,
+                        expanded = partial.toSet(),
+                        professions = professions,
+                        selectedProfessions = mine,
+                        savedProfessions = mine,
+                        // Onboarding starts with the professions; an edit goes straight to the topics.
+                        step = if (followed.isEmpty() && professions.isNotEmpty()) PickerStep.Professions else PickerStep.Topics,
+                    )
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -211,6 +244,20 @@ class TopicPickerViewModel(
             }
         }
     }
+
+    fun toggleProfession(slug: String) = _state.update { s ->
+        val chosen = s.selectedProfessions
+        s.copy(
+            selectedProfessions = when {
+                slug in chosen -> chosen - slug
+                chosen.size < MAX_PROFESSIONS -> chosen + slug
+                else -> chosen
+            },
+            saved = false,
+        )
+    }
+
+    fun setStep(step: PickerStep) = _state.update { it.copy(step = step, query = "") }
 
     fun toggle(slug: String) = edit { it.toggle(slug) }
     fun selectAll() = edit { it.selectAll() }
@@ -224,7 +271,13 @@ class TopicPickerViewModel(
 
     /** Drops unsaved edits, e.g. when leaving the edit screen without saving. */
     fun discard() = _state.update { s ->
-        s.copy(selection = s.selection?.let { TopicSelection.fromFollowed(it.tree, s.followed) }, query = "", error = null)
+        s.copy(
+            selection = s.selection?.let { TopicSelection.fromFollowed(it.tree, s.followed) },
+            selectedProfessions = s.savedProfessions,
+            step = if (s.followed.isEmpty() && s.professions.isNotEmpty()) PickerStep.Professions else PickerStep.Topics,
+            query = "",
+            error = null,
+        )
     }
 
     fun savedHandled() = _state.update { it.copy(saved = false) }
@@ -233,9 +286,15 @@ class TopicPickerViewModel(
         val selection = _state.value.selection ?: return
         val slugs = selection.toFollowed()
         val onboarding = _state.value.followed.isEmpty()
+        val professions = _state.value.selectedProfessions
         _state.update { it.copy(saving = true, error = null) }
         viewModelScope.launch {
             try {
+                // Professions first: if the topics call then fails, a retry only repeats the idempotent writes.
+                if (professions != _state.value.savedProfessions) {
+                    api.putMyProfessions(professions)
+                    _state.update { it.copy(savedProfessions = professions) }
+                }
                 api.putMyTopics(slugs)
                 cache.saveFollowed(slugs)
                 analytics.topicsUpdate(slugs.size, onboarding)
@@ -256,11 +315,25 @@ class TopicPickerViewModel(
     }
 }
 
-class TimelineViewModel(private val repo: TimelineRepository, private val analytics: Analytics) : ViewModel() {
+class TimelineViewModel(
+    private val repo: TimelineRepository,
+    private val analytics: Analytics,
+    private val views: ViewTracker,
+) : ViewModel() {
     val state: StateFlow<TimelineState> = repo.state
 
     init {
         refresh()
+        viewModelScope.launch { views.run(VIEW_FLUSH_INTERVAL_MS) }
+    }
+
+    /** A story was on screen long enough to count as seen. */
+    fun storySeen(id: Long) {
+        viewModelScope.launch { views.seen(id) }
+    }
+
+    fun flushViews() {
+        viewModelScope.launch { views.flush() }
     }
 
     fun refresh() {

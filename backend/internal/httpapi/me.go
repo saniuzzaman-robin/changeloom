@@ -56,9 +56,19 @@ func (s *Server) ListTopics(w http.ResponseWriter, r *http.Request) {
 	for i, t := range rows {
 		items[i] = Topic{Slug: t.Slug, Name: t.Name, Parent: t.ParentSlug, Description: t.Description}
 	}
+	profRows, err := s.q.ListProfessions(r.Context())
+	if err != nil {
+		internalError(w, r, "list professions", err)
+		return
+	}
+	professions := make([]Profession, len(profRows))
+	for i, p := range profRows {
+		professions[i] = Profession{Slug: p.Slug, Name: p.Name, Description: p.Description, Topics: p.Topics}
+	}
 	body, err := json.Marshal(struct {
-		Items []Topic `json:"items"`
-	}{items})
+		Items       []Topic      `json:"items"`
+		Professions []Profession `json:"professions"`
+	}{items, professions})
 	if err != nil {
 		internalError(w, r, "encode topics", err)
 		return
@@ -160,10 +170,79 @@ func (s *Server) PutMyTopics(w http.ResponseWriter, r *http.Request) {
 	s.writeMe(w, r, user)
 }
 
+// maxProfessions is how many professions a user may pick.
+const maxProfessions = 3
+
+// PutMyProfessions replaces the user's professions.
+func (s *Server) PutMyProfessions(w http.ResponseWriter, r *http.Request) {
+	user := mustUser(r)
+
+	var body PutMyProfessionsJSONRequestBody
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body: "+err.Error())
+		return
+	}
+	if body.Professions == nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "professions is required")
+		return
+	}
+	slugs := slices.Compact(slices.Sorted(slices.Values(body.Professions)))
+	if len(slugs) > maxProfessions {
+		writeError(w, http.StatusBadRequest, "bad_request", fmt.Sprintf("at most %d professions", maxProfessions))
+		return
+	}
+
+	var unknown []string
+	err := pgx.BeginFunc(r.Context(), s.pool, func(tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		found, err := q.GetProfessionIDsBySlugs(r.Context(), slugs)
+		if err != nil {
+			return fmt.Errorf("look up professions: %w", err)
+		}
+		ids := make([]int64, 0, len(found))
+		known := make(map[string]bool, len(found))
+		for _, p := range found {
+			ids = append(ids, p.ID)
+			known[p.Slug] = true
+		}
+		for _, slug := range slugs {
+			if !known[slug] {
+				unknown = append(unknown, slug)
+			}
+		}
+		if len(unknown) > 0 {
+			return nil
+		}
+		if err := q.DeleteUserProfessions(r.Context(), user.ID); err != nil {
+			return fmt.Errorf("clear user professions: %w", err)
+		}
+		if err := q.InsertUserProfessions(r.Context(), db.InsertUserProfessionsParams{UserID: user.ID, ProfessionIds: ids}); err != nil {
+			return fmt.Errorf("insert user professions: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		internalError(w, r, "put my professions", err)
+		return
+	}
+	if len(unknown) > 0 {
+		writeError(w, http.StatusBadRequest, "unknown_professions", "unknown profession slugs: "+strings.Join(unknown, ", "))
+		return
+	}
+	s.writeMe(w, r, user)
+}
+
 func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user auth.User) {
 	slugs, err := s.q.ListUserTopicSlugs(r.Context(), user.ID)
 	if err != nil {
 		internalError(w, r, "list user topics", err)
+		return
+	}
+	professions, err := s.q.ListUserProfessionSlugs(r.Context(), user.ID)
+	if err != nil {
+		internalError(w, r, "list user professions", err)
 		return
 	}
 	stats, err := s.q.GetUserStats(r.Context(), user.ID)
@@ -172,9 +251,10 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user auth.User)
 		return
 	}
 	writeJSON(w, http.StatusOK, Me{
-		Id:     user.ID,
-		Email:  user.Email,
-		Topics: slugs,
-		Stats:  MeStats{Saved: stats.Saved, Read: stats.Read},
+		Id:          user.ID,
+		Email:       user.Email,
+		Topics:      slugs,
+		Professions: professions,
+		Stats:       MeStats{Saved: stats.Saved, Read: stats.Read},
 	})
 }

@@ -123,7 +123,12 @@ internal fun ProfileScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val mode by vm.themeMode.collectAsStateWithLifecycle()
-    val followed = picker.state.collectAsStateWithLifecycle().value.followed
+    val pickerState = picker.state.collectAsStateWithLifecycle().value
+    val followed = pickerState.followed
+    val professionNames = remember(pickerState.professions, pickerState.savedProfessions) {
+        val byslug = pickerState.professions.associate { it.slug to it.name }
+        pickerState.savedProfessions.mapNotNull { byslug[it] }
+    }
     val photo = vm.photo.collectAsStateWithLifecycle().value
     val photoImage = remember(photo) { photo?.asImageBitmap() }
     LaunchedEffect(Unit) { vm.refresh() }
@@ -133,10 +138,15 @@ internal fun ProfileScreen(
         photo = photoImage,
         state = state,
         followed = followed,
+        professions = professionNames,
         themeMode = mode,
         version = BuildConfig.VERSION_NAME,
         contentPadding = contentPadding,
         onEditTopics = onEditTopics,
+        onEditProfessions = {
+            picker.setStep(PickerStep.Professions)
+            onEditTopics()
+        },
         onThemeMode = vm::setThemeMode,
         onRetry = vm::refresh,
         onRequestText = vm::setRequestText,
@@ -182,6 +192,8 @@ internal fun ProfileContent(
     photo: ImageBitmap?,
     state: ProfileState,
     followed: List<String>,
+    professions: List<String> = emptyList(),
+    onEditProfessions: () -> Unit = {},
     themeMode: ThemeMode,
     version: String,
     contentPadding: PaddingValues,
@@ -224,6 +236,17 @@ internal fun ProfileContent(
                 }
 
                 Column(Modifier.enter(240)) {
+                    if (professions.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Eyebrow(stringResource(R.string.professions_label), Modifier.weight(1f))
+                            TextAction(stringResource(R.string.edit_professions), onEditProfessions, icon = Icons.Rounded.Edit)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            professions.forEach { TopicChip(it) }
+                        }
+                        Spacer(Modifier.height(20.dp))
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Eyebrow(stringResource(R.string.following), Modifier.weight(1f))
                         TextAction(stringResource(R.string.edit_topics), onEditTopics, icon = Icons.Rounded.Edit)

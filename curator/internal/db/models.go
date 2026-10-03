@@ -29,6 +29,21 @@ type FetchRun struct {
 	TopicIds     []int64
 }
 
+type Profession struct {
+	ID          int64
+	Slug        string
+	Name        string
+	Description string
+	Position    int16
+	UpdatedAt   time.Time
+}
+
+type ProfessionTopic struct {
+	ProfessionID int64
+	TopicID      int64
+	Position     int16
+}
+
 type RequestInbox struct {
 	ID         int64
 	Env        string
@@ -78,6 +93,12 @@ type StoryTopic struct {
 	TopicID int64
 }
 
+type StoryView struct {
+	UserID  int64
+	StoryID int64
+	SeenAt  time.Time
+}
+
 type SyncState struct {
 	Key   string
 	Value time.Time
@@ -120,10 +141,12 @@ type TopicRequest struct {
 }
 
 type TopicStat struct {
-	TopicID   int64
-	Env       string
-	Followers int32
-	UpdatedAt time.Time
+	TopicID         int64
+	Env             string
+	Followers       int32
+	UpdatedAt       time.Time
+	ProfessionUsers int32
+	Views7d         int32
 }
 
 type User struct {
@@ -137,6 +160,11 @@ type UserBookmark struct {
 	UserID    int64
 	StoryID   int64
 	CreatedAt time.Time
+}
+
+type UserProfession struct {
+	UserID       int64
+	ProfessionID int64
 }
 
 type UserStoryState struct {

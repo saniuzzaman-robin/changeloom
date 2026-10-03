@@ -1,0 +1,294 @@
+- slug: fundraising-vc
+  name: "Fundraising & VC"
+  description: "Investors and capital."
+  children:
+    - {slug: fundraising-vc/vc, name: "Venture Capital"}
+    - {slug: fundraising-vc/seed, name: "Seed Rounds"}
+    - {slug: fundraising-vc/growth-rounds, name: "Series A & Beyond"}
+    - {slug: fundraising-vc/crowdfunding, name: "Crowdfunding"}
+    - {slug: fundraising-vc/angels, name: "Angel Investing"}
+    - {slug: fundraising-vc/valuation, name: "Term Sheets & Valuation"}
+    - {slug: fundraising-vc/private-equity, name: "Private Equity"}
+    - {slug: fundraising-vc/rounds, name: "Funding Rounds"}
+- slug: small-business
+  name: "Small Business"
+  description: "Running a small company."
+  children:
+    - {slug: small-business/loans, name: "Business Loans"}
+    - {slug: small-business/bookkeeping, name: "Bookkeeping"}
+    - {slug: small-business/tariffs, name: "Tariffs & Small Business"}
+    - {slug: small-business/taxes, name: "Business Taxes"}
+    - {slug: small-business/hiring, name: "Hiring Your First Staff"}
+    - {slug: small-business/franchising, name: "Franchising"}
+    - {slug: small-business/insurance, name: "Business Insurance"}
+    - {slug: small-business/local, name: "Local Business"}
+- slug: growth-sales
+  name: "Growth & Revenue"
+  description: "Acquisition and monetization."
+  children:
+    - {slug: growth-sales/acquisition, name: "Customer Acquisition"}
+    - {slug: growth-sales/pricing, name: "Pricing Strategy"}
+    - {slug: growth-sales/seo, name: "SEO"}
+    - {slug: growth-sales/virality, name: "Referral & Virality"}
+    - {slug: growth-sales/churn, name: "Retention & Churn"}
+    - {slug: growth-sales/partnerships, name: "Partnerships"}
+    - {slug: growth-sales/funnels, name: "Sales Funnels"}
+- slug: leadership
+  name: "Leadership & Management"
+  description: "Leading teams and organizations."
+  children:
+    - {slug: leadership/management, name: "Management Skills"}
+    - {slug: leadership/executive, name: "Executive Leadership"}
+    - {slug: leadership/remote-teams, name: "Remote Teams"}
+    - {slug: leadership/culture, name: "Culture"}
+    - {slug: leadership/okrs, name: "OKRs & Goals"}
+    - {slug: leadership/decisions, name: "Decision-Making"}
+    - {slug: leadership/change, name: "Change Management"}
+    - {slug: leadership/ceo-moves, name: "CEO Moves"}
+- slug: digital-marketing
+  name: "Digital Marketing"
+  description: "Paid and organic channels."
+  children:
+    - {slug: digital-marketing/google-ads, name: "Google Ads"}
+    - {slug: digital-marketing/meta-ads, name: "Meta Ads"}
+    - {slug: digital-marketing/seo, name: "SEO"}
+    - {slug: digital-marketing/email, name: "Email Marketing"}
+    - {slug: digital-marketing/affiliate, name: "Affiliate Marketing"}
+    - {slug: digital-marketing/programmatic, name: "Programmatic Advertising"}
+    - {slug: digital-marketing/automation, name: "Marketing Automation"}
+    - {slug: digital-marketing/search-updates, name: "Search Algorithm Updates"}
+    - {slug: digital-marketing/ai, name: "AI in Marketing"}
+- slug: social-media-marketing
+  name: "Social Media Marketing"
+  description: "Platforms and creators."
+  children:
+    - {slug: social-media-marketing/tiktok, name: "TikTok Marketing"}
+    - {slug: social-media-marketing/instagram, name: "Instagram & Reels"}
+    - {slug: social-media-marketing/linkedin, name: "LinkedIn"}
+    - {slug: social-media-marketing/youtube, name: "YouTube"}
+    - {slug: social-media-marketing/influencers, name: "Influencer Marketing"}
+    - {slug: social-media-marketing/community, name: "Community Management"}
+    - {slug: social-media-marketing/algorithms, name: "Social Algorithms"}
+    - {slug: social-media-marketing/short-form, name: "Short-Form Video"}
+- slug: brand-content
+  name: "Brand & Content"
+  description: "Positioning and storytelling."
+  children:
+    - {slug: brand-content/branding, name: "Branding"}
+    - {slug: brand-content/content-strategy, name: "Content Strategy"}
+    - {slug: brand-content/copywriting, name: "Copywriting"}
+    - {slug: brand-content/pr, name: "PR"}
+    - {slug: brand-content/podcasting, name: "Podcasting"}
+    - {slug: brand-content/newsletters, name: "Newsletters"}
+    - {slug: brand-content/video, name: "Video Production"}
+    - {slug: brand-content/campaigns, name: "Brand Campaigns"}
+- slug: marketing-analytics
+  name: "Marketing Analytics"
+  description: "Measurement and attribution."
+  children:
+    - {slug: marketing-analytics/attribution, name: "Attribution"}
+    - {slug: marketing-analytics/google-analytics, name: "Google Analytics"}
+    - {slug: marketing-analytics/cro, name: "Conversion Optimization"}
+    - {slug: marketing-analytics/mmm, name: "Marketing Mix Modeling"}
+    - {slug: marketing-analytics/privacy, name: "Privacy & Cookies"}
+    - {slug: marketing-analytics/cdp, name: "Customer Data Platforms"}
+    - {slug: marketing-analytics/dashboards, name: "Dashboards"}
+- slug: ecommerce
+  name: "E-commerce"
+  description: "Online retail and marketplaces."
+  children:
+    - {slug: ecommerce/shopify, name: "Shopify"}
+    - {slug: ecommerce/amazon, name: "Amazon Selling"}
+    - {slug: ecommerce/etsy-ebay, name: "Etsy & eBay"}
+    - {slug: ecommerce/dropshipping, name: "Dropshipping"}
+    - {slug: ecommerce/payments, name: "Payment Methods"}
+    - {slug: ecommerce/returns-fraud, name: "Returns & Fraud"}
+    - {slug: ecommerce/marketplace-policy, name: "Marketplace Policy"}
+    - {slug: ecommerce/cross-border, name: "Temu & Shein"}
+    - {slug: ecommerce/retail, name: "Retail Trends"}
+- slug: supply-chain-logistics
+  name: "Supply Chain & Logistics"
+  description: "Shipping and fulfillment."
+  children:
+    - {slug: supply-chain-logistics/freight, name: "Freight & Shipping"}
+    - {slug: supply-chain-logistics/ports, name: "Ports & Disruptions"}
+    - {slug: supply-chain-logistics/warehousing, name: "Warehousing"}
+    - {slug: supply-chain-logistics/last-mile, name: "Last-Mile Delivery"}
+    - {slug: supply-chain-logistics/customs, name: "Customs & Tariffs"}
+    - {slug: supply-chain-logistics/tech, name: "Supply Chain Tech"}
+    - {slug: supply-chain-logistics/fulfillment, name: "Fulfillment Services"}
+    - {slug: supply-chain-logistics/sourcing, name: "Sourcing"}
+- slug: sales-practice
+  name: "Sales Practice"
+  description: "Techniques and process."
+  children:
+    - {slug: sales-practice/prospecting, name: "Prospecting"}
+    - {slug: sales-practice/outreach, name: "Cold Outreach"}
+    - {slug: sales-practice/negotiation, name: "Negotiation"}
+    - {slug: sales-practice/closing, name: "Closing"}
+    - {slug: sales-practice/account-management, name: "Account Management"}
+    - {slug: sales-practice/b2b, name: "B2B Sales"}
+    - {slug: sales-practice/coaching, name: "Sales Coaching"}
+    - {slug: sales-practice/enterprise, name: "Enterprise Sales"}
+- slug: crm-sales-tech
+  name: "Sales Tech"
+  description: "Tools and automation."
+  children:
+    - {slug: crm-sales-tech/salesforce, name: "Salesforce"}
+    - {slug: crm-sales-tech/hubspot, name: "HubSpot"}
+    - {slug: crm-sales-tech/ai, name: "Sales AI"}
+    - {slug: crm-sales-tech/outreach-tools, name: "Outreach Tools"}
+    - {slug: crm-sales-tech/crm, name: "CRM Trends"}
+    - {slug: crm-sales-tech/revops, name: "Revenue Operations"}
+    - {slug: crm-sales-tech/intent-data, name: "Intent Data"}
+- slug: recruiting
+  name: "Recruiting & Hiring"
+  description: "Talent acquisition."
+  children:
+    - {slug: recruiting/sourcing, name: "Sourcing Candidates"}
+    - {slug: recruiting/interviewing, name: "Interviewing"}
+    - {slug: recruiting/ats, name: "Applicant Tracking"}
+    - {slug: recruiting/employer-branding, name: "Employer Branding"}
+    - {slug: recruiting/ai, name: "AI in Hiring"}
+    - {slug: recruiting/trends, name: "Hiring Trends"}
+    - {slug: recruiting/compensation, name: "Compensation Benchmarks"}
+    - {slug: recruiting/campus, name: "Campus Recruiting"}
+- slug: people-management
+  name: "People & Culture"
+  description: "Engagement and development."
+  children:
+    - {slug: people-management/performance, name: "Performance Management"}
+    - {slug: people-management/onboarding, name: "Onboarding"}
+    - {slug: people-management/learning, name: "Learning & Development"}
+    - {slug: people-management/engagement, name: "Employee Engagement"}
+    - {slug: people-management/dei, name: "Diversity & Inclusion"}
+    - {slug: people-management/benefits, name: "Benefits"}
+    - {slug: people-management/retention, name: "Retention"}
+    - {slug: people-management/layoffs, name: "Layoffs & Restructuring"}
+- slug: employment-law
+  name: "Employment Law"
+  description: "Rules for employers."
+  children:
+    - {slug: employment-law/wage-hour, name: "Wage & Hour"}
+    - {slug: employment-law/leave, name: "Leave Policy"}
+    - {slug: employment-law/discrimination, name: "Discrimination Law"}
+    - {slug: employment-law/termination, name: "Contracts & Termination"}
+    - {slug: employment-law/immigration, name: "Immigration for Employers"}
+    - {slug: employment-law/unions, name: "Unions & Labor Law"}
+    - {slug: employment-law/pay-transparency, name: "Pay Transparency"}
+    - {slug: employment-law/classification, name: "Worker Classification"}
+- slug: workplace-trends
+  name: "Workplace Trends"
+  description: "The changing nature of work."
+  children:
+    - {slug: workplace-trends/remote-hybrid, name: "Remote & Hybrid"}
+    - {slug: workplace-trends/four-day-week, name: "Four-Day Week"}
+    - {slug: workplace-trends/ai, name: "AI at Work"}
+    - {slug: workplace-trends/gig, name: "Gig Economy"}
+    - {slug: workplace-trends/monitoring, name: "Employee Monitoring"}
+    - {slug: workplace-trends/job-market, name: "Job Market"}
+    - {slug: workplace-trends/burnout, name: "Burnout"}
+    - {slug: workplace-trends/rto, name: "Return to Office"}
+- slug: corporate-finance
+  name: "Corporate Finance"
+  description: "Capital, M&A and treasury."
+  children:
+    - {slug: corporate-finance/mergers, name: "Mergers & Acquisitions"}
+    - {slug: corporate-finance/capital-markets, name: "Capital Markets"}
+    - {slug: corporate-finance/treasury, name: "Treasury"}
+    - {slug: corporate-finance/fpa, name: "Financial Planning & Analysis"}
+    - {slug: corporate-finance/earnings, name: "Earnings Reports"}
+    - {slug: corporate-finance/bankruptcies, name: "Bankruptcies"}
+    - {slug: corporate-finance/valuation, name: "Valuation"}
+    - {slug: corporate-finance/cfo, name: "CFO Trends"}
+- slug: banking
+  name: "Banking"
+  description: "Retail, commercial and investment banks."
+  children:
+    - {slug: banking/big-banks, name: "Big Banks"}
+    - {slug: banking/central-banks, name: "Central Bank Policy"}
+    - {slug: banking/lending, name: "Lending"}
+    - {slug: banking/stress, name: "Bank Failures & Stress"}
+    - {slug: banking/investment-banking, name: "Investment Banking"}
+    - {slug: banking/digital-banks, name: "Digital Banks"}
+    - {slug: banking/rates, name: "Interest Rates"}
+- slug: fintech-payments
+  name: "Fintech & Payments"
+  description: "Payment rails and financial software."
+  children:
+    - {slug: fintech-payments/processors, name: "Stripe & PayPal"}
+    - {slug: fintech-payments/real-time, name: "Real-Time Payments"}
+    - {slug: fintech-payments/bnpl, name: "Buy Now Pay Later"}
+    - {slug: fintech-payments/open-banking, name: "Open Banking"}
+    - {slug: fintech-payments/wallets, name: "Digital Wallets"}
+    - {slug: fintech-payments/cross-border, name: "Cross-Border Payments"}
+    - {slug: fintech-payments/neobanks, name: "Neobanks"}
+    - {slug: fintech-payments/embedded, name: "Embedded Finance"}
+- slug: financial-regulation
+  name: "Financial Regulation"
+  description: "Rules for financial institutions."
+  children:
+    - {slug: financial-regulation/sec, name: "SEC"}
+    - {slug: financial-regulation/basel, name: "Basel & Capital Rules"}
+    - {slug: financial-regulation/aml, name: "Anti-Money Laundering"}
+    - {slug: financial-regulation/consumer, name: "Consumer Finance Protection"}
+    - {slug: financial-regulation/crypto, name: "Crypto Regulation"}
+    - {slug: financial-regulation/market-structure, name: "Market Structure"}
+    - {slug: financial-regulation/sanctions, name: "Sanctions Compliance"}
+- slug: accounting-standards
+  name: "Accounting Standards"
+  description: "GAAP, IFRS and reporting."
+  children:
+    - {slug: accounting-standards/gaap, name: "US GAAP"}
+    - {slug: accounting-standards/ifrs, name: "IFRS"}
+    - {slug: accounting-standards/revenue-recognition, name: "Revenue Recognition"}
+    - {slug: accounting-standards/sustainability, name: "Sustainability Reporting"}
+    - {slug: accounting-standards/leases, name: "Lease Accounting"}
+    - {slug: accounting-standards/reporting, name: "Financial Reporting"}
+    - {slug: accounting-standards/software, name: "Accounting Software"}
+    - {slug: accounting-standards/cloud, name: "Cloud Accounting"}
+- slug: tax
+  name: "Tax"
+  description: "Rules and planning."
+  children:
+    - {slug: tax/us-federal, name: "US Federal Tax"}
+    - {slug: tax/law-changes, name: "Tax Law Changes"}
+    - {slug: tax/vat-gst, name: "VAT & GST"}
+    - {slug: tax/corporate, name: "Corporate Tax"}
+    - {slug: tax/international, name: "International Tax"}
+    - {slug: tax/payroll, name: "Payroll Tax"}
+    - {slug: tax/credits, name: "Tax Credits"}
+    - {slug: tax/tech, name: "Tax Compliance Tech"}
+- slug: audit-assurance
+  name: "Audit & Assurance"
+  description: "Audit methods and oversight."
+  children:
+    - {slug: audit-assurance/pcaob, name: "PCAOB & Oversight"}
+    - {slug: audit-assurance/internal, name: "Internal Audit"}
+    - {slug: audit-assurance/tech, name: "Audit Technology"}
+    - {slug: audit-assurance/fraud, name: "Fraud Examination"}
+    - {slug: audit-assurance/esg, name: "ESG Assurance"}
+    - {slug: audit-assurance/failures, name: "Audit Failures"}
+    - {slug: audit-assurance/controls, name: "Risk & Controls"}
+- slug: strategy-consulting
+  name: "Strategy Consulting"
+  description: "Advisory and industry trends."
+  children:
+    - {slug: strategy-consulting/strategy, name: "Strategy"}
+    - {slug: strategy-consulting/digital, name: "Digital Transformation"}
+    - {slug: strategy-consulting/ma, name: "M&A Advisory"}
+    - {slug: strategy-consulting/market-entry, name: "Market Entry"}
+    - {slug: strategy-consulting/ai, name: "AI Strategy"}
+    - {slug: strategy-consulting/big-firms, name: "Big Four & MBB"}
+    - {slug: strategy-consulting/reports, name: "Industry Reports"}
+- slug: operations
+  name: "Operations & Process"
+  description: "Process and performance."
+  children:
+    - {slug: operations/lean, name: "Lean & Six Sigma"}
+    - {slug: operations/project-management, name: "Project Management"}
+    - {slug: operations/automation, name: "Process Automation"}
+    - {slug: operations/procurement, name: "Procurement"}
+    - {slug: operations/continuity, name: "Business Continuity"}
+    - {slug: operations/quality, name: "Quality Management"}
+    - {slug: operations/erp, name: "ERP Systems"}

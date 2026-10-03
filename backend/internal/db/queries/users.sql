@@ -29,3 +29,17 @@ SELECT
 -- name: DeleteUser :exec
 -- Deleting the user cascades to their follows, read state, bookmarks, devices and topic requests.
 DELETE FROM users WHERE id = @id;
+
+-- name: ListUserProfessionSlugs :many
+SELECT p.slug
+FROM user_professions up
+JOIN professions p ON p.id = up.profession_id
+WHERE up.user_id = @user_id
+ORDER BY p.position, p.slug;
+
+-- name: DeleteUserProfessions :exec
+DELETE FROM user_professions WHERE user_id = @user_id;
+
+-- name: InsertUserProfessions :exec
+INSERT INTO user_professions (user_id, profession_id)
+SELECT @user_id, unnest(@profession_ids::bigint[]);

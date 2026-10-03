@@ -3,6 +3,7 @@ package topics
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -21,16 +22,49 @@ type Node struct {
 	Children    []Node `yaml:"children"`
 }
 
-// Parse decodes and validates a YAML topic tree.
-func Parse(data []byte) ([]Node, error) {
-	var nodes []Node
-	if err := yaml.Unmarshal(data, &nodes); err != nil {
-		return nil, fmt.Errorf("parse topics yaml: %w", err)
+// Profession is one profession in the seed file; Topics are root topic slugs in display order.
+type Profession struct {
+	Slug        string   `yaml:"slug"`
+	Name        string   `yaml:"name"`
+	Description string   `yaml:"description"`
+	Topics      []string `yaml:"topics"`
+}
+
+// Seed is the decoded seed file: professions and the topic tree.
+type Seed struct {
+	Professions []Profession `yaml:"professions"`
+	Topics      []Node       `yaml:"topics"`
+}
+
+// Parse decodes and validates a YAML seed file.
+func Parse(data []byte) (Seed, error) {
+	var seed Seed
+	if err := yaml.Unmarshal(data, &seed); err != nil {
+		return Seed{}, fmt.Errorf("parse topics yaml: %w", err)
 	}
-	if err := validate(nodes, "", map[string]bool{}); err != nil {
-		return nil, fmt.Errorf("invalid topics yaml: %w", err)
+	if err := validate(seed.Topics, "", map[string]bool{}); err != nil {
+		return Seed{}, fmt.Errorf("invalid topics yaml: %w", err)
 	}
-	return nodes, nil
+	roots := map[string]bool{}
+	for _, n := range seed.Topics {
+		roots[n.Slug] = true
+	}
+	seen := map[string]bool{}
+	for _, p := range seed.Professions {
+		if p.Slug == "" || p.Name == "" {
+			return Seed{}, errors.New("invalid topics yaml: profession needs both slug and name")
+		}
+		if seen[p.Slug] {
+			return Seed{}, fmt.Errorf("invalid topics yaml: duplicate profession slug %q", p.Slug)
+		}
+		seen[p.Slug] = true
+		for _, t := range p.Topics {
+			if !roots[t] {
+				return Seed{}, fmt.Errorf("invalid topics yaml: profession %q lists %q, which is not a root topic", p.Slug, t)
+			}
+		}
+	}
+	return seed, nil
 }
 
 func validate(nodes []Node, parent string, seen map[string]bool) error {
@@ -53,21 +87,46 @@ func validate(nodes []Node, parent string, seen map[string]bool) error {
 	return nil
 }
 
-// Sync upserts every topic in the YAML tree by slug in one transaction.
-// Topics missing from the tree are left untouched.
+// Sync upserts every topic and profession in the YAML file by slug in one transaction.
+// Entries missing from the file are left untouched.
 func Sync(ctx context.Context, pool *pgxpool.Pool, data []byte) (int, error) {
-	nodes, err := Parse(data)
+	seed, err := Parse(data)
 	if err != nil {
 		return 0, err
 	}
 	count := 0
 	err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		return upsert(ctx, db.New(tx), nodes, nil, &count)
+		q := db.New(tx)
+		if err := upsert(ctx, q, seed.Topics, nil, &count); err != nil {
+			return err
+		}
+		return upsertProfessions(ctx, q, seed.Professions)
 	})
 	if err != nil {
 		return 0, fmt.Errorf("sync topics: %w", err)
 	}
 	return count, nil
+}
+
+func upsertProfessions(ctx context.Context, q *db.Queries, professions []Profession) error {
+	for i, p := range professions {
+		id, err := q.UpsertProfession(ctx, db.UpsertProfessionParams{
+			Slug:        p.Slug,
+			Name:        p.Name,
+			Description: p.Description,
+			Position:    int16(i),
+		})
+		if err != nil {
+			return fmt.Errorf("upsert profession %q: %w", p.Slug, err)
+		}
+		if err := q.DeleteProfessionTopics(ctx, id); err != nil {
+			return fmt.Errorf("clear topics of profession %q: %w", p.Slug, err)
+		}
+		if err := q.InsertProfessionTopics(ctx, db.InsertProfessionTopicsParams{ProfessionID: id, TopicSlugs: p.Topics}); err != nil {
+			return fmt.Errorf("link topics of profession %q: %w", p.Slug, err)
+		}
+	}
+	return nil
 }
 
 func upsert(ctx context.Context, q *db.Queries, nodes []Node, parentID *int64, count *int) error {

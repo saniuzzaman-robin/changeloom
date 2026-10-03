@@ -21,7 +21,7 @@ const (
 
 // Allowed values, mirrored in the stories table's CHECK constraints ("none" means no severity).
 var (
-	kinds      = []string{"release", "breaking", "security", "deprecation", "announcement", "article"}
+	kinds      = []string{"release", "breaking", "security", "deprecation", "announcement", "article", "research", "policy"}
 	severities = []string{"none", "low", "medium", "high", "critical"}
 )
 

@@ -118,6 +118,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.changeloom.android.R
 import dev.changeloom.android.ads.FeedAds
@@ -151,6 +153,8 @@ import dev.changeloom.android.ui.theme.ThemeMode
 import dev.changeloom.android.ui.theme.expoTween
 import dev.changeloom.shared.data.StorySummary
 import dev.changeloom.shared.data.TimelineState
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
@@ -382,7 +386,9 @@ private fun FeedScreen(
         onSetRead = vm::setRead,
         onSetSaved = vm::setBookmarked,
         onDismissError = vm::dismissError,
+        onSeen = vm::storySeen,
     )
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.flushViews() }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -401,6 +407,7 @@ internal fun FeedContent(
     onDismissError: () -> Unit,
     ads: FeedAds? = null,
     photo: ImageBitmap? = null,
+    onSeen: (Long) -> Unit = {},
 ) {
     val c = ChangeloomTheme.colors
     val listState = rememberLazyListState()
@@ -408,6 +415,7 @@ internal fun FeedContent(
     val (fresh, earlier) = remember(state.items) { state.items.partition { !it.isRead } }
     val staggered = rememberStaggered(listState)
     LoadMoreEffect(listState, onLoadMore)
+    SeenEffect(listState, onSeen)
 
     Box(Modifier.fillMaxSize().tabContentBounds(contentPadding)) {
         PullToRefreshBox(
@@ -824,6 +832,31 @@ internal fun LoadMoreEffect(listState: LazyListState, onLoadMore: () -> Unit) {
             .collect { latest() }
     }
 }
+
+/**
+ * Calls [onSeen] with the id of each story (a `Long` item key) once at least half of it has stayed in view for
+ * [SEEN_DWELL_MS]; scrolling past it sooner doesn't count.
+ */
+@Composable
+internal fun SeenEffect(listState: LazyListState, onSeen: (Long) -> Unit) {
+    val latest by rememberUpdatedState(onSeen)
+    LaunchedEffect(listState) {
+        val timers = mutableMapOf<Long, Job>()
+        snapshotFlow {
+            val info = listState.layoutInfo
+            info.visibleItemsInfo.mapNotNullTo(mutableSetOf()) { item ->
+                val id = item.key as? Long ?: return@mapNotNullTo null
+                val visible = minOf(item.offset + item.size, info.viewportEndOffset) - maxOf(item.offset, info.viewportStartOffset)
+                id.takeIf { item.size > 0 && visible * 2 >= item.size }
+            }
+        }.distinctUntilChanged().collect { inView ->
+            timers.keys.filter { it !in inView }.forEach { timers.remove(it)?.cancel() }
+            inView.filter { it !in timers }.forEach { id -> timers[id] = launch { delay(SEEN_DWELL_MS); latest(id) } }
+        }
+    }
+}
+
+private const val SEEN_DWELL_MS = 1_000L
 
 /**
  * App rule: content never scrolls under the status bar or the navigation bar. A tab screen's container stops below

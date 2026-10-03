@@ -17,11 +17,12 @@ data class TimelineState(
     val error: String? = null,
 )
 
-/** Followed topics first, then related ones, then the rest; a missing match (older server) counts as the rest. */
+/** Followed topics first, then the user's professions, then related ones, then the rest; a missing match (older server) counts as the rest. */
 internal fun matchTier(match: String?): Int = when (match) {
     "followed" -> 0
-    "related" -> 1
-    else -> 2
+    "profession" -> 1
+    "related" -> 2
+    else -> 3
 }
 
 /** Timeline order: unread first, then match tier, then newest first, then highest id — same as the server. */

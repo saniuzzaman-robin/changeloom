@@ -104,7 +104,7 @@ curator-db: ## Create the curator's local database on the dev Postgres (needs `m
 curator-migrate: ## Apply the backend and curator migrations to the curator's local DB
 	$(CURATOR_RUN) migrate
 
-curator-seed: ## Load curator/seed/catalog.yaml into the curator's local DB
+curator-seed: ## Load curator/seed/catalog/ into the curator's local DB
 	$(CURATOR_RUN) seed
 
 curator-generate: ## Regenerate the curator's sqlc queries (rerun after backend migrations change)

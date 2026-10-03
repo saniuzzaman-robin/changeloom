@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/saniuzzaman-robin/changeloom/curator/internal/catalog"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/db"
 )
 
 // Prompt renders the instructions for one grouping call.
-func Prompt(topics []db.ListFetchTopicsRow, inbox []db.ListPendingInboxRow, maxNew int) string {
+func Prompt(topics []db.ListFetchTopicsRow, professions []catalog.Profession, inbox []db.ListPendingInboxRow, maxNew int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, `You curate the topic catalog of Changeloom, a timeline of software news for developers. Users request topics they want to follow. Decide what to do with each pending request below.
 
@@ -26,10 +27,15 @@ Add a note of at most %d characters to any decision when it helps the user. Deci
 - name: a short display name. description: one plain sentence saying what news the topic covers.
 - related: slugs of existing or new topics whose stories also suit its followers; may be empty.
 - hints: official feed, blog or release-page URLs (absolute https URLs) to check for news; only URLs you verified exist; may be empty.
+- professions: for a root topic, the slugs of the professions below whose members would follow it (at least one). Leave it empty for a child topic; it inherits its parent's professions.
 - Every new topic must be the target of at least one accepted request, or the new parent of such a topic.
 
-## Existing topics
+## Professions
 `, maxNoteRunes, maxNew)
+	for _, p := range professions {
+		fmt.Fprintf(&b, "- %s: %s\n", p.Slug, p.Name)
+	}
+	b.WriteString("\n## Existing topics\n")
 	for _, t := range topics {
 		fmt.Fprintf(&b, "- %s: %s", t.Slug, t.Name)
 		if t.Description != "" {
@@ -58,9 +64,9 @@ func Schema() map[string]any {
 				"items": map[string]any{
 					"type":                 "object",
 					"additionalProperties": false,
-					"required":             []string{"slug", "name", "description", "parent_slug", "related", "hints"},
+					"required":             []string{"slug", "name", "description", "parent_slug", "related", "hints", "professions"},
 					"properties": map[string]any{
-						"slug": str, "name": str, "description": str, "parent_slug": str, "related": strs, "hints": strs,
+						"slug": str, "name": str, "description": str, "parent_slug": str, "related": strs, "hints": strs, "professions": strs,
 					},
 				},
 			},

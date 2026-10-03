@@ -17,6 +17,21 @@ type DeviceToken struct {
 	UpdatedAt time.Time
 }
 
+type Profession struct {
+	ID          int64
+	Slug        string
+	Name        string
+	Description string
+	Position    int16
+	UpdatedAt   time.Time
+}
+
+type ProfessionTopic struct {
+	ProfessionID int64
+	TopicID      int64
+	Position     int16
+}
+
 type Story struct {
 	ID            int64
 	Title         string
@@ -45,6 +60,12 @@ type StorySource struct {
 type StoryTopic struct {
 	StoryID int64
 	TopicID int64
+}
+
+type StoryView struct {
+	UserID  int64
+	StoryID int64
+	SeenAt  time.Time
 }
 
 type Topic struct {
@@ -83,6 +104,11 @@ type UserBookmark struct {
 	UserID    int64
 	StoryID   int64
 	CreatedAt time.Time
+}
+
+type UserProfession struct {
+	UserID       int64
+	ProfessionID int64
 }
 
 type UserStoryState struct {

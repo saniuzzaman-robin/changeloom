@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Runs `curator run` at 07:00, 12:00, 17:00 and 22:00; launchd runs a missed job when the Mac wakes.
+  Runs `curator run` at 02:00, 07:00, 12:00, 17:00 and 22:00; launchd runs a missed job when the Mac wakes.
   Template: replace __REPO__ with the absolute path of this repo and __HOME__ with your home
   directory, then install:
     make curator-build
@@ -27,6 +27,7 @@
     </array>
     <key>StartCalendarInterval</key>
     <array>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>

@@ -167,6 +167,82 @@ func (q *Queries) InsertStory(ctx context.Context, arg InsertStoryParams) (int64
 	return id, err
 }
 
+const listBackfillTopics = `-- name: ListBackfillTopics :many
+SELECT t.id,
+    t.slug,
+    t.name,
+    t.description,
+    p.slug AS parent_slug,
+    COALESCE((SELECT array_agg(h.url ORDER BY h.url) FROM topic_hints h WHERE h.topic_id = t.id), '{}')::text[] AS hints,
+    COALESCE((
+        SELECT array_agg(pr.name ORDER BY pr.position, pr.name)
+        FROM profession_topics pt JOIN professions pr ON pr.id = pt.profession_id
+        WHERE pt.topic_id = COALESCE(t.parent_id, t.id)
+    ), '{}')::text[] AS professions
+FROM topics t
+LEFT JOIN topics p ON p.id = t.parent_id
+WHERE NOT EXISTS (SELECT 1 FROM topics c WHERE c.parent_id = t.id)
+    AND (
+        SELECT count(*) FROM story_topics st JOIN stories sv ON sv.id = st.story_id
+        WHERE st.topic_id = t.id AND sv.published_at >= $1
+    ) < $2::bigint
+    AND NOT EXISTS (
+        SELECT 1 FROM fetch_runs fr
+        WHERE fr.status = 'succeeded' AND fr.group_slug LIKE 'backfill:%'
+            AND fr.started_at >= $1 AND fr.topic_ids @> ARRAY[t.id]
+    )
+ORDER BY COALESCE((SELECT sum(ts.followers + ts.profession_users + ts.views_7d) FROM topic_stats ts WHERE ts.topic_id = t.id), 0) DESC,
+    t.slug
+LIMIT $3
+`
+
+type ListBackfillTopicsParams struct {
+	Since   time.Time
+	Target  int64
+	MaxRows int32
+}
+
+type ListBackfillTopicsRow struct {
+	ID          int64
+	Slug        string
+	Name        string
+	Description string
+	ParentSlug  *string
+	Hints       []string
+	Professions []string
+}
+
+// Leaf topics with fewer than @target stories published since @since, most wanted first. A topic
+// already covered by a successful backfill call since @since is skipped, so topics with little
+// real news are not asked about again and again.
+func (q *Queries) ListBackfillTopics(ctx context.Context, arg ListBackfillTopicsParams) ([]ListBackfillTopicsRow, error) {
+	rows, err := q.db.Query(ctx, listBackfillTopics, arg.Since, arg.Target, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListBackfillTopicsRow{}
+	for rows.Next() {
+		var i ListBackfillTopicsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.ParentSlug,
+			&i.Hints,
+			&i.Professions,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listFetchTopics = `-- name: ListFetchTopics :many
 SELECT t.id,
     t.slug,
@@ -174,8 +250,15 @@ SELECT t.id,
     t.description,
     p.slug AS parent_slug,
     COALESCE((SELECT sum(s.followers) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS followers,
+    COALESCE((SELECT sum(s.profession_users) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS profession_users,
+    COALESCE((SELECT sum(s.views_7d) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS views_7d,
     EXISTS (SELECT 1 FROM topics c WHERE c.parent_id = t.id) AS has_children,
     COALESCE((SELECT array_agg(h.url ORDER BY h.url) FROM topic_hints h WHERE h.topic_id = t.id), '{}')::text[] AS hints,
+    COALESCE((
+        SELECT array_agg(pr.name ORDER BY pr.position, pr.name)
+        FROM profession_topics pt JOIN professions pr ON pr.id = pt.profession_id
+        WHERE pt.topic_id = COALESCE(t.parent_id, t.id)
+    ), '{}')::text[] AS professions,
     -- 'epoch' when no call covering the topic has succeeded yet.
     COALESCE((
         SELECT max(fr.started_at) FROM fetch_runs fr
@@ -187,19 +270,23 @@ ORDER BY t.slug
 `
 
 type ListFetchTopicsRow struct {
-	ID            int64
-	Slug          string
-	Name          string
-	Description   string
-	ParentSlug    *string
-	Followers     int32
-	HasChildren   bool
-	Hints         []string
-	LastFetchedAt time.Time
+	ID              int64
+	Slug            string
+	Name            string
+	Description     string
+	ParentSlug      *string
+	Followers       int32
+	ProfessionUsers int32
+	Views7d         int32
+	HasChildren     bool
+	Hints           []string
+	Professions     []string
+	LastFetchedAt   time.Time
 }
 
-// Every topic with what fetch planning needs: its parent, hints, follower count, whether it has
-// children and when a fetch call covering it last succeeded.
+// Every topic with what fetch planning needs: its parent, hints, demand (summed over the hosted
+// envs), the professions its root serves, whether it has children and when a fetch call covering
+// it last succeeded.
 func (q *Queries) ListFetchTopics(ctx context.Context) ([]ListFetchTopicsRow, error) {
 	rows, err := q.db.Query(ctx, listFetchTopics)
 	if err != nil {
@@ -216,8 +303,11 @@ func (q *Queries) ListFetchTopics(ctx context.Context) ([]ListFetchTopicsRow, er
 			&i.Description,
 			&i.ParentSlug,
 			&i.Followers,
+			&i.ProfessionUsers,
+			&i.Views7d,
 			&i.HasChildren,
 			&i.Hints,
+			&i.Professions,
 			&i.LastFetchedAt,
 		); err != nil {
 			return nil, err
@@ -263,6 +353,44 @@ func (q *Queries) ListRecentStoryRefs(ctx context.Context, arg ListRecentStoryRe
 	for rows.Next() {
 		var i ListRecentStoryRefsRow
 		if err := rows.Scan(&i.Title, &i.Url); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTopicRelations = `-- name: ListTopicRelations :many
+SELECT a.slug AS slug, b.slug AS related_slug
+FROM topic_relations r
+JOIN topics a ON a.id = r.topic_id
+JOIN topics b ON b.id = r.related_id
+UNION ALL
+SELECT b.slug, a.slug
+FROM topic_relations r
+JOIN topics a ON a.id = r.topic_id
+JOIN topics b ON b.id = r.related_id
+`
+
+type ListTopicRelationsRow struct {
+	Slug        string
+	RelatedSlug string
+}
+
+// Both directions of every related pair.
+func (q *Queries) ListTopicRelations(ctx context.Context) ([]ListTopicRelationsRow, error) {
+	rows, err := q.db.Query(ctx, listTopicRelations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTopicRelationsRow{}
+	for rows.Next() {
+		var i ListTopicRelationsRow
+		if err := rows.Scan(&i.Slug, &i.RelatedSlug); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -165,6 +165,16 @@ gcloud services enable monitoring.googleapis.com logging.googleapis.com cloudtra
      --threshold-rule percent=0.5 --threshold-rule percent=0.9 --threshold-rule percent=1.0
    ```
 
+### Curator: catalog, backfill and prune
+
+The topic catalog (`curator/seed/catalog/`) and the keys below are tuned in `curator/.env`; defaults are in `curator/.env.example`.
+
+- **Loading a changed catalog.** `make curator-migrate curator-seed` (local DB), then `make migrate-remote DEPLOY_ENV=<env>`, then `curator sync --env <env>` from `curator/`. The old software-only topics were dropped, so reset the dev and staging DBs once before the first seed.
+- **Backfill.** `curator backfill [--max-calls N]` fills leaf topics with fewer than `CURATOR_BACKFILL_TARGET` recent stories, `CURATOR_BACKFILL_TOPICS_PER_CALL` topics per Claude call. Run it repeatedly on first setup; each call uses subscription quota. `curator run` also makes `CURATOR_BACKFILL_CALLS_PER_RUN` calls per run.
+- **Fetch frequency.** Hot topics (at least `CURATOR_HOT_MIN_VIEWS` distinct viewers in 7 days) are fetched every run; warm ones (followed, or serving a user's profession) every `CURATOR_WARM_INTERVAL_HOURS`; cold ones every `CURATOR_COLD_INTERVAL_HOURS`. Views come from the app's feed impressions.
+- **Prune** (keeps Neon under its 1 GB limit). `curator run` prunes each hosted DB every `CURATOR_PRUNE_INTERVAL_DAYS`; run `curator prune --env <env>` by hand to force it. Saved stories are never deleted. Unsaved stories are deleted when published over `CURATOR_PRUNE_MAX_AGE_DAYS` ago, or over `CURATOR_PRUNE_GRACE_DAYS` ago with fewer than `CURATOR_PRUNE_MIN_VIEWS` distinct viewers. With few users almost every unsaved story is deleted after a week; lower `CURATOR_PRUNE_MIN_VIEWS` if that is too aggressive.
+- The launchd job now runs five times a day (02:00, 07:00, 12:00, 17:00, 22:00); reinstall the plist with the sed command in its header to pick that up.
+
 When `curator run` fails on the Mac, it also shows a macOS notification and exits non-zero. Details
 are in `~/Library/Logs/changeloom-curator.log`.
 

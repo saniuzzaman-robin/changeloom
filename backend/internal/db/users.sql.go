@@ -19,6 +19,15 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 	return err
 }
 
+const deleteUserProfessions = `-- name: DeleteUserProfessions :exec
+DELETE FROM user_professions WHERE user_id = $1
+`
+
+func (q *Queries) DeleteUserProfessions(ctx context.Context, userID int64) error {
+	_, err := q.db.Exec(ctx, deleteUserProfessions, userID)
+	return err
+}
+
 const deleteUserTopics = `-- name: DeleteUserTopics :exec
 DELETE FROM user_topics WHERE user_id = $1
 `
@@ -63,6 +72,21 @@ func (q *Queries) GetUserStats(ctx context.Context, userID int64) (GetUserStatsR
 	return i, err
 }
 
+const insertUserProfessions = `-- name: InsertUserProfessions :exec
+INSERT INTO user_professions (user_id, profession_id)
+SELECT $1, unnest($2::bigint[])
+`
+
+type InsertUserProfessionsParams struct {
+	UserID        int64
+	ProfessionIds []int64
+}
+
+func (q *Queries) InsertUserProfessions(ctx context.Context, arg InsertUserProfessionsParams) error {
+	_, err := q.db.Exec(ctx, insertUserProfessions, arg.UserID, arg.ProfessionIds)
+	return err
+}
+
 const insertUserTopics = `-- name: InsertUserTopics :exec
 INSERT INTO user_topics (user_id, topic_id)
 SELECT $1, unnest($2::bigint[])
@@ -76,6 +100,34 @@ type InsertUserTopicsParams struct {
 func (q *Queries) InsertUserTopics(ctx context.Context, arg InsertUserTopicsParams) error {
 	_, err := q.db.Exec(ctx, insertUserTopics, arg.UserID, arg.TopicIds)
 	return err
+}
+
+const listUserProfessionSlugs = `-- name: ListUserProfessionSlugs :many
+SELECT p.slug
+FROM user_professions up
+JOIN professions p ON p.id = up.profession_id
+WHERE up.user_id = $1
+ORDER BY p.position, p.slug
+`
+
+func (q *Queries) ListUserProfessionSlugs(ctx context.Context, userID int64) ([]string, error) {
+	rows, err := q.db.Query(ctx, listUserProfessionSlugs, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var slug string
+		if err := rows.Scan(&slug); err != nil {
+			return nil, err
+		}
+		items = append(items, slug)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listUserTopicSlugs = `-- name: ListUserTopicSlugs :many

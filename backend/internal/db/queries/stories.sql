@@ -1,7 +1,8 @@
 -- name: ListTimeline :many
 -- Every story in the window, ranked by the user's interest: tier 0 is tagged with a followed
--- topic (or a descendant of one), tier 1 with a related topic (a relation neighbour or an
--- ancestor of a followed topic), tier 2 with anything else. Unread first, then by tier,
+-- topic (or a descendant of one), tier 1 with an area of one of the user's professions (or a
+-- descendant), tier 2 with a related topic (a relation neighbour or an ancestor of a followed
+-- topic), tier 3 with anything else. Unread first, then by tier,
 -- then newest first. Keyset pagination on (is_read, tier, published_at, id).
 -- Tiers come from one aggregate over the in-tier topics' story_topics rows instead of per-story
 -- subqueries, and topic slugs are built only for the page: per-row subplans over the whole window
@@ -15,14 +16,22 @@ WITH RECURSIVE followed AS (
     WHERE ut.user_id = @user_id AND t.parent_id IS NOT NULL
     UNION
     SELECT t.parent_id FROM topics t JOIN ancestors a ON a.id = t.id WHERE t.parent_id IS NOT NULL
+), profession AS (
+    SELECT pt.topic_id AS id
+    FROM user_professions up JOIN profession_topics pt ON pt.profession_id = up.profession_id
+    WHERE up.user_id = @user_id
+    UNION
+    SELECT t.id FROM topics t JOIN profession p ON t.parent_id = p.id
 ), topic_tier AS (
     SELECT f.id, 0 AS tier FROM followed f
     UNION ALL
-    SELECT tr.related_id, 1 FROM topic_relations tr JOIN followed f ON f.id = tr.topic_id
+    SELECT p.id, 1 FROM profession p
     UNION ALL
-    SELECT tr.topic_id, 1 FROM topic_relations tr JOIN followed f ON f.id = tr.related_id
+    SELECT tr.related_id, 2 FROM topic_relations tr JOIN followed f ON f.id = tr.topic_id
     UNION ALL
-    SELECT a.id, 1 FROM ancestors a
+    SELECT tr.topic_id, 2 FROM topic_relations tr JOIN followed f ON f.id = tr.related_id
+    UNION ALL
+    SELECT a.id, 2 FROM ancestors a
 ), story_tier AS (
     SELECT st.story_id, min(tt.tier) AS tier
     FROM story_topics st JOIN topic_tier tt ON tt.id = st.topic_id
@@ -31,7 +40,7 @@ WITH RECURSIVE followed AS (
     SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
         (uss.read_at IS NOT NULL) AS is_read,
         (ub.story_id IS NOT NULL) AS is_bookmarked,
-        COALESCE(stt.tier, 2) AS tier
+        COALESCE(stt.tier, 3) AS tier
     FROM stories s
     LEFT JOIN story_tier stt ON stt.story_id = s.id
     LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = @user_id
@@ -130,3 +139,9 @@ WHERE s.search @@ websearch_to_tsquery('english', @query::text)
     )
 ORDER BY s.published_at DESC, s.id DESC
 LIMIT @page_size;
+
+-- name: RecordStoryViews :exec
+-- Idempotent; ids that are not stories are skipped by the join.
+INSERT INTO story_views (user_id, story_id)
+SELECT @user_id, s.id FROM stories s WHERE s.id = ANY(@ids::bigint[])
+ON CONFLICT DO NOTHING;

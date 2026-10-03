@@ -1,0 +1,208 @@
+- slug: writing-craft
+  name: "Writing Craft"
+  description: "Fiction, nonfiction and technique."
+  children:
+    - {slug: writing-craft/fiction, name: "Fiction"}
+    - {slug: writing-craft/nonfiction, name: "Nonfiction & Memoir"}
+    - {slug: writing-craft/screenwriting, name: "Screenwriting"}
+    - {slug: writing-craft/poetry, name: "Poetry"}
+    - {slug: writing-craft/editing, name: "Editing"}
+    - {slug: writing-craft/worldbuilding, name: "Worldbuilding"}
+    - {slug: writing-craft/tools, name: "Writing Tools"}
+    - {slug: writing-craft/routines, name: "Writing Routines"}
+    - {slug: writing-craft/ai, name: "AI & Writing"}
+- slug: publishing
+  name: "Publishing"
+  description: "Books and the book trade."
+  children:
+    - {slug: publishing/traditional, name: "Traditional Publishing"}
+    - {slug: publishing/self-publishing, name: "Self-Publishing"}
+    - {slug: publishing/agents, name: "Literary Agents"}
+    - {slug: publishing/bestsellers, name: "Bestsellers"}
+    - {slug: publishing/awards, name: "Book Awards"}
+    - {slug: publishing/audiobooks, name: "Audiobooks"}
+    - {slug: publishing/bookstores, name: "Bookstores & Libraries"}
+    - {slug: publishing/translation, name: "Translation"}
+- slug: journalism
+  name: "Journalism"
+  description: "Reporting and newsroom practice."
+  children:
+    - {slug: journalism/investigative, name: "Investigative Reporting"}
+    - {slug: journalism/press-freedom, name: "Press Freedom"}
+    - {slug: journalism/fact-checking, name: "Fact-Checking"}
+    - {slug: journalism/data, name: "Data Journalism"}
+    - {slug: journalism/tools, name: "Newsroom Tools"}
+    - {slug: journalism/ai, name: "AI in Newsrooms"}
+    - {slug: journalism/ethics, name: "Media Ethics"}
+    - {slug: journalism/local, name: "Local News"}
+    - {slug: journalism/freelance, name: "Freelance Journalism"}
+- slug: media-business
+  name: "Media Business"
+  description: "News and media economics."
+  children:
+    - {slug: media-business/subscriptions, name: "Subscriptions & Paywalls"}
+    - {slug: media-business/newsletters, name: "Newsletters & Substack"}
+    - {slug: media-business/layoffs, name: "Media Layoffs"}
+    - {slug: media-business/platform-deals, name: "Platform Deals"}
+    - {slug: media-business/podcasting, name: "Podcasting"}
+    - {slug: media-business/ownership, name: "Media Ownership"}
+    - {slug: media-business/advertising, name: "Advertising Revenue"}
+- slug: photography-gear
+  name: "Photography Gear"
+  description: "Cameras and lenses."
+  children:
+    - {slug: photography-gear/mirrorless, name: "Mirrorless Cameras"}
+    - {slug: photography-gear/lenses, name: "Lenses"}
+    - {slug: photography-gear/sony, name: "Sony"}
+    - {slug: photography-gear/canon-nikon, name: "Canon & Nikon"}
+    - {slug: photography-gear/smartphone, name: "Smartphone Cameras"}
+    - {slug: photography-gear/lighting, name: "Lighting"}
+    - {slug: photography-gear/drones, name: "Drones"}
+    - {slug: photography-gear/film, name: "Film Cameras"}
+    - {slug: photography-gear/reviews, name: "Gear Reviews"}
+- slug: photography-craft
+  name: "Photography Craft"
+  description: "Technique and editing."
+  children:
+    - {slug: photography-craft/portrait, name: "Portrait"}
+    - {slug: photography-craft/landscape, name: "Landscape & Travel"}
+    - {slug: photography-craft/street, name: "Street Photography"}
+    - {slug: photography-craft/wedding, name: "Wedding & Events"}
+    - {slug: photography-craft/editing, name: "Lightroom & Photoshop"}
+    - {slug: photography-craft/composition, name: "Composition"}
+    - {slug: photography-craft/wildlife, name: "Wildlife Photography"}
+    - {slug: photography-craft/astro, name: "Astrophotography"}
+    - {slug: photography-craft/retouching, name: "Color & Retouching"}
+- slug: photo-business
+  name: "Photo Business"
+  description: "Clients, licensing and rights."
+  children:
+    - {slug: photo-business/pricing, name: "Pricing & Contracts"}
+    - {slug: photo-business/stock, name: "Stock Photography"}
+    - {slug: photo-business/copyright, name: "Copyright & AI Images"}
+    - {slug: photo-business/clients, name: "Client Acquisition"}
+    - {slug: photo-business/awards, name: "Photo Contests & Awards"}
+    - {slug: photo-business/printing, name: "Printing & Selling"}
+    - {slug: photo-business/social, name: "Social Media for Photographers"}
+- slug: video-production
+  name: "Video Production"
+  description: "Shooting and editing video."
+  children:
+    - {slug: video-production/cameras, name: "Cinema Cameras"}
+    - {slug: video-production/lighting-sound, name: "Lighting & Sound"}
+    - {slug: video-production/gimbals, name: "Lenses & Gimbals"}
+    - {slug: video-production/drone, name: "Drone Video"}
+    - {slug: video-production/storyboarding, name: "Storyboarding"}
+    - {slug: video-production/live-streaming, name: "Live Streaming"}
+    - {slug: video-production/reviews, name: "Gear Reviews"}
+    - {slug: video-production/short-form, name: "Short-Form Production"}
+- slug: post-production
+  name: "Post-Production"
+  description: "Editing, color and VFX."
+  children:
+    - {slug: post-production/resolve, name: "DaVinci Resolve"}
+    - {slug: post-production/editors, name: "Premiere & Final Cut"}
+    - {slug: post-production/motion, name: "After Effects & Motion"}
+    - {slug: post-production/color, name: "Color Grading"}
+    - {slug: post-production/vfx, name: "VFX"}
+    - {slug: post-production/sound, name: "Sound Design"}
+    - {slug: post-production/ai, name: "AI Video Tools"}
+    - {slug: post-production/subtitles, name: "Subtitling"}
+- slug: film-industry
+  name: "Film Industry"
+  description: "Production and distribution."
+  children:
+    - {slug: film-industry/indie, name: "Independent Film"}
+    - {slug: film-industry/festivals, name: "Film Festivals"}
+    - {slug: film-industry/production, name: "Production News"}
+    - {slug: film-industry/distribution, name: "Streaming Distribution"}
+    - {slug: film-industry/unions, name: "Unions & Strikes"}
+    - {slug: film-industry/funding, name: "Film Funding & Tax Credits"}
+    - {slug: film-industry/studios, name: "Studio Business"}
+    - {slug: film-industry/cinematography, name: "Cinematography"}
+- slug: music-production
+  name: "Music Production"
+  description: "Recording and mixing."
+  children:
+    - {slug: music-production/daws, name: "DAWs"}
+    - {slug: music-production/mixing, name: "Mixing & Mastering"}
+    - {slug: music-production/synths, name: "Synths & Plugins"}
+    - {slug: music-production/samples, name: "Sampling"}
+    - {slug: music-production/home-studio, name: "Home Studios"}
+    - {slug: music-production/ai, name: "AI Music Tools"}
+    - {slug: music-production/interfaces, name: "Audio Interfaces & Mics"}
+    - {slug: music-production/beats, name: "Beat Making"}
+    - {slug: music-production/live-sound, name: "Live Sound"}
+- slug: instruments
+  name: "Instruments & Playing"
+  description: "Learning and gear."
+  children:
+    - {slug: instruments/guitar, name: "Guitar"}
+    - {slug: instruments/piano, name: "Piano & Keys"}
+    - {slug: instruments/drums, name: "Drums"}
+    - {slug: instruments/bass, name: "Bass"}
+    - {slug: instruments/strings, name: "Violin & Strings"}
+    - {slug: instruments/voice, name: "Voice & Singing"}
+    - {slug: instruments/theory, name: "Music Theory"}
+    - {slug: instruments/gear, name: "Instrument Gear"}
+    - {slug: instruments/practice, name: "Practice Techniques"}
+- slug: art-techniques
+  name: "Art Techniques"
+  description: "Traditional media and skill."
+  children:
+    - {slug: art-techniques/drawing, name: "Drawing"}
+    - {slug: art-techniques/painting, name: "Painting"}
+    - {slug: art-techniques/sculpture, name: "Sculpture & Ceramics"}
+    - {slug: art-techniques/printmaking, name: "Printmaking"}
+    - {slug: art-techniques/watercolor, name: "Watercolor"}
+    - {slug: art-techniques/calligraphy, name: "Calligraphy"}
+    - {slug: art-techniques/supplies, name: "Art Supplies"}
+    - {slug: art-techniques/education, name: "Art Education"}
+- slug: digital-art
+  name: "Digital Art & Illustration"
+  description: "Tools and trends."
+  children:
+    - {slug: digital-art/procreate, name: "Procreate"}
+    - {slug: digital-art/illustration, name: "Illustration"}
+    - {slug: digital-art/character-design, name: "Character Design"}
+    - {slug: digital-art/concept-art, name: "Concept Art"}
+    - {slug: digital-art/generative, name: "Generative Art & AI"}
+    - {slug: digital-art/3d, name: "3D Art"}
+    - {slug: digital-art/tools, name: "Digital Painting Tools"}
+    - {slug: digital-art/comics, name: "Comics & Webcomics"}
+- slug: art-market
+  name: "Art Market"
+  description: "Galleries, auctions and exhibitions."
+  children:
+    - {slug: art-market/auctions, name: "Auctions"}
+    - {slug: art-market/galleries, name: "Galleries"}
+    - {slug: art-market/museums, name: "Museums & Exhibitions"}
+    - {slug: art-market/fairs, name: "Art Fairs"}
+    - {slug: art-market/nfts, name: "NFTs & Digital Art"}
+    - {slug: art-market/prizes, name: "Art Prizes"}
+    - {slug: art-market/theft-law, name: "Art Theft & Law"}
+    - {slug: art-market/emerging, name: "Emerging Artists"}
+- slug: creator-platforms
+  name: "Creator Platforms"
+  description: "Where creators publish."
+  children:
+    - {slug: creator-platforms/youtube, name: "YouTube"}
+    - {slug: creator-platforms/tiktok, name: "TikTok"}
+    - {slug: creator-platforms/instagram, name: "Instagram"}
+    - {slug: creator-platforms/twitch, name: "Twitch"}
+    - {slug: creator-platforms/membership, name: "Patreon & Substack"}
+    - {slug: creator-platforms/podcast, name: "Podcast Platforms"}
+    - {slug: creator-platforms/algorithms, name: "Platform Algorithm Changes"}
+    - {slug: creator-platforms/new-platforms, name: "New Platforms"}
+- slug: creator-business
+  name: "Creator Business"
+  description: "Monetization and growth."
+  children:
+    - {slug: creator-business/brand-deals, name: "Brand Deals"}
+    - {slug: creator-business/ad-revenue, name: "Ad Revenue & Payouts"}
+    - {slug: creator-business/merch, name: "Merch & Products"}
+    - {slug: creator-business/growth, name: "Audience Growth"}
+    - {slug: creator-business/tools, name: "Creator Tools"}
+    - {slug: creator-business/contracts, name: "Creator Taxes & Contracts"}
+    - {slug: creator-business/burnout, name: "Creator Burnout"}
+    - {slug: creator-business/agencies, name: "Agencies & Management"}

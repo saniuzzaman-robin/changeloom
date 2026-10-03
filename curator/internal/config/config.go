@@ -70,9 +70,38 @@ type Config struct {
 	// MergeWindow is how far back a new story about the same CVE or project+version is merged
 	// into an existing one (CURATOR_MERGE_WINDOW_DAYS).
 	MergeWindow time.Duration
-	// UnfollowedInterval is the least time between fetches of a topic nobody follows
-	// (CURATOR_UNFOLLOWED_INTERVAL_HOURS). Followed topics are fetched on every run.
-	UnfollowedInterval time.Duration
+	// HotMinViews is how many distinct viewers of a topic's stories in the last week make the topic
+	// hot, fetched on every run (CURATOR_HOT_MIN_VIEWS).
+	HotMinViews int
+	// WarmInterval is the least time between fetches of a topic that is followed or serves a user's
+	// profession but is not hot (CURATOR_WARM_INTERVAL_HOURS).
+	WarmInterval time.Duration
+	// ColdInterval is the same for a topic nobody follows or sees (CURATOR_COLD_INTERVAL_HOURS).
+	ColdInterval time.Duration
+	// StoriesPerTopic is the most stories asked for per topic in one fetch call
+	// (CURATOR_STORIES_PER_TOPIC).
+	StoriesPerTopic int
+	// Concurrency is how many Claude calls run at once (CURATOR_CONCURRENCY).
+	Concurrency int
+
+	// BackfillTarget is the story count per topic that backfill aims for (CURATOR_BACKFILL_TARGET).
+	BackfillTarget int
+	// BackfillTopicsPerCall is the topics per backfill call (CURATOR_BACKFILL_TOPICS_PER_CALL).
+	BackfillTopicsPerCall int
+	// BackfillCallsPerRun is the backfill calls `curator run` makes (CURATOR_BACKFILL_CALLS_PER_RUN).
+	BackfillCallsPerRun int
+
+	// PruneInterval is how often `curator run` prunes a hosted DB (CURATOR_PRUNE_INTERVAL_DAYS).
+	PruneInterval time.Duration
+	// PruneMaxAge: unsaved stories published longer ago than this are deleted
+	// (CURATOR_PRUNE_MAX_AGE_DAYS). Sync also skips stories older than this.
+	PruneMaxAge time.Duration
+	// PruneGrace: unsaved stories older than this are deleted when fewer than PruneMinViews
+	// distinct users saw them (CURATOR_PRUNE_GRACE_DAYS).
+	PruneGrace time.Duration
+	// PruneMinViews is the distinct viewers a story older than PruneGrace needs to be kept
+	// (CURATOR_PRUNE_MIN_VIEWS).
+	PruneMinViews int
 }
 
 // Claude configures the `claude -p` calls.
@@ -112,9 +141,22 @@ func Load() (Config, error) {
 		MaxCallsPerRun:     envInt(&errs, "CURATOR_MAX_CALLS_PER_RUN", 8),
 		TopicsPerCall:      envInt(&errs, "CURATOR_TOPICS_PER_CALL", 5),
 		MaxNewTopicsPerRun: envInt(&errs, "CURATOR_MAX_NEW_TOPICS_PER_RUN", 5),
-		ItemMaxAge:         time.Duration(envInt(&errs, "CURATOR_ITEM_MAX_AGE_DAYS", 7)) * 24 * time.Hour,
+		ItemMaxAge:         time.Duration(envInt(&errs, "CURATOR_ITEM_MAX_AGE_DAYS", 14)) * 24 * time.Hour,
 		MergeWindow:        time.Duration(envInt(&errs, "CURATOR_MERGE_WINDOW_DAYS", 14)) * 24 * time.Hour,
-		UnfollowedInterval: time.Duration(envInt(&errs, "CURATOR_UNFOLLOWED_INTERVAL_HOURS", 24)) * time.Hour,
+		HotMinViews:        envInt(&errs, "CURATOR_HOT_MIN_VIEWS", 1),
+		WarmInterval:       time.Duration(envInt(&errs, "CURATOR_WARM_INTERVAL_HOURS", 24)) * time.Hour,
+		ColdInterval:       time.Duration(envInt(&errs, "CURATOR_COLD_INTERVAL_HOURS", 168)) * time.Hour,
+		StoriesPerTopic:    envInt(&errs, "CURATOR_STORIES_PER_TOPIC", 5),
+		Concurrency:        envInt(&errs, "CURATOR_CONCURRENCY", 2),
+
+		BackfillTarget:        envInt(&errs, "CURATOR_BACKFILL_TARGET", 20),
+		BackfillTopicsPerCall: envInt(&errs, "CURATOR_BACKFILL_TOPICS_PER_CALL", 2),
+		BackfillCallsPerRun:   envInt(&errs, "CURATOR_BACKFILL_CALLS_PER_RUN", 2),
+
+		PruneInterval: time.Duration(envInt(&errs, "CURATOR_PRUNE_INTERVAL_DAYS", 7)) * 24 * time.Hour,
+		PruneMaxAge:   time.Duration(envInt(&errs, "CURATOR_PRUNE_MAX_AGE_DAYS", 14)) * 24 * time.Hour,
+		PruneGrace:    time.Duration(envInt(&errs, "CURATOR_PRUNE_GRACE_DAYS", 7)) * 24 * time.Hour,
+		PruneMinViews: envInt(&errs, "CURATOR_PRUNE_MIN_VIEWS", 10),
 	}
 
 	for _, env := range Envs {

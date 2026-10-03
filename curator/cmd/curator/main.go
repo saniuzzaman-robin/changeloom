@@ -23,6 +23,7 @@ import (
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/config"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/fetch"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/migrate"
+	"github.com/saniuzzaman-robin/changeloom/curator/internal/prune"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/requests"
 	cursync "github.com/saniuzzaman-robin/changeloom/curator/internal/sync"
 	"github.com/saniuzzaman-robin/changeloom/curator/seed"
@@ -36,15 +37,19 @@ commands:
   migrate [--remote [--env ENV]]   apply the backend and curator migrations to the local DB;
                                    --remote applies only the backend migrations to the hosted DB
                                    of ENV (staging, the default, or prod): REMOTE_DATABASE_URL_<ENV>
-  seed                             load the topic catalog (seed/catalog.yaml) into the local DB
+  seed                             load the profession and topic catalog (seed/catalog/) into the local DB
   fetch                            fetch new stories with Claude into the local DB
+  backfill [--max-calls N]         fill topics that have fewer than CURATOR_BACKFILL_TARGET recent
+                                   stories with Claude (default N: CURATOR_BACKFILL_CALLS_PER_RUN)
   requests pull [--env ENV]        copy pending topic requests and follower counts from the hosted
                                    DB of ENV (staging, the default, or prod)
   requests group [--dry-run]       turn pending requests into topics with Claude
   sync [--env ENV]                 push content and request decisions to the hosted DB of ENV
                                    (staging, the default, or prod), then ask its api to notify
-  run                              requests pull, requests group, fetch, then sync, for each
-                                   hosted env with REMOTE_DATABASE_URL_<ENV> set
+  prune [--env ENV]                delete old and unseen stories nobody saved from the hosted DB of
+                                   ENV (staging, the default, or prod)
+  run                              requests pull, requests group, fetch, backfill, then sync and
+                                   (weekly) prune, for each hosted env with REMOTE_DATABASE_URL_<ENV> set
 
 Configuration comes from the environment; see curator/.env.example.
 `
@@ -106,6 +111,27 @@ func run(args []string) error {
 			return err
 		}
 		return runFetch(ctx, cfg)
+	case "backfill":
+		fs := flag.NewFlagSet("backfill", flag.ContinueOnError)
+		maxCalls := fs.Int("max-calls", cfg.BackfillCallsPerRun, "most Claude calls to make")
+		if err := parse(fs, rest); err != nil {
+			return err
+		}
+		if *maxCalls < 1 {
+			return fmt.Errorf("%w: backfill --max-calls must be at least 1", errUsage)
+		}
+		return runBackfill(ctx, cfg, *maxCalls)
+	case "prune":
+		fs := flag.NewFlagSet("prune", flag.ContinueOnError)
+		envName := fs.String("env", string(config.EnvStaging), "hosted environment to prune: staging or prod")
+		if err := parse(fs, rest); err != nil {
+			return err
+		}
+		env, err := config.ParseEnv(*envName)
+		if err != nil {
+			return fmt.Errorf("%w: prune --env: %w", errUsage, err)
+		}
+		return runPrune(ctx, cfg, env)
 	case "sync":
 		fs := flag.NewFlagSet("sync", flag.ContinueOnError)
 		envName := fs.String("env", string(config.EnvStaging), "hosted environment to push to: staging or prod")
@@ -161,7 +187,7 @@ func runMigrate(ctx context.Context, cfg config.Config, remote bool, env config.
 }
 
 func runSeed(ctx context.Context, cfg config.Config) error {
-	nodes, err := catalog.Parse(seed.CatalogYAML)
+	cat, err := catalog.Load(seed.Catalog)
 	if err != nil {
 		return err
 	}
@@ -171,11 +197,11 @@ func runSeed(ctx context.Context, cfg config.Config) error {
 	}
 	defer pool.Close()
 
-	res, err := catalog.Seed(ctx, pool, nodes)
+	res, err := catalog.Seed(ctx, pool, cat)
 	if err != nil {
 		return err
 	}
-	slog.InfoContext(ctx, "catalog seeded", "topics", res.Topics, "new_relations", res.Relations, "new_hints", res.Hints)
+	slog.InfoContext(ctx, "catalog seeded", "topics", res.Topics, "professions", res.Professions, "new_relations", res.Relations, "new_hints", res.Hints)
 	return nil
 }
 
@@ -225,7 +251,7 @@ func pullRequests(ctx context.Context, cfg config.Config, local *pgxpool.Pool, e
 		return err
 	}
 	slog.InfoContext(ctx, "requests pulled", "env", env, "pending", res.Requests, "new", res.New,
-		"topics_with_followers", res.Topics, "unknown_topics", res.Unknown)
+		"topics_with_demand", res.Topics, "unknown_topics", res.Unknown)
 	return nil
 }
 
@@ -261,6 +287,56 @@ func runFetch(ctx context.Context, cfg config.Config) error {
 	return err
 }
 
+func runBackfill(ctx context.Context, cfg config.Config, maxCalls int) error {
+	pool, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	sum, err := fetch.New(pool, claude.New(cfg.Claude), cfg).Backfill(ctx, maxCalls)
+	slog.InfoContext(ctx, "backfill finished", "calls", sum.Calls, "failed", sum.Failed, "added", sum.Added,
+		"merged", sum.Merged, "rejected", sum.Rejected, "cost_usd", sum.CostUSD)
+	return err
+}
+
+func runPrune(ctx context.Context, cfg config.Config, env config.Env) error {
+	local, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer local.Close()
+	return pruneEnv(ctx, cfg, local, env)
+}
+
+// pruneEnv deletes the stories env's hosted DB no longer needs and records when it did.
+func pruneEnv(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env config.Env) error {
+	remote, err := openPool(ctx, "REMOTE_DATABASE_URL_"+env.Suffix(), cfg.Remotes[env].DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer remote.Close()
+
+	now := time.Now()
+	deleted, err := prune.Run(ctx, remote, prune.Settings{
+		MaxAge: cfg.PruneMaxAge, Grace: cfg.PruneGrace, MinViewers: cfg.PruneMinViews,
+	}, now)
+	slog.InfoContext(ctx, "pruned", "env", env, "deleted_stories", deleted)
+	if err != nil {
+		return err
+	}
+	return prune.MarkDone(ctx, local, env, now)
+}
+
+// pruneIfDue prunes env when CURATOR_PRUNE_INTERVAL_DAYS have passed since the last prune.
+func pruneIfDue(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env config.Env) error {
+	due, err := prune.Due(ctx, local, env, cfg.PruneInterval, time.Now())
+	if err != nil || !due {
+		return err
+	}
+	return pruneEnv(ctx, cfg, local, env)
+}
+
 func runSync(ctx context.Context, cfg config.Config, env config.Env) error {
 	local, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
 	if err != nil {
@@ -279,7 +355,7 @@ func syncEnv(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env co
 	}
 	defer remote.Close()
 
-	res, err := cursync.Push(ctx, local, remote, env)
+	res, err := cursync.Push(ctx, local, remote, env, time.Now().Add(-cfg.PruneMaxAge))
 	if err != nil {
 		return err
 	}
@@ -295,8 +371,8 @@ func syncEnv(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env co
 	return nil
 }
 
-// runAll is requests pull, requests group, fetch, then sync. Pull and sync run for each hosted env
-// with a database URL. A failing step is logged and the run continues where that is safe, so a
+// runAll is requests pull, requests group, fetch, backfill, then sync and a weekly prune. Pull,
+// sync and prune run for each hosted env with a database URL. A failing step is logged and the run continues where that is safe, so a
 // failed fetch still pushes request decisions; the error returned lists every failed step.
 func runAll(ctx context.Context, cfg config.Config) error {
 	local, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
@@ -332,8 +408,12 @@ func runAll(ctx context.Context, cfg config.Config) error {
 	}
 	step("requests group", func() error { return runGroup(ctx, cfg, local, false) })
 	step("fetch", func() error { return runFetch(ctx, cfg) })
+	step("backfill", func() error { return runBackfill(ctx, cfg, cfg.BackfillCallsPerRun) })
 	for _, env := range envs {
 		step("sync "+string(env), func() error { return syncEnv(ctx, cfg, local, env) })
+	}
+	for _, env := range envs {
+		step("prune "+string(env), func() error { return pruneIfDue(ctx, cfg, local, env) })
 	}
 	return errors.Join(errs...)
 }

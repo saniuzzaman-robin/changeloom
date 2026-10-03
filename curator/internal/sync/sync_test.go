@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -14,11 +15,14 @@ import (
 )
 
 const testCatalog = `
-- slug: databases
-  name: Databases
-  children:
-    - {slug: databases/postgres, name: PostgreSQL, related: [security]}
-- {slug: security, name: Security}
+professions:
+  - {slug: engineer, name: Engineer, topics: [security, databases]}
+topics:
+  - slug: databases
+    name: Databases
+    children:
+      - {slug: databases/postgres, name: PostgreSQL, related: [security]}
+  - {slug: security, name: Security}
 `
 
 func exec(t *testing.T, pool *pgxpool.Pool, sql string, args ...any) {
@@ -41,11 +45,11 @@ func count(t *testing.T, pool *pgxpool.Pool, sql string, args ...any) int {
 func setup(t *testing.T) (local, remote *pgxpool.Pool) {
 	t.Helper()
 	local, remote = dbtest.New(t), dbtest.New(t)
-	nodes, err := catalog.Parse([]byte(testCatalog))
+	cat, err := catalog.Parse([]byte(testCatalog))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := catalog.Seed(t.Context(), local, nodes); err != nil {
+	if _, err := catalog.Seed(t.Context(), local, cat); err != nil {
 		t.Fatal(err)
 	}
 	exec(t, remote, `INSERT INTO topics (slug, name) VALUES ('zzz', 'Zzz')`)
@@ -70,12 +74,19 @@ func TestPushTopicsAndStories(t *testing.T) {
 	local, remote := setup(t)
 	addStory(t, local, "PG 18", "databases/postgres", "https://pg.example/18")
 
-	res, err := cursync.Push(ctx, local, remote, config.EnvStaging)
-	if err != nil {
+	// Stories published before the cutoff are not pushed: the hosted DB would prune them.
+	res, err := cursync.Push(ctx, local, remote, config.EnvStaging, time.Now().Add(time.Hour))
+	if err != nil || res.Stories != 0 {
+		t.Fatalf("push with a future cutoff = %+v, %v; want 0 stories", res, err)
+	}
+	if res, err = cursync.Push(ctx, local, remote, config.EnvStaging, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
-	if res.Topics != 3 || res.Stories != 1 {
-		t.Errorf("result = %+v, want 3 topics and 1 story", res)
+	if res.Topics != 3 || res.Professions != 1 || res.Stories != 1 {
+		t.Errorf("result = %+v, want 3 topics, 1 profession and 1 story", res)
+	}
+	if n := count(t, remote, `SELECT count(*) FROM profession_topics pt JOIN professions p ON p.id = pt.profession_id JOIN topics t ON t.id = pt.topic_id WHERE p.slug = 'engineer' AND ((t.slug = 'security' AND pt.position = 0) OR (t.slug = 'databases' AND pt.position = 1))`); n != 2 {
+		t.Errorf("profession topics not synced in order")
 	}
 	if n := count(t, remote, `SELECT count(*) FROM topics t JOIN topics p ON p.id = t.parent_id WHERE t.slug = 'databases/postgres' AND p.slug = 'databases'`); n != 1 {
 		t.Errorf("parent link not synced")
@@ -92,14 +103,14 @@ func TestPushTopicsAndStories(t *testing.T) {
 
 	// A second push with no changes writes no stories; a changed story replaces its sources and
 	// keeps the hosted notified_at.
-	if res, err = cursync.Push(ctx, local, remote, config.EnvStaging); err != nil || res.Stories != 0 {
+	if res, err = cursync.Push(ctx, local, remote, config.EnvStaging, time.Time{}); err != nil || res.Stories != 0 {
 		t.Fatalf("idempotent push = %+v, %v; want 0 stories", res, err)
 	}
 	exec(t, remote, `UPDATE stories SET notified_at = now()`)
 	exec(t, local, `UPDATE stories SET importance = 5, updated_at = now()`)
 	exec(t, local, `DELETE FROM story_sources`)
 	exec(t, local, `INSERT INTO story_sources SELECT id, 'https://pg.example/new', 'src' FROM stories`)
-	if res, err = cursync.Push(ctx, local, remote, config.EnvStaging); err != nil || res.Stories != 1 {
+	if res, err = cursync.Push(ctx, local, remote, config.EnvStaging, time.Time{}); err != nil || res.Stories != 1 {
 		t.Fatalf("re-sync = %+v, %v; want 1 story", res, err)
 	}
 	if n := count(t, remote, `SELECT count(*) FROM stories WHERE importance = 5 AND notified_at IS NOT NULL`); n != 1 {
@@ -116,7 +127,7 @@ func TestPushTopicsAndStories(t *testing.T) {
 	}
 
 	// The prod watermark is independent.
-	if res, err = cursync.Push(ctx, local, remote, config.EnvProd); err != nil || res.Stories != 1 {
+	if res, err = cursync.Push(ctx, local, remote, config.EnvProd, time.Time{}); err != nil || res.Stories != 1 {
 		t.Fatalf("prod push = %+v, %v; want 1 story", res, err)
 	}
 }
@@ -126,7 +137,7 @@ func TestPushTombstones(t *testing.T) {
 	local, remote := setup(t)
 	addStory(t, local, "Keep", "security", "https://a.example")
 	addStory(t, local, "Dup", "security", "https://b.example")
-	if _, err := cursync.Push(ctx, local, remote, config.EnvStaging); err != nil {
+	if _, err := cursync.Push(ctx, local, remote, config.EnvStaging, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	exec(t, remote, `INSERT INTO users (firebase_uid) VALUES ('u1'), ('u2')`)
@@ -139,7 +150,7 @@ func TestPushTombstones(t *testing.T) {
 	// A tombstone pointing at a story the hosted DB lacks is skipped, keeping user state.
 	exec(t, local, `INSERT INTO story_tombstones (uid, merged_into_uid) VALUES (gen_random_uuid(), gen_random_uuid())`)
 
-	res, err := cursync.Push(ctx, local, remote, config.EnvStaging)
+	res, err := cursync.Push(ctx, local, remote, config.EnvStaging, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +168,7 @@ func TestPushTombstones(t *testing.T) {
 	}
 
 	// Pushed tombstones are not pushed again; the skipped one is retried.
-	res, err = cursync.Push(ctx, local, remote, config.EnvStaging)
+	res, err = cursync.Push(ctx, local, remote, config.EnvStaging, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +189,7 @@ func TestPushDecisions(t *testing.T) {
 		('staging', 3, 'req3', now(), 'pending', NULL, NULL, NULL),
 		('prod', 1, 'req1', now(), 'rejected', NULL, 'prod only', now())`)
 
-	res, err := cursync.Push(ctx, local, remote, config.EnvStaging)
+	res, err := cursync.Push(ctx, local, remote, config.EnvStaging, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +208,7 @@ func TestPushDecisions(t *testing.T) {
 	if n := count(t, local, `SELECT count(*) FROM request_inbox WHERE pushed_at IS NOT NULL`); n != 2 {
 		t.Errorf("pushed inbox rows = %d, want 2 (staging decisions only)", n)
 	}
-	if res, err = cursync.Push(ctx, local, remote, config.EnvStaging); err != nil || res.Decisions != 0 {
+	if res, err = cursync.Push(ctx, local, remote, config.EnvStaging, time.Time{}); err != nil || res.Decisions != 0 {
 		t.Errorf("second push = %+v, %v; want no decisions", res, err)
 	}
 }

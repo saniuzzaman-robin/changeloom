@@ -1,0 +1,136 @@
+- slug: teaching-practice
+  name: "Teaching Practice"
+  description: "Classroom methods and management."
+  children:
+    - {slug: teaching-practice/lesson-planning, name: "Lesson Planning"}
+    - {slug: teaching-practice/classroom-management, name: "Classroom Management"}
+    - {slug: teaching-practice/differentiation, name: "Differentiation"}
+    - {slug: teaching-practice/assessment, name: "Assessment & Feedback"}
+    - {slug: teaching-practice/project-based, name: "Project-Based Learning"}
+    - {slug: teaching-practice/special-ed, name: "Special Education"}
+    - {slug: teaching-practice/early-years, name: "Early Years"}
+    - {slug: teaching-practice/ai, name: "Teaching with AI"}
+    - {slug: teaching-practice/wellbeing, name: "Teacher Wellbeing"}
+    - {slug: teaching-practice/workload, name: "Substitute & Workload"}
+- slug: curriculum-subjects
+  name: "Curriculum & Subjects"
+  description: "Subject teaching updates."
+  children:
+    - {slug: curriculum-subjects/math, name: "Math Teaching"}
+    - {slug: curriculum-subjects/science, name: "Science Teaching"}
+    - {slug: curriculum-subjects/english, name: "Literacy & English"}
+    - {slug: curriculum-subjects/history, name: "History & Civics"}
+    - {slug: curriculum-subjects/languages, name: "Languages & ESL"}
+    - {slug: curriculum-subjects/cs, name: "Computer Science Education"}
+    - {slug: curriculum-subjects/arts, name: "Arts & Music Education"}
+    - {slug: curriculum-subjects/pe, name: "PE & Health Education"}
+    - {slug: curriculum-subjects/standards, name: "Standards & Curriculum Changes"}
+- slug: edtech
+  name: "EdTech"
+  description: "Learning tools and platforms."
+  children:
+    - {slug: edtech/lms, name: "Google Classroom & LMS"}
+    - {slug: edtech/ai-tutors, name: "AI Tutors"}
+    - {slug: edtech/moocs, name: "Khan Academy & MOOCs"}
+    - {slug: edtech/language-apps, name: "Duolingo & Language Apps"}
+    - {slug: edtech/online, name: "Online Learning"}
+    - {slug: edtech/analytics, name: "Learning Analytics"}
+    - {slug: edtech/devices, name: "Classroom Devices"}
+    - {slug: edtech/privacy, name: "Student Data Privacy"}
+- slug: education-policy
+  name: "Education Policy"
+  description: "Funding, standards and reform."
+  children:
+    - {slug: education-policy/funding, name: "School Funding"}
+    - {slug: education-policy/testing, name: "Standardized Testing"}
+    - {slug: education-policy/school-choice, name: "School Choice"}
+    - {slug: education-policy/pay, name: "Teacher Pay & Unions"}
+    - {slug: education-policy/charter, name: "Charter & Private Schools"}
+    - {slug: education-policy/phone-bans, name: "Phone Bans"}
+    - {slug: education-policy/law, name: "Education Law"}
+    - {slug: education-policy/rankings, name: "International Education Rankings"}
+- slug: student-wellbeing
+  name: "Student Wellbeing"
+  description: "Safety, behavior and mental health."
+  children:
+    - {slug: student-wellbeing/bullying, name: "Bullying"}
+    - {slug: student-wellbeing/mental-health, name: "Student Mental Health"}
+    - {slug: student-wellbeing/attendance, name: "Attendance"}
+    - {slug: student-wellbeing/safeguarding, name: "Child Safeguarding"}
+    - {slug: student-wellbeing/safety, name: "School Safety"}
+    - {slug: student-wellbeing/meals, name: "Nutrition & School Meals"}
+    - {slug: student-wellbeing/inclusion, name: "Inclusion"}
+- slug: academic-life
+  name: "Academic Life"
+  description: "Publishing, teaching and careers."
+  children:
+    - {slug: academic-life/peer-review, name: "Peer Review"}
+    - {slug: academic-life/open-access, name: "Open Access"}
+    - {slug: academic-life/careers, name: "Tenure & Careers"}
+    - {slug: academic-life/conferences, name: "Conferences"}
+    - {slug: academic-life/metrics, name: "Citation & Metrics"}
+    - {slug: academic-life/ethics, name: "Research Ethics"}
+    - {slug: academic-life/job-market, name: "Academic Job Market"}
+    - {slug: academic-life/phd, name: "PhD Life"}
+    - {slug: academic-life/preprints, name: "Preprints"}
+    - {slug: academic-life/teaching, name: "Teaching in Higher Ed"}
+- slug: higher-ed-policy
+  name: "Higher Education Policy"
+  description: "Universities and funding."
+  children:
+    - {slug: higher-ed-policy/funding, name: "University Funding"}
+    - {slug: higher-ed-policy/tuition, name: "Tuition & Student Debt"}
+    - {slug: higher-ed-policy/international-students, name: "International Students"}
+    - {slug: higher-ed-policy/rankings, name: "Rankings"}
+    - {slug: higher-ed-policy/academic-freedom, name: "Academic Freedom"}
+    - {slug: higher-ed-policy/admissions, name: "Admissions Policy"}
+    - {slug: higher-ed-policy/finances, name: "University Finances"}
+    - {slug: higher-ed-policy/ai, name: "AI in Academia"}
+- slug: study-skills
+  name: "Study Skills"
+  description: "Learning effectively."
+  children:
+    - {slug: study-skills/notes, name: "Note-Taking"}
+    - {slug: study-skills/memory, name: "Memory & Spaced Repetition"}
+    - {slug: study-skills/time-management, name: "Time Management"}
+    - {slug: study-skills/writing, name: "Writing & Essays"}
+    - {slug: study-skills/research-skills, name: "Research Skills"}
+    - {slug: study-skills/language-learning, name: "Language Learning"}
+    - {slug: study-skills/focus, name: "Focus & Productivity"}
+    - {slug: study-skills/ai, name: "AI for Studying"}
+- slug: exams-admissions
+  name: "Exams & Admissions"
+  description: "Tests and applications."
+  children:
+    - {slug: exams-admissions/sat-act, name: "SAT & ACT"}
+    - {slug: exams-admissions/english-tests, name: "IELTS & TOEFL"}
+    - {slug: exams-admissions/grad-tests, name: "GRE & GMAT"}
+    - {slug: exams-admissions/a-levels-ib, name: "A-Levels & IB"}
+    - {slug: exams-admissions/india-exams, name: "Entrance Exams India"}
+    - {slug: exams-admissions/applications, name: "College Applications"}
+    - {slug: exams-admissions/scholarships, name: "Scholarships"}
+    - {slug: exams-admissions/study-abroad, name: "Study Abroad"}
+    - {slug: exams-admissions/professional-exams, name: "Medical & Law Entrance"}
+- slug: student-life
+  name: "Student Life"
+  description: "Campus, housing and money."
+  children:
+    - {slug: student-life/budgeting, name: "Student Budgeting"}
+    - {slug: student-life/housing, name: "Student Housing"}
+    - {slug: student-life/events, name: "Campus Events"}
+    - {slug: student-life/jobs, name: "Part-Time Jobs"}
+    - {slug: student-life/discounts, name: "Student Discounts"}
+    - {slug: student-life/mental-health, name: "Mental Health on Campus"}
+    - {slug: student-life/clubs, name: "Clubs & Societies"}
+- slug: careers-early
+  name: "Early Career"
+  description: "Internships and first jobs."
+  children:
+    - {slug: careers-early/internships, name: "Internships"}
+    - {slug: careers-early/graduate-jobs, name: "Graduate Jobs"}
+    - {slug: careers-early/resumes, name: "Resumes & Interviews"}
+    - {slug: careers-early/switching, name: "Career Switching"}
+    - {slug: careers-early/freelancing, name: "Freelancing"}
+    - {slug: careers-early/networking, name: "Networking"}
+    - {slug: careers-early/job-market, name: "Entry-Level Job Market"}
+    - {slug: careers-early/remote, name: "Remote Work"}

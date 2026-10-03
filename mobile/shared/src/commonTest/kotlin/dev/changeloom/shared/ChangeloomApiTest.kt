@@ -271,4 +271,43 @@ class ChangeloomApiTest {
         assertEquals(listOf("lang/rust"), list.map { it.topic })
         assertEquals("Already covered", list.single().note)
     }
+
+    @Test
+    fun topicListParsesProfessions() = runTest {
+        val engine = MockEngine {
+            respond(
+                """{"items":[{"slug":"frontend","name":"Frontend","description":"d"}],"professions":[{"slug":"software-engineer","name":"Software Engineer","description":"d","topics":["frontend","backend"]}]}""",
+                headers = jsonHeaders,
+            )
+        }
+        val api = ChangeloomApi(ChangeloomApi.createClient("http://api.test", engine), FakeAuth("tok"))
+        val list = api.topicList()
+        assertEquals(listOf("frontend", "backend"), list.professions.single().topics)
+        assertEquals("frontend", list.items.single().slug)
+    }
+
+    @Test
+    fun putMyProfessionsSendsBearerAndSlugs() = runTest {
+        val engine = MockEngine { request ->
+            assertEquals(HttpMethod.Put, request.method)
+            assertEquals("http://api.test/v1/me/professions", request.url.toString())
+            assertEquals("Bearer tok", request.headers[HttpHeaders.Authorization])
+            assertEquals("""{"professions":["doctor","nurse"]}""", (request.body as TextContent).text)
+            respond("""{"id":1,"topics":[],"professions":["doctor","nurse"]}""", headers = jsonHeaders)
+        }
+        val api = ChangeloomApi(ChangeloomApi.createClient("http://api.test", engine), FakeAuth("tok"))
+        assertEquals(listOf("doctor", "nurse"), api.putMyProfessions(listOf("doctor", "nurse")).professions)
+    }
+
+    @Test
+    fun recordViewsPostsIdsWithBearer() = runTest {
+        val engine = MockEngine { request ->
+            assertEquals(HttpMethod.Post, request.method)
+            assertEquals("http://api.test/v1/stories/views", request.url.toString())
+            assertEquals("Bearer tok", request.headers[HttpHeaders.Authorization])
+            assertEquals("""{"ids":[1,2]}""", (request.body as TextContent).text)
+            respond("", HttpStatusCode.NoContent)
+        }
+        ChangeloomApi(ChangeloomApi.createClient("http://api.test", engine), FakeAuth("tok")).recordViews(listOf(1, 2))
+    }
 }

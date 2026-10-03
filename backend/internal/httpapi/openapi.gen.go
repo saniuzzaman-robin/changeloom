@@ -40,9 +40,10 @@ func (e Severity) Valid() bool {
 
 // Defines values for StoryMatch.
 const (
-	StoryMatchExplore  StoryMatch = "explore"
-	StoryMatchFollowed StoryMatch = "followed"
-	StoryMatchRelated  StoryMatch = "related"
+	StoryMatchExplore    StoryMatch = "explore"
+	StoryMatchFollowed   StoryMatch = "followed"
+	StoryMatchProfession StoryMatch = "profession"
+	StoryMatchRelated    StoryMatch = "related"
 )
 
 // Valid indicates whether the value is a known member of the StoryMatch enum.
@@ -51,6 +52,8 @@ func (e StoryMatch) Valid() bool {
 	case StoryMatchExplore:
 		return true
 	case StoryMatchFollowed:
+		return true
+	case StoryMatchProfession:
 		return true
 	case StoryMatchRelated:
 		return true
@@ -65,7 +68,9 @@ const (
 	Article      StoryKind = "article"
 	Breaking     StoryKind = "breaking"
 	Deprecation  StoryKind = "deprecation"
+	Policy       StoryKind = "policy"
 	Release      StoryKind = "release"
+	Research     StoryKind = "research"
 	Security     StoryKind = "security"
 )
 
@@ -80,7 +85,11 @@ func (e StoryKind) Valid() bool {
 		return true
 	case Deprecation:
 		return true
+	case Policy:
+		return true
 	case Release:
+		return true
+	case Research:
 		return true
 	case Security:
 		return true
@@ -91,9 +100,10 @@ func (e StoryKind) Valid() bool {
 
 // Defines values for StorySummaryMatch.
 const (
-	StorySummaryMatchExplore  StorySummaryMatch = "explore"
-	StorySummaryMatchFollowed StorySummaryMatch = "followed"
-	StorySummaryMatchRelated  StorySummaryMatch = "related"
+	StorySummaryMatchExplore    StorySummaryMatch = "explore"
+	StorySummaryMatchFollowed   StorySummaryMatch = "followed"
+	StorySummaryMatchProfession StorySummaryMatch = "profession"
+	StorySummaryMatchRelated    StorySummaryMatch = "related"
 )
 
 // Valid indicates whether the value is a known member of the StorySummaryMatch enum.
@@ -102,6 +112,8 @@ func (e StorySummaryMatch) Valid() bool {
 	case StorySummaryMatchExplore:
 		return true
 	case StorySummaryMatchFollowed:
+		return true
+	case StorySummaryMatchProfession:
 		return true
 	case StorySummaryMatchRelated:
 		return true
@@ -163,7 +175,10 @@ type Error struct {
 type Me struct {
 	Email *string `json:"email,omitempty"`
 	Id    int64   `json:"id"`
-	Stats MeStats `json:"stats"`
+
+	// Professions Profession slugs.
+	Professions []string `json:"professions"`
+	Stats       MeStats  `json:"stats"`
 
 	// Topics Followed topic slugs.
 	Topics []string `json:"topics"`
@@ -176,6 +191,20 @@ type MeStats struct {
 
 	// Saved Number of bookmarked stories.
 	Saved int64 `json:"saved"`
+}
+
+// Profession defines model for Profession.
+type Profession struct {
+	Description string `json:"description"`
+
+	// Name Example: Software Engineer
+	Name string `json:"name"`
+
+	// Slug Example: software-engineer
+	Slug string `json:"slug"`
+
+	// Topics Root topic slugs (areas), in display order.
+	Topics []string `json:"topics"`
 }
 
 // Severity defines model for Severity.
@@ -191,7 +220,7 @@ type Story struct {
 	IsRead       bool      `json:"is_read"`
 	Kind         StoryKind `json:"kind"`
 
-	// Match Timeline only: whether the story is in a followed topic, a topic related to one, or neither.
+	// Match Timeline only: whether the story is in a followed topic, an area of one of the user's professions, a topic related to a followed one, or none of these.
 	Match       *StoryMatch   `json:"match,omitempty"`
 	PublishedAt time.Time     `json:"published_at"`
 	ReadAt      *time.Time    `json:"read_at,omitempty"`
@@ -202,7 +231,7 @@ type Story struct {
 	Topics      []string      `json:"topics"`
 }
 
-// StoryMatch Timeline only: whether the story is in a followed topic, a topic related to one, or neither.
+// StoryMatch Timeline only: whether the story is in a followed topic, an area of one of the user's professions, a topic related to a followed one, or none of these.
 type StoryMatch string
 
 // StoryKind defines model for StoryKind.
@@ -222,7 +251,7 @@ type StorySummary struct {
 	IsRead       bool      `json:"is_read"`
 	Kind         StoryKind `json:"kind"`
 
-	// Match Timeline only: whether the story is in a followed topic, a topic related to one, or neither.
+	// Match Timeline only: whether the story is in a followed topic, an area of one of the user's professions, a topic related to a followed one, or none of these.
 	Match       *StorySummaryMatch `json:"match,omitempty"`
 	PublishedAt time.Time          `json:"published_at"`
 	ReadAt      *time.Time         `json:"read_at,omitempty"`
@@ -232,7 +261,7 @@ type StorySummary struct {
 	Topics      []string           `json:"topics"`
 }
 
-// StorySummaryMatch Timeline only: whether the story is in a followed topic, a topic related to one, or neither.
+// StorySummaryMatch Timeline only: whether the story is in a followed topic, an area of one of the user's professions, a topic related to a followed one, or none of these.
 type StorySummaryMatch string
 
 // Topic defines model for Topic.
@@ -311,6 +340,12 @@ type PutMyDeviceJSONBody struct {
 // PutMyDeviceJSONBodyPlatform defines parameters for PutMyDevice.
 type PutMyDeviceJSONBodyPlatform string
 
+// PutMyProfessionsJSONBody defines parameters for PutMyProfessions.
+type PutMyProfessionsJSONBody struct {
+	// Professions Profession slugs.
+	Professions []string `json:"professions"`
+}
+
 // PutMyTopicsJSONBody defines parameters for PutMyTopics.
 type PutMyTopicsJSONBody struct {
 	// Topics Topic slugs to follow.
@@ -323,6 +358,11 @@ type SearchStoriesParams struct {
 	Q      string  `form:"q" json:"q"`
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// RecordStoryViewsJSONBody defines parameters for RecordStoryViews.
+type RecordStoryViewsJSONBody struct {
+	Ids []int64 `json:"ids"`
 }
 
 // GetTimelineParams defines parameters for GetTimeline.
@@ -341,8 +381,14 @@ type CreateTopicRequestJSONBody struct {
 // PutMyDeviceJSONRequestBody defines body for PutMyDevice for application/json ContentType.
 type PutMyDeviceJSONRequestBody PutMyDeviceJSONBody
 
+// PutMyProfessionsJSONRequestBody defines body for PutMyProfessions for application/json ContentType.
+type PutMyProfessionsJSONRequestBody PutMyProfessionsJSONBody
+
 // PutMyTopicsJSONRequestBody defines body for PutMyTopics for application/json ContentType.
 type PutMyTopicsJSONRequestBody PutMyTopicsJSONBody
+
+// RecordStoryViewsJSONRequestBody defines body for RecordStoryViews for application/json ContentType.
+type RecordStoryViewsJSONRequestBody RecordStoryViewsJSONBody
 
 // CreateTopicRequestJSONRequestBody defines body for CreateTopicRequest for application/json ContentType.
 type CreateTopicRequestJSONRequestBody CreateTopicRequestJSONBody
@@ -373,12 +419,18 @@ type ServerInterface interface {
 	// PutMyDevice Register (or refresh) a push notification token for this device.
 	// (PUT /v1/me/devices)
 	PutMyDevice(w http.ResponseWriter, r *http.Request)
+	// PutMyProfessions Replace the user's professions (at most 3).
+	// (PUT /v1/me/professions)
+	PutMyProfessions(w http.ResponseWriter, r *http.Request)
 	// PutMyTopics Replace the set of followed topics.
 	// (PUT /v1/me/topics)
 	PutMyTopics(w http.ResponseWriter, r *http.Request)
 	// SearchStories Full-text search over all stories, newest first.
 	// (GET /v1/search)
 	SearchStories(w http.ResponseWriter, r *http.Request, params SearchStoriesParams)
+	// RecordStoryViews Record stories that were visible in the user's feed (idempotent).
+	// (POST /v1/stories/views)
+	RecordStoryViews(w http.ResponseWriter, r *http.Request)
 	// GetStory Get a story with its full body and sources.
 	// (GET /v1/stories/{id})
 	GetStory(w http.ResponseWriter, r *http.Request, id StoryID)
@@ -580,6 +632,20 @@ func (siw *ServerInterfaceWrapper) PutMyDevice(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// PutMyProfessions operation middleware
+func (siw *ServerInterfaceWrapper) PutMyProfessions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutMyProfessions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PutMyTopics operation middleware
 func (siw *ServerInterfaceWrapper) PutMyTopics(w http.ResponseWriter, r *http.Request) {
 
@@ -644,6 +710,20 @@ func (siw *ServerInterfaceWrapper) SearchStories(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SearchStories(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RecordStoryViews operation middleware
+func (siw *ServerInterfaceWrapper) RecordStoryViews(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RecordStoryViews(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -998,6 +1078,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/me", wrapper.DeleteMe)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/me", wrapper.GetMe)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/topics", wrapper.PutMyTopics)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/professions", wrapper.PutMyProfessions)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/me/devices", wrapper.DeleteMyDevice)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/devices", wrapper.PutMyDevice)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/timeline", wrapper.GetTimeline)
@@ -1006,6 +1087,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/stories/{id}/read", wrapper.MarkStoryRead)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/search", wrapper.SearchStories)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/bookmarks", wrapper.ListBookmarks)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/stories/views", wrapper.RecordStoryViews)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/stories/{id}/bookmark", wrapper.RemoveBookmark)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/stories/{id}/bookmark", wrapper.AddBookmark)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/topic-requests", wrapper.ListMyTopicRequests)

@@ -11,19 +11,27 @@ import (
 )
 
 const addTopicStat = `-- name: AddTopicStat :execrows
-INSERT INTO topic_stats (topic_id, env, followers)
-SELECT id, $1, $2 FROM topics WHERE slug = $3
+INSERT INTO topic_stats (topic_id, env, followers, profession_users, views_7d)
+SELECT id, $1, $2, $3, $4 FROM topics WHERE slug = $5
 `
 
 type AddTopicStatParams struct {
-	Env       string
-	Followers int32
-	Slug      string
+	Env             string
+	Followers       int32
+	ProfessionUsers int32
+	Views7d         int32
+	Slug            string
 }
 
 // Zero rows when the hosted topic is not in the local catalog.
 func (q *Queries) AddTopicStat(ctx context.Context, arg AddTopicStatParams) (int64, error) {
-	result, err := q.db.Exec(ctx, addTopicStat, arg.Env, arg.Followers, arg.Slug)
+	result, err := q.db.Exec(ctx, addTopicStat,
+		arg.Env,
+		arg.Followers,
+		arg.ProfessionUsers,
+		arg.Views7d,
+		arg.Slug,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -37,39 +45,6 @@ DELETE FROM topic_stats WHERE env = $1
 func (q *Queries) DeleteTopicStats(ctx context.Context, env string) error {
 	_, err := q.db.Exec(ctx, deleteTopicStats, env)
 	return err
-}
-
-const listHostedFollowerCounts = `-- name: ListHostedFollowerCounts :many
-SELECT t.slug, count(*)::integer AS followers
-FROM user_topics ut
-JOIN topics t ON t.id = ut.topic_id
-GROUP BY t.slug
-`
-
-type ListHostedFollowerCountsRow struct {
-	Slug      string
-	Followers int32
-}
-
-// Run against the hosted DB. Aggregate follower counts per topic slug.
-func (q *Queries) ListHostedFollowerCounts(ctx context.Context) ([]ListHostedFollowerCountsRow, error) {
-	rows, err := q.db.Query(ctx, listHostedFollowerCounts)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListHostedFollowerCountsRow{}
-	for rows.Next() {
-		var i ListHostedFollowerCountsRow
-		if err := rows.Scan(&i.Slug, &i.Followers); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const listHostedPendingRequests = `-- name: ListHostedPendingRequests :many
@@ -96,6 +71,59 @@ func (q *Queries) ListHostedPendingRequests(ctx context.Context) ([]ListHostedPe
 	for rows.Next() {
 		var i ListHostedPendingRequestsRow
 		if err := rows.Scan(&i.ID, &i.Text, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listHostedTopicDemand = `-- name: ListHostedTopicDemand :many
+SELECT d.slug, d.followers, d.profession_users, d.views
+FROM (
+    SELECT t.slug,
+        (SELECT count(*) FROM user_topics ut WHERE ut.topic_id = t.id)::integer AS followers,
+        (SELECT count(DISTINCT up.user_id)
+            FROM profession_topics pt
+            JOIN user_professions up ON up.profession_id = pt.profession_id
+            WHERE pt.topic_id = COALESCE(t.parent_id, t.id))::integer AS profession_users,
+        (SELECT count(DISTINCT v.user_id)
+            FROM story_topics st
+            JOIN story_views v ON v.story_id = st.story_id
+            WHERE st.topic_id = t.id AND v.seen_at >= $1)::integer AS views
+    FROM topics t
+) d
+WHERE d.followers > 0 OR d.profession_users > 0 OR d.views > 0
+`
+
+type ListHostedTopicDemandRow struct {
+	Slug            string
+	Followers       int32
+	ProfessionUsers int32
+	Views           int32
+}
+
+// Run against the hosted DB. Aggregate demand per topic slug, never per user: followers, users whose
+// profession maps to the topic's root, and distinct viewers of the topic's stories since @since.
+// Topics with no demand are left out.
+func (q *Queries) ListHostedTopicDemand(ctx context.Context, since time.Time) ([]ListHostedTopicDemandRow, error) {
+	rows, err := q.db.Query(ctx, listHostedTopicDemand, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListHostedTopicDemandRow{}
+	for rows.Next() {
+		var i ListHostedTopicDemandRow
+		if err := rows.Scan(
+			&i.Slug,
+			&i.Followers,
+			&i.ProfessionUsers,
+			&i.Views,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -143,6 +171,46 @@ func (q *Queries) ListPendingInbox(ctx context.Context) ([]ListPendingInboxRow, 
 		return nil, err
 	}
 	return items, nil
+}
+
+const pruneHostedStories = `-- name: PruneHostedStories :execrows
+DELETE FROM stories
+WHERE id IN (
+    SELECT s.id FROM stories s
+    WHERE NOT EXISTS (SELECT 1 FROM user_bookmarks b WHERE b.story_id = s.id)
+        AND (
+            s.published_at < $1
+            OR (
+                s.published_at < $2
+                AND (SELECT count(*) FROM story_views v WHERE v.story_id = s.id) < $3::bigint
+            )
+        )
+    ORDER BY s.id
+    LIMIT $4
+)
+`
+
+type PruneHostedStoriesParams struct {
+	MaxAgeBefore time.Time
+	GraceBefore  time.Time
+	MinViewers   int64
+	MaxRows      int32
+}
+
+// Run against the hosted DB. Deletes at most @max_rows stories that nobody saved and that are
+// either older than @max_age_before or older than @grace_before with fewer than @min_viewers
+// distinct viewers. Sources, topics, views and read state cascade.
+func (q *Queries) PruneHostedStories(ctx context.Context, arg PruneHostedStoriesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, pruneHostedStories,
+		arg.MaxAgeBefore,
+		arg.GraceBefore,
+		arg.MinViewers,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const resolveInboxRequest = `-- name: ResolveInboxRequest :execrows

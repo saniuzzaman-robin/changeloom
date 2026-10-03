@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"regexp"
 	"strings"
@@ -29,25 +30,126 @@ type Node struct {
 	Children []Node   `yaml:"children"`
 }
 
+// Profession is a profession users can pick. Topics are root topic slugs in display order.
+type Profession struct {
+	Slug        string   `yaml:"slug"`
+	Name        string   `yaml:"name"`
+	Description string   `yaml:"description"`
+	Topics      []string `yaml:"topics"`
+}
+
+// Catalog is the professions and the topic tree.
+type Catalog struct {
+	Professions []Profession `yaml:"professions"`
+	Topics      []Node       `yaml:"topics"`
+}
+
 // slugPart is one lowercase, hyphenated slug segment, e.g. "react-native".
 var slugPart = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
-// Parse decodes and validates a YAML catalog. Unknown keys are rejected to catch typos.
-func Parse(data []byte) ([]Node, error) {
-	var nodes []Node
+const (
+	professionsFile = "professions.yaml"
+	topicsDir       = "topics"
+)
+
+// Load reads professions.yaml and every topics/*.yaml (each a list of root topics) from fsys, in
+// file name order, and validates the result.
+func Load(fsys fs.FS) (Catalog, error) {
+	var c Catalog
+	data, err := fs.ReadFile(fsys, professionsFile)
+	if err != nil {
+		return Catalog{}, fmt.Errorf("read catalog: %w", err)
+	}
+	if err := decode(data, &c.Professions); err != nil {
+		return Catalog{}, fmt.Errorf("parse %s: %w", professionsFile, err)
+	}
+	files, err := fs.Glob(fsys, topicsDir+"/*.yaml")
+	if err != nil {
+		return Catalog{}, fmt.Errorf("read catalog: %w", err)
+	}
+	for _, f := range files {
+		data, err := fs.ReadFile(fsys, f)
+		if err != nil {
+			return Catalog{}, fmt.Errorf("read catalog: %w", err)
+		}
+		var nodes []Node
+		if err := decode(data, &nodes); err != nil {
+			return Catalog{}, fmt.Errorf("parse %s: %w", f, err)
+		}
+		c.Topics = append(c.Topics, nodes...)
+	}
+	if err := c.Validate(); err != nil {
+		return Catalog{}, fmt.Errorf("invalid catalog: %w", err)
+	}
+	return c, nil
+}
+
+// Parse decodes and validates one YAML document with professions and topics keys.
+func Parse(data []byte) (Catalog, error) {
+	var c Catalog
+	if err := decode(data, &c); err != nil {
+		return Catalog{}, fmt.Errorf("parse catalog yaml: %w", err)
+	}
+	if err := c.Validate(); err != nil {
+		return Catalog{}, fmt.Errorf("invalid catalog yaml: %w", err)
+	}
+	return c, nil
+}
+
+// decode rejects unknown keys to catch typos.
+func decode(data []byte, v any) error {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
-	if err := dec.Decode(&nodes); err != nil {
-		return nil, fmt.Errorf("parse catalog yaml: %w", err)
-	}
+	return dec.Decode(v)
+}
+
+// Validate checks the topic tree, relations, hints and professions.
+func (c Catalog) Validate() error {
 	seen := map[string]bool{}
-	if err := validateTree(nodes, "", seen); err != nil {
-		return nil, fmt.Errorf("invalid catalog yaml: %w", err)
+	if err := validateTree(c.Topics, "", seen); err != nil {
+		return err
 	}
-	if err := validateLinks(nodes, seen); err != nil {
-		return nil, fmt.Errorf("invalid catalog yaml: %w", err)
+	if err := validateLinks(c.Topics, seen); err != nil {
+		return err
 	}
-	return nodes, nil
+	return c.validateProfessions()
+}
+
+func (c Catalog) validateProfessions() error {
+	roots := map[string]bool{}
+	for _, n := range c.Topics {
+		roots[n.Slug] = true
+	}
+	mapped := map[string]bool{}
+	seen := map[string]bool{}
+	for _, p := range c.Professions {
+		switch {
+		case p.Name == "":
+			return fmt.Errorf("profession %q needs a name", p.Slug)
+		case !slugPart.MatchString(p.Slug):
+			return fmt.Errorf("profession slug %q must be lowercase letters, digits and single hyphens", p.Slug)
+		case seen[p.Slug]:
+			return fmt.Errorf("duplicate profession slug %q", p.Slug)
+		}
+		seen[p.Slug] = true
+		inProfession := map[string]bool{}
+		for _, t := range p.Topics {
+			switch {
+			case !roots[t]:
+				return fmt.Errorf("profession %q lists %q, which is not a root topic", p.Slug, t)
+			case inProfession[t]:
+				return fmt.Errorf("profession %q lists %q twice", p.Slug, t)
+			}
+			inProfession[t] = true
+			mapped[t] = true
+		}
+	}
+	for _, n := range c.Topics {
+		if !mapped[n.Slug] {
+			return fmt.Errorf("root topic %q belongs to no profession", n.Slug)
+		}
+	}
+	return nil
 }
 
 // validateTree checks names and slugs. The tree is at most two levels deep because the
@@ -121,31 +223,69 @@ func CheckHint(h string) error {
 	return nil
 }
 
-// Result counts what Seed wrote. Topics counts every upserted topic; Relations and Hints count
-// only rows that were new.
+// Result counts what Seed wrote. Topics and Professions count every upserted row; Relations and
+// Hints count only rows that were new.
 type Result struct {
-	Topics    int
-	Relations int64
-	Hints     int64
+	Topics      int
+	Professions int
+	Relations   int64
+	Hints       int64
 }
 
-// Seed upserts the catalog into the local DB in one transaction: topics by slug, then the
-// relations and hints. Nothing is ever deleted.
-func Seed(ctx context.Context, pool *pgxpool.Pool, nodes []Node) (Result, error) {
+// Seed writes the catalog into the local DB in one transaction: the topics by slug with their
+// relations and hints, then the professions. Nothing is ever deleted.
+func Seed(ctx context.Context, pool *pgxpool.Pool, c Catalog) (Result, error) {
 	var res Result
 	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		q := db.New(tx)
 		ids := map[string]int64{}
-		if err := upsertTopics(ctx, q, nodes, nil, ids); err != nil {
+		if err := upsertTopics(ctx, q, c.Topics, nil, ids); err != nil {
 			return err
 		}
 		res.Topics = len(ids)
-		return addLinks(ctx, q, nodes, ids, &res)
+		if err := addLinks(ctx, q, c.Topics, ids, &res); err != nil {
+			return err
+		}
+		for i, p := range c.Professions {
+			if err := UpsertProfession(ctx, tx, p, i); err != nil {
+				return err
+			}
+		}
+		res.Professions = len(c.Professions)
+		return nil
 	})
 	if err != nil {
 		return Result{}, fmt.Errorf("seed catalog: %w", err)
 	}
 	return res, nil
+}
+
+// UpsertProfession upserts a profession by slug and replaces its topic list. Topics that are not
+// in the DB are skipped.
+func UpsertProfession(ctx context.Context, tx pgx.Tx, p Profession, position int) error {
+	var id int64
+	err := tx.QueryRow(ctx, `
+		INSERT INTO professions (slug, name, description, position) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (slug) DO UPDATE
+		SET name = EXCLUDED.name, description = EXCLUDED.description, position = EXCLUDED.position,
+		    updated_at = CASE
+		        WHEN (professions.name, professions.description, professions.position)
+		            IS DISTINCT FROM (EXCLUDED.name, EXCLUDED.description, EXCLUDED.position)
+		        THEN now() ELSE professions.updated_at END
+		RETURNING id`, p.Slug, p.Name, p.Description, position).Scan(&id)
+	if err != nil {
+		return fmt.Errorf("upsert profession %q: %w", p.Slug, err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM profession_topics WHERE profession_id = $1`, id); err != nil {
+		return fmt.Errorf("clear topics of profession %q: %w", p.Slug, err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO profession_topics (profession_id, topic_id, position)
+		SELECT $1, t.id, x.pos - 1
+		FROM unnest($2::text[]) WITH ORDINALITY AS x(slug, pos) JOIN topics t ON t.slug = x.slug`, id, p.Topics); err != nil {
+		return fmt.Errorf("link topics of profession %q: %w", p.Slug, err)
+	}
+	return nil
 }
 
 func upsertTopics(ctx context.Context, q *db.Queries, nodes []Node, parentID *int64, ids map[string]int64) error {

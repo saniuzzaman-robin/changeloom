@@ -70,7 +70,9 @@ class ChangeloomApi(
         }
     }
 
-    suspend fun topics(): List<Topic> = client.get("v1/topics") { authorize() }.parse<TopicList>().items
+    suspend fun topicList(): TopicList = client.get("v1/topics") { authorize() }.parse()
+
+    suspend fun topics(): List<Topic> = topicList().items
 
     suspend fun me(): Me = client.get("v1/me") { authorize() }.parse()
 
@@ -83,6 +85,21 @@ class ChangeloomApi(
             contentType(ContentType.Application.Json)
             setBody(PutTopicsRequest(slugs))
         }.parse()
+
+    suspend fun putMyProfessions(slugs: List<String>): Me =
+        client.put("v1/me/professions") {
+            authorize()
+            contentType(ContentType.Application.Json)
+            setBody(PutProfessionsRequest(slugs))
+        }.parse()
+
+    /** Reports stories the user has seen in the feed (at most [MAX_VIEW_IDS] per call); idempotent on the server. */
+    suspend fun recordViews(ids: List<Long>) =
+        client.post("v1/stories/views") {
+            authorize()
+            contentType(ContentType.Application.Json)
+            setBody(RecordViewsRequest(ids))
+        }.checkSuccess()
 
     suspend fun timeline(cursor: String? = null, limit: Int = TIMELINE_PAGE_SIZE): TimelinePage =
         client.get("v1/timeline") {
@@ -165,6 +182,7 @@ class ChangeloomApi(
 
     companion object {
         const val TIMELINE_PAGE_SIZE = 20
+        const val MAX_VIEW_IDS = 100
         const val APP_CHECK_HEADER = "X-Firebase-AppCheck"
         private const val REQUEST_TIMEOUT_MS = 15_000L
         private const val CONNECT_TIMEOUT_MS = 10_000L

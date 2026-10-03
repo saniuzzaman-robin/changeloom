@@ -35,7 +35,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.triStateToggleable
 import androidx.compose.foundation.text.KeyboardOptions
@@ -58,6 +58,35 @@ import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tag
+import androidx.compose.material.icons.rounded.Handyman
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.Work
+import androidx.compose.material.icons.rounded.AccountBalance
+import androidx.compose.material.icons.rounded.SportsSoccer
+import androidx.compose.material.icons.rounded.SportsEsports
+import androidx.compose.material.icons.rounded.Science
+import androidx.compose.material.icons.rounded.School
+import androidx.compose.material.icons.rounded.RocketLaunch
+import androidx.compose.material.icons.rounded.Restaurant
+import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.Paid
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.Medication
+import androidx.compose.material.icons.rounded.MedicalServices
+import androidx.compose.material.icons.rounded.LocalShipping
+import androidx.compose.material.icons.rounded.Gavel
+import androidx.compose.material.icons.rounded.Flight
+import androidx.compose.material.icons.rounded.FitnessCenter
+import androidx.compose.material.icons.rounded.Engineering
+import androidx.compose.material.icons.rounded.Eco
+import androidx.compose.material.icons.rounded.Campaign
+import androidx.compose.material.icons.rounded.Brush
+import androidx.compose.material.icons.rounded.Analytics
+import androidx.compose.material.icons.rounded.Agriculture
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -110,6 +139,7 @@ import dev.changeloom.android.ui.theme.Spacing
 import dev.changeloom.android.ui.theme.ThemeMode
 import dev.changeloom.android.ui.theme.expoTween
 import dev.changeloom.shared.data.CheckState
+import dev.changeloom.shared.data.Profession
 import dev.changeloom.shared.data.Topic
 import dev.changeloom.shared.data.TopicSelection
 import dev.changeloom.shared.data.TopicTree
@@ -141,6 +171,8 @@ fun TopicPickerScreen(mode: TopicPickerMode, onExit: () -> Unit, vm: TopicPicker
         state = state,
         mode = mode,
         onToggle = vm::toggle,
+        onToggleProfession = vm::toggleProfession,
+        onStep = vm::setStep,
         onExpand = vm::toggleExpanded,
         onQueryChange = vm::setQuery,
         onSelectAll = vm::selectAll,
@@ -156,6 +188,8 @@ internal fun TopicPickerContent(
     state: TopicPickerState,
     mode: TopicPickerMode,
     onToggle: (String) -> Unit,
+    onToggleProfession: (String) -> Unit,
+    onStep: (PickerStep) -> Unit,
     onExpand: (String) -> Unit,
     onQueryChange: (String) -> Unit,
     onSelectAll: () -> Unit,
@@ -167,7 +201,12 @@ internal fun TopicPickerContent(
     val c = ChangeloomTheme.colors
     val selection = state.selection
     val query = state.query.trim()
-    val rows = remember(selection?.tree, query) { selection?.tree?.let { topicRows(it, query) }.orEmpty() }
+    val professionStep = state.step == PickerStep.Professions && state.professions.isNotEmpty()
+    val suggested = remember(state.professions, state.selectedProfessions) { suggestedRoots(state.professions, state.selectedProfessions) }
+    val rows = remember(selection?.tree, query, suggested) { selection?.tree?.let { topicRows(it, query, suggested) }.orEmpty() }
+    val professionList = remember(state.professions, query) {
+        state.professions.filter { query.isEmpty() || it.name.contains(query, ignoreCase = true) }
+    }
     val listState = rememberLazyListState()
     val staggered = rememberStaggered(listState)
 
@@ -175,10 +214,11 @@ internal fun TopicPickerContent(
         GridBackground(Modifier.fillMaxWidth().height(360.dp))
         SpotlightGlow(Modifier.fillMaxWidth().height(420.dp))
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))) {
-            PickerHeader(mode, onExit)
+            PickerHeader(mode, professionStep, state.professions.isNotEmpty(), onEditProfessions = { onStep(PickerStep.Professions) }, onExit)
             SearchField(
                 state.query,
                 onQueryChange,
+                placeholder = stringResource(if (professionStep) R.string.search_professions else R.string.search_topics),
                 enabled = selection != null,
                 modifier = Modifier.padding(horizontal = Spacing.gutter).padding(top = 20.dp).enter(delayMillis = 240),
             )
@@ -198,6 +238,22 @@ internal fun TopicPickerContent(
             ) {
                 when {
                     selection == null -> if (state.loading) items(SKELETON_CARDS) { SkeletonTopicCard() }
+                    professionStep && professionList.isEmpty() -> item {
+                        EmptyState(
+                            title = stringResource(R.string.professions_empty_title),
+                            message = stringResource(R.string.professions_empty_body),
+                            art = { IconTile(Icons.Rounded.SearchOff) },
+                        )
+                    }
+                    professionStep -> items(professionList, key = { it.slug }) { profession ->
+                        val picked = profession.slug in state.selectedProfessions
+                        ProfessionCard(
+                            profession,
+                            picked = picked,
+                            enabled = picked || state.selectedProfessions.size < MAX_PROFESSIONS,
+                            onClick = { onToggleProfession(profession.slug) },
+                        )
+                    }
                     rows.isEmpty() -> item {
                         EmptyState(
                             title = stringResource(R.string.topics_empty_title),
@@ -205,26 +261,46 @@ internal fun TopicPickerContent(
                             art = { IconTile(Icons.Rounded.SearchOff) },
                         )
                     }
-                    else -> itemsIndexed(rows, key = { _, row -> row.root.slug }) { index, row ->
-                        RootTopicCard(
-                            row = row,
-                            selection = selection,
-                            expanded = row.root.slug in state.expanded || row.matchedChildren,
-                            onToggle = onToggle,
-                            onExpand = { onExpand(row.root.slug) },
-                            // Only the first cards, on first show: cards scrolled into view appear at once.
-                            modifier = if (staggered && index < STAGGERED_CARDS) Modifier.enter(delayMillis = 300 + index * 50) else Modifier,
-                        )
+                    else -> {
+                        // Sections only when professions suggest areas and nothing is being searched.
+                        val sections = query.isEmpty() && rows.any { it.suggested } && rows.any { !it.suggested }
+                        rows.forEachIndexed { index, row ->
+                            if (sections && index == 0) item(key = "suggested") { SectionLabel(stringResource(R.string.suggested_areas)) }
+                            if (sections && !row.suggested && rows[index - 1].suggested) {
+                                item(key = "more") { SectionLabel(stringResource(R.string.more_areas)) }
+                            }
+                            item(key = row.root.slug) {
+                                RootTopicCard(
+                                    row = row,
+                                    selection = selection,
+                                    expanded = row.root.slug in state.expanded || row.matchedChildren,
+                                    onToggle = onToggle,
+                                    onExpand = { onExpand(row.root.slug) },
+                                    // Only the first cards, on first show: cards scrolled into view appear at once.
+                                    modifier = if (staggered && index < STAGGERED_CARDS) Modifier.enter(delayMillis = 300 + index * 50) else Modifier,
+                                )
+                            }
+                        }
                     }
                 }
             }
-            PickerBar(mode, state, onSelectAll, onClear, onSave)
+            if (professionStep) {
+                ProfessionBar(state, onNext = { onStep(PickerStep.Topics) })
+            } else {
+                PickerBar(mode, state, onSelectAll, onClear, onSave)
+            }
         }
     }
 }
 
 @Composable
-private fun PickerHeader(mode: TopicPickerMode, onExit: () -> Unit) {
+private fun PickerHeader(
+    mode: TopicPickerMode,
+    professionStep: Boolean,
+    hasProfessions: Boolean,
+    onEditProfessions: () -> Unit,
+    onExit: () -> Unit,
+) {
     val c = ChangeloomTheme.colors
     val onboarding = mode == TopicPickerMode.Onboarding
     Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.gutter).padding(top = 8.dp)) {
@@ -240,10 +316,18 @@ private fun PickerHeader(mode: TopicPickerMode, onExit: () -> Unit) {
             }
         }
         Spacer(Modifier.height(12.dp))
-        Eyebrow(stringResource(if (onboarding) R.string.topics_onboarding_eyebrow else R.string.topics_edit_eyebrow), Modifier.enter(delayMillis = 0), color = c.primaryText)
+        val eyebrow = when {
+            professionStep -> R.string.professions_eyebrow
+            onboarding -> R.string.topics_onboarding_eyebrow
+            else -> R.string.topics_edit_eyebrow
+        }
+        Eyebrow(stringResource(eyebrow), Modifier.enter(delayMillis = 0), color = c.primaryText)
         Spacer(Modifier.height(8.dp))
         Column(Modifier.enter(delayMillis = 80)) {
-            if (onboarding) {
+            if (professionStep) {
+                Text(stringResource(R.string.professions_title_1), style = MaterialTheme.typography.headlineLarge, color = c.fg)
+                GradientText(stringResource(R.string.professions_title_2), style = MaterialTheme.typography.headlineLarge)
+            } else if (onboarding) {
                 Text(stringResource(R.string.topics_onboarding_title_1), style = MaterialTheme.typography.headlineLarge, color = c.fg)
                 GradientText(stringResource(R.string.topics_onboarding_title_2), style = MaterialTheme.typography.headlineLarge)
             } else {
@@ -252,26 +336,27 @@ private fun PickerHeader(mode: TopicPickerMode, onExit: () -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            if (onboarding) {
-                stringResource(R.string.topics_onboarding_body)
-            } else {
-                stringResource(R.string.topics_edit_body)
+            when {
+                professionStep -> stringResource(R.string.professions_body, MAX_PROFESSIONS)
+                onboarding -> stringResource(R.string.topics_onboarding_body)
+                else -> stringResource(R.string.topics_edit_body)
             },
             Modifier.enter(delayMillis = 160),
             style = MaterialTheme.typography.bodyMedium,
             color = c.fgMuted,
         )
+        if (!professionStep && hasProfessions) TextAction(stringResource(R.string.edit_professions), onEditProfessions, icon = Icons.Rounded.Edit)
     }
 }
 
 @Composable
-private fun SearchField(query: String, onChange: (String) -> Unit, enabled: Boolean, modifier: Modifier = Modifier) {
+private fun SearchField(query: String, onChange: (String) -> Unit, placeholder: String, enabled: Boolean, modifier: Modifier = Modifier) {
     ChangeloomTextField(
         value = query,
         onValueChange = onChange,
         modifier = modifier.fillMaxWidth(),
         enabled = enabled,
-        placeholder = stringResource(R.string.search_topics),
+        placeholder = placeholder,
         leadingIcon = Icons.Rounded.Search,
         trailing = if (query.isEmpty()) {
             null
@@ -282,16 +367,92 @@ private fun SearchField(query: String, onChange: (String) -> Unit, enabled: Bool
     )
 }
 
-/** A root topic and the children to show under it; [matchedChildren] means the search matched only children. */
-private data class TopicRow(val root: Topic, val children: List<Topic>, val matchedChildren: Boolean)
+/**
+ * A root topic and the children to show under it; [matchedChildren] means the search matched only children and
+ * [suggested] that one of the chosen professions lists this area.
+ */
+private data class TopicRow(val root: Topic, val children: List<Topic>, val matchedChildren: Boolean, val suggested: Boolean = false)
 
-private fun topicRows(tree: TopicTree, query: String): List<TopicRow> = tree.roots.mapNotNull { root ->
-    val children = tree.childrenOf(root.slug)
-    when {
-        query.isEmpty() || root.name.contains(query, ignoreCase = true) -> TopicRow(root, children, matchedChildren = false)
-        else -> children.filter { it.name.contains(query, ignoreCase = true) }
-            .takeIf { it.isNotEmpty() }
-            ?.let { TopicRow(root, it, matchedChildren = true) }
+/** Root slugs of the chosen professions, in the order the professions were picked, then each profession's display order. */
+private fun suggestedRoots(professions: List<Profession>, chosen: List<String>): List<String> {
+    val bySlug = professions.associateBy { it.slug }
+    return chosen.flatMap { bySlug[it]?.topics.orEmpty() }.distinct()
+}
+
+/** Matching roots with the [suggested] areas first (in that order), then the rest in catalog order. */
+private fun topicRows(tree: TopicTree, query: String, suggested: List<String>): List<TopicRow> {
+    val rank = suggested.withIndex().associate { it.value to it.index }
+    val rows = tree.roots.mapNotNull { root ->
+        val children = tree.childrenOf(root.slug)
+        val isSuggested = root.slug in rank
+        when {
+            query.isEmpty() || root.name.contains(query, ignoreCase = true) -> TopicRow(root, children, matchedChildren = false, suggested = isSuggested)
+            else -> children.filter { it.name.contains(query, ignoreCase = true) }
+                .takeIf { it.isNotEmpty() }
+                ?.let { TopicRow(root, it, matchedChildren = true, suggested = isSuggested) }
+        }
+    }
+    return rows.sortedBy { rank[it.root.slug] ?: Int.MAX_VALUE } // stable: unsuggested keep catalog order
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Eyebrow(text, Modifier.padding(top = 4.dp), color = ChangeloomTheme.colors.fgSubtle)
+}
+
+@Composable
+private fun ProfessionCard(profession: Profession, picked: Boolean, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val c = ChangeloomTheme.colors
+    val border by animateColorAsState(if (picked) c.primary.copy(alpha = 0.5f) else c.line, expoTween(Durations.MEDIUM), label = "professionBorder")
+    GlassCard(
+        modifier.fillMaxWidth().graphicsLayer { alpha = if (enabled) 1f else 0.5f },
+        onClick = if (enabled) onClick else { {} },
+        border = SolidColor(border),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconTile(professionIcon(profession.slug))
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(profession.name, style = MaterialTheme.typography.titleMedium, color = c.fg)
+                if (profession.description.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(profession.description, style = MaterialTheme.typography.bodySmall, color = c.fgMuted, maxLines = 2)
+                }
+            }
+            TriStateCheck(
+                if (picked) CheckState.Checked else CheckState.Unchecked,
+                label = stringResource(R.string.follow_topic, profession.name),
+                onClick = if (enabled) onClick else { {} },
+            )
+        }
+    }
+}
+
+/** Footer of the profession step: how many are chosen and the way on (professions are optional). */
+@Composable
+private fun ProfessionBar(state: TopicPickerState, onNext: () -> Unit) {
+    val c = ChangeloomTheme.colors
+    val count = state.selectedProfessions.size
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(c.navGlass)
+            .drawBehind { drawLine(c.line, Offset.Zero, Offset(size.width, 0f), 1.dp.toPx()) }
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+            .padding(horizontal = Spacing.gutter, vertical = 12.dp),
+    ) {
+        Eyebrow(
+            stringResource(R.string.professions_selected, count, MAX_PROFESSIONS),
+            color = if (count > 0) c.primaryText else c.fgSubtle,
+        )
+        Spacer(Modifier.height(8.dp))
+        PrimaryButton(
+            text = stringResource(if (count > 0) R.string.professions_next else R.string.professions_skip),
+            onClick = onNext,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !state.saving,
+            icon = Icons.AutoMirrored.Rounded.ArrowForward,
+        )
     }
 }
 
@@ -500,6 +661,43 @@ private fun topicIcon(slug: String): ImageVector = when (slug.substringBefore('/
     else -> Icons.Rounded.Tag
 }
 
+private fun professionIcon(slug: String): ImageVector = when (slug) {
+    "software-engineer" -> Icons.Rounded.Code
+    "data-scientist" -> Icons.Rounded.Analytics
+    "ml-engineer" -> Icons.Rounded.Psychology
+    "cybersecurity" -> Icons.Rounded.Security
+    "it-devops" -> Icons.Rounded.Cloud
+    "product-manager" -> Icons.Rounded.Dashboard
+    "ux-designer", "visual-artist" -> Icons.Rounded.Brush
+    "game-developer", "gamer" -> Icons.Rounded.SportsEsports
+    "doctor", "nurse", "dentist", "veterinarian", "physiotherapist", "psychologist" -> Icons.Rounded.MedicalServices
+    "pharmacist" -> Icons.Rounded.Medication
+    "biologist", "chemist", "physicist", "science-enthusiast" -> Icons.Rounded.Science
+    "environmental-scientist" -> Icons.Rounded.Eco
+    "teacher", "professor-researcher", "student" -> Icons.Rounded.School
+    "founder" -> Icons.Rounded.RocketLaunch
+    "marketer", "content-creator" -> Icons.Rounded.Campaign
+    "lawyer" -> Icons.Rounded.Gavel
+    "public-servant", "finance-professional", "accountant" -> Icons.Rounded.AccountBalance
+    "investor" -> Icons.Rounded.Paid
+    "civil-engineer", "mechanical-engineer", "electrical-engineer", "aerospace-engineer", "architect" -> Icons.Rounded.Engineering
+    "construction-worker", "electrician-plumber", "automotive-technician", "manufacturing-worker" -> Icons.Rounded.Handyman
+    "farmer" -> Icons.Rounded.Agriculture
+    "logistics-pro" -> Icons.Rounded.LocalShipping
+    "pilot-aviation", "traveler" -> Icons.Rounded.Flight
+    "hospitality-worker", "foodie" -> Icons.Rounded.Restaurant
+    "real-estate-agent", "parent" -> Icons.Rounded.Home
+    "writer-journalist" -> Icons.Rounded.Edit
+    "photographer" -> Icons.Rounded.PhotoCamera
+    "musician", "music-fan" -> Icons.Rounded.MusicNote
+    "filmmaker", "entertainment-fan" -> Icons.Rounded.Movie
+    "fitness-wellness" -> Icons.Rounded.FitnessCenter
+    "sports-fan" -> Icons.Rounded.SportsSoccer
+    "world-affairs" -> Icons.Rounded.Public
+    "tech-enthusiast" -> Icons.Rounded.AutoAwesome
+    else -> Icons.Rounded.Work
+}
+
 private const val SKELETON_CARDS = 5
 private const val STAGGERED_CARDS = 6
 
@@ -527,7 +725,7 @@ private fun previewState(followed: List<String>, saved: List<String> = emptyList
 
 @Composable
 private fun PickerPreview(state: TopicPickerState, mode: TopicPickerMode) = TopicPickerContent(
-    state, mode, onToggle = {}, onExpand = {}, onQueryChange = {}, onSelectAll = {}, onClear = {}, onSave = {}, onRetry = {}, onExit = {},
+    state, mode, onToggle = {}, onToggleProfession = {}, onStep = {}, onExpand = {}, onQueryChange = {}, onSelectAll = {}, onClear = {}, onSave = {}, onRetry = {}, onExit = {},
 )
 
 @Preview(name = "Onboarding, dark", heightDp = 900)

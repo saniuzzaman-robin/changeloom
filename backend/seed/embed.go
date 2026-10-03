@@ -3,7 +3,7 @@ package seed
 
 import _ "embed"
 
-// TopicsYAML is a test/dev topic tree; the curator owns the real topic catalog.
+// TopicsYAML is a test/dev set of professions and topics; the curator owns the real topic catalog.
 //
 //go:embed topics.yaml
 var TopicsYAML []byte

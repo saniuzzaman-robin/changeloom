@@ -44,6 +44,8 @@ type NewTopic struct {
 	ParentSlug  string   `json:"parent_slug"`
 	Related     []string `json:"related"`
 	Hints       []string `json:"hints"`
+	// Professions are slugs of the professions a new root topic serves; empty for a child.
+	Professions []string `json:"professions"`
 }
 
 // Decision resolves one inbox request.
@@ -106,18 +108,26 @@ func (g *Grouper) Run(ctx context.Context, dryRun bool) (Result, error) {
 		}
 		existing[r.Slug] = parent
 	}
+	professions, err := listProfessions(ctx, g.pool)
+	if err != nil {
+		return Result{}, err
+	}
+	known := make(map[string]bool, len(professions))
+	for _, p := range professions {
+		known[p.Slug] = true
+	}
 	pending := make(map[int64]bool, len(inbox))
 	for _, r := range inbox {
 		pending[r.ID] = true
 	}
 
 	slog.InfoContext(ctx, "grouping topic requests", "requests", len(inbox), "topics", len(rows))
-	out, err := g.claude.Run(ctx, claude.Request{Prompt: Prompt(rows, inbox, g.cfg.MaxNewTopicsPerRun), Schema: Schema(), Tools: tools})
+	out, err := g.claude.Run(ctx, claude.Request{Prompt: Prompt(rows, professions, inbox, g.cfg.MaxNewTopicsPerRun), Schema: Schema(), Tools: tools})
 	if err != nil {
 		return Result{}, err
 	}
 	res := Result{Pending: len(inbox), CostUSD: out.CostUSD}
-	res.Plan, err = ParseOutput(out.Output, existing, pending, g.cfg.MaxNewTopicsPerRun)
+	res.Plan, err = ParseOutput(out.Output, existing, known, pending, g.cfg.MaxNewTopicsPerRun)
 	if err != nil {
 		return res, err
 	}
@@ -129,6 +139,18 @@ func (g *Grouper) Run(ctx context.Context, dryRun bool) (Result, error) {
 	}
 	res.Applied = true
 	return res, nil
+}
+
+func listProfessions(ctx context.Context, pool *pgxpool.Pool) ([]catalog.Profession, error) {
+	rows, err := pool.Query(ctx, `SELECT slug, name, description, '{}'::text[] FROM professions ORDER BY position, id`)
+	if err != nil {
+		return nil, fmt.Errorf("list professions: %w", err)
+	}
+	professions, err := pgx.CollectRows(rows, pgx.RowToStructByPos[catalog.Profession])
+	if err != nil {
+		return nil, fmt.Errorf("list professions: %w", err)
+	}
+	return professions, nil
 }
 
 // apply stores the new topics with their relations and hints and resolves the requests, in one
@@ -183,6 +205,16 @@ func (g *Grouper) apply(ctx context.Context, p Plan) error {
 					return fmt.Errorf("add hint %q to %q: %w", h, t.Slug, err)
 				}
 			}
+			for _, p := range t.Professions {
+				// Appended after the profession's existing topics.
+				if _, err := tx.Exec(ctx, `
+					INSERT INTO profession_topics (profession_id, topic_id, position)
+					SELECT p.id, $2, COALESCE((SELECT max(position) + 1 FROM profession_topics WHERE profession_id = p.id), 0)
+					FROM professions p WHERE p.slug = $1
+					ON CONFLICT DO NOTHING`, p, ids[t.Slug]); err != nil {
+					return fmt.Errorf("add %q to profession %q: %w", t.Slug, p, err)
+				}
+			}
 		}
 		for _, d := range p.Decisions {
 			var slug, note *string
@@ -209,9 +241,9 @@ func (g *Grouper) apply(ctx context.Context, p Plan) error {
 }
 
 // ParseOutput decodes Claude's answer and checks it against the catalog (existing maps each
-// topic slug to its parent slug, "" for a root) and the pending inbox ids. Any violation rejects
+// topic slug to its parent slug, "" for a root), the known profession slugs and the pending inbox ids. Any violation rejects
 // the whole answer, since decisions and new topics depend on each other.
-func ParseOutput(raw []byte, existing map[string]string, pending map[int64]bool, maxNew int) (Plan, error) {
+func ParseOutput(raw []byte, existing map[string]string, professions map[string]bool, pending map[int64]bool, maxNew int) (Plan, error) {
 	var p Plan
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return Plan{}, fmt.Errorf("decode grouping output: %w", err)
@@ -254,6 +286,17 @@ func ParseOutput(raw []byte, existing map[string]string, pending map[int64]bool,
 		for _, h := range t.Hints {
 			if err := catalog.CheckHint(h); err != nil {
 				bad("new topic %q: %v", t.Slug, err)
+			}
+		}
+		if t.ParentSlug == "" && len(t.Professions) == 0 {
+			bad("new root topic %q needs at least one profession", t.Slug)
+		}
+		if t.ParentSlug != "" && len(t.Professions) > 0 {
+			bad("new topic %q has a parent, so it must not list professions", t.Slug)
+		}
+		for _, p := range t.Professions {
+			if !professions[p] {
+				bad("new topic %q: unknown profession %q", t.Slug, p)
 			}
 		}
 	}

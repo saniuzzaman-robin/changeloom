@@ -1,14 +1,22 @@
 -- name: ListFetchTopics :many
--- Every topic with what fetch planning needs: its parent, hints, follower count, whether it has
--- children and when a fetch call covering it last succeeded.
+-- Every topic with what fetch planning needs: its parent, hints, demand (summed over the hosted
+-- envs), the professions its root serves, whether it has children and when a fetch call covering
+-- it last succeeded.
 SELECT t.id,
     t.slug,
     t.name,
     t.description,
     p.slug AS parent_slug,
     COALESCE((SELECT sum(s.followers) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS followers,
+    COALESCE((SELECT sum(s.profession_users) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS profession_users,
+    COALESCE((SELECT sum(s.views_7d) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS views_7d,
     EXISTS (SELECT 1 FROM topics c WHERE c.parent_id = t.id) AS has_children,
     COALESCE((SELECT array_agg(h.url ORDER BY h.url) FROM topic_hints h WHERE h.topic_id = t.id), '{}')::text[] AS hints,
+    COALESCE((
+        SELECT array_agg(pr.name ORDER BY pr.position, pr.name)
+        FROM profession_topics pt JOIN professions pr ON pr.id = pt.profession_id
+        WHERE pt.topic_id = COALESCE(t.parent_id, t.id)
+    ), '{}')::text[] AS professions,
     -- 'epoch' when no call covering the topic has succeeded yet.
     COALESCE((
         SELECT max(fr.started_at) FROM fetch_runs fr
@@ -17,6 +25,49 @@ SELECT t.id,
 FROM topics t
 LEFT JOIN topics p ON p.id = t.parent_id
 ORDER BY t.slug;
+
+-- name: ListTopicRelations :many
+-- Both directions of every related pair.
+SELECT a.slug AS slug, b.slug AS related_slug
+FROM topic_relations r
+JOIN topics a ON a.id = r.topic_id
+JOIN topics b ON b.id = r.related_id
+UNION ALL
+SELECT b.slug, a.slug
+FROM topic_relations r
+JOIN topics a ON a.id = r.topic_id
+JOIN topics b ON b.id = r.related_id;
+
+-- name: ListBackfillTopics :many
+-- Leaf topics with fewer than @target stories published since @since, most wanted first. A topic
+-- already covered by a successful backfill call since @since is skipped, so topics with little
+-- real news are not asked about again and again.
+SELECT t.id,
+    t.slug,
+    t.name,
+    t.description,
+    p.slug AS parent_slug,
+    COALESCE((SELECT array_agg(h.url ORDER BY h.url) FROM topic_hints h WHERE h.topic_id = t.id), '{}')::text[] AS hints,
+    COALESCE((
+        SELECT array_agg(pr.name ORDER BY pr.position, pr.name)
+        FROM profession_topics pt JOIN professions pr ON pr.id = pt.profession_id
+        WHERE pt.topic_id = COALESCE(t.parent_id, t.id)
+    ), '{}')::text[] AS professions
+FROM topics t
+LEFT JOIN topics p ON p.id = t.parent_id
+WHERE NOT EXISTS (SELECT 1 FROM topics c WHERE c.parent_id = t.id)
+    AND (
+        SELECT count(*) FROM story_topics st JOIN stories sv ON sv.id = st.story_id
+        WHERE st.topic_id = t.id AND sv.published_at >= @since
+    ) < @target::bigint
+    AND NOT EXISTS (
+        SELECT 1 FROM fetch_runs fr
+        WHERE fr.status = 'succeeded' AND fr.group_slug LIKE 'backfill:%'
+            AND fr.started_at >= @since AND fr.topic_ids @> ARRAY[t.id]
+    )
+ORDER BY COALESCE((SELECT sum(ts.followers + ts.profession_users + ts.views_7d) FROM topic_stats ts WHERE ts.topic_id = t.id), 0) DESC,
+    t.slug
+LIMIT @max_rows;
 
 -- name: ListRecentStoryRefs :many
 -- Recent stories in the given topics, sent to Claude so it skips what we already have.

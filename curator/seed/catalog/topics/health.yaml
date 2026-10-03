@@ -1,0 +1,210 @@
+- slug: clinical-guidelines
+  name: "Clinical Guidelines"
+  description: "Guidelines and evidence from major bodies."
+  children:
+    - {slug: clinical-guidelines/who, name: "WHO Guidelines"}
+    - {slug: clinical-guidelines/cdc, name: "CDC Guidance"}
+    - {slug: clinical-guidelines/nice, name: "NICE Guidance"}
+    - {slug: clinical-guidelines/cardiology, name: "Cardiology Guidelines"}
+    - {slug: clinical-guidelines/oncology, name: "Oncology Guidelines"}
+    - {slug: clinical-guidelines/diabetes, name: "Diabetes Care"}
+    - {slug: clinical-guidelines/infectious-disease, name: "Infectious Disease"}
+    - {slug: clinical-guidelines/hypertension, name: "Hypertension"}
+    - {slug: clinical-guidelines/antibiotics, name: "Antibiotic Stewardship"}
+    - {slug: clinical-guidelines/screening, name: "Screening Programs"}
+- slug: drug-approvals-safety
+  name: "Drug Approvals & Safety"
+  description: "New drugs, recalls and warnings."
+  children:
+    - {slug: drug-approvals-safety/fda, name: "FDA Approvals"}
+    - {slug: drug-approvals-safety/ema, name: "EMA Approvals"}
+    - {slug: drug-approvals-safety/recalls, name: "Drug Recalls"}
+    - {slug: drug-approvals-safety/warnings, name: "Safety Warnings"}
+    - {slug: drug-approvals-safety/generics, name: "Biosimilars & Generics"}
+    - {slug: drug-approvals-safety/trials, name: "Clinical Trial Results"}
+    - {slug: drug-approvals-safety/obesity, name: "Obesity Drugs"}
+    - {slug: drug-approvals-safety/cancer, name: "Cancer Therapies"}
+    - {slug: drug-approvals-safety/gene-therapy, name: "Gene & Cell Therapy"}
+    - {slug: drug-approvals-safety/vaccines, name: "Vaccines"}
+    - {slug: drug-approvals-safety/shortages, name: "Drug Shortages"}
+- slug: medical-specialties
+  name: "Medical Specialties"
+  description: "Updates across specialties."
+  children:
+    - {slug: medical-specialties/cardiology, name: "Cardiology"}
+    - {slug: medical-specialties/neurology, name: "Neurology"}
+    - {slug: medical-specialties/oncology, name: "Oncology"}
+    - {slug: medical-specialties/pediatrics, name: "Pediatrics"}
+    - {slug: medical-specialties/emergency, name: "Emergency Medicine"}
+    - {slug: medical-specialties/surgery, name: "Surgery"}
+    - {slug: medical-specialties/radiology, name: "Radiology"}
+    - {slug: medical-specialties/psychiatry, name: "Psychiatry"}
+    - {slug: medical-specialties/dermatology, name: "Dermatology"}
+    - {slug: medical-specialties/obgyn, name: "Obstetrics & Gynecology"}
+    - {slug: medical-specialties/orthopedics, name: "Orthopedics"}
+    - {slug: medical-specialties/anesthesiology, name: "Anesthesiology"}
+    - {slug: medical-specialties/family-medicine, name: "Family Medicine"}
+- slug: medical-research
+  name: "Medical Research"
+  description: "Studies and journals."
+  children:
+    - {slug: medical-research/top-journals, name: "NEJM & Lancet"}
+    - {slug: medical-research/clinical-trials, name: "Clinical Trials"}
+    - {slug: medical-research/epidemiology, name: "Epidemiology"}
+    - {slug: medical-research/genomics, name: "Genomics"}
+    - {slug: medical-research/immunology, name: "Immunology"}
+    - {slug: medical-research/microbiome, name: "Microbiome"}
+    - {slug: medical-research/rare-diseases, name: "Rare Diseases"}
+    - {slug: medical-research/preprints, name: "Preprints"}
+    - {slug: medical-research/reviews, name: "Systematic Reviews"}
+    - {slug: medical-research/aging, name: "Aging Research"}
+- slug: health-policy
+  name: "Health Policy"
+  description: "Regulation, funding and systems."
+  children:
+    - {slug: health-policy/us, name: "US Health Policy"}
+    - {slug: health-policy/medicare, name: "Medicare & Medicaid"}
+    - {slug: health-policy/uk, name: "NHS & UK"}
+    - {slug: health-policy/global, name: "Global Health"}
+    - {slug: health-policy/insurance, name: "Health Insurance"}
+    - {slug: health-policy/hospital-finance, name: "Hospital Finance"}
+    - {slug: health-policy/emergencies, name: "Public Health Emergencies"}
+    - {slug: health-policy/workforce, name: "Workforce Shortages"}
+    - {slug: health-policy/equity, name: "Health Equity"}
+- slug: medtech
+  name: "Medical Technology"
+  description: "Devices, AI and digital health."
+  children:
+    - {slug: medtech/devices, name: "Medical Devices"}
+    - {slug: medtech/ai, name: "Medical AI"}
+    - {slug: medtech/ehr, name: "Electronic Health Records"}
+    - {slug: medtech/telemedicine, name: "Telemedicine"}
+    - {slug: medtech/robotic-surgery, name: "Robotic Surgery"}
+    - {slug: medtech/wearables, name: "Wearable Monitoring"}
+    - {slug: medtech/diagnostics, name: "Diagnostics & Imaging"}
+    - {slug: medtech/digital-therapeutics, name: "Digital Therapeutics"}
+    - {slug: medtech/clearances, name: "FDA Device Clearances"}
+- slug: nursing-practice
+  name: "Nursing Practice"
+  description: "Bedside practice and specialties."
+  children:
+    - {slug: nursing-practice/critical-care, name: "Critical Care Nursing"}
+    - {slug: nursing-practice/emergency, name: "Emergency Nursing"}
+    - {slug: nursing-practice/pediatric, name: "Pediatric Nursing"}
+    - {slug: nursing-practice/oncology, name: "Oncology Nursing"}
+    - {slug: nursing-practice/community, name: "Community & Home Care"}
+    - {slug: nursing-practice/wound-care, name: "Wound Care"}
+    - {slug: nursing-practice/nurse-practitioners, name: "Nurse Practitioners"}
+    - {slug: nursing-practice/education, name: "Nursing Education"}
+    - {slug: nursing-practice/research, name: "Nursing Research"}
+- slug: patient-safety
+  name: "Patient Safety & Quality"
+  description: "Safety, infection control and quality."
+  children:
+    - {slug: patient-safety/infection-control, name: "Infection Control"}
+    - {slug: patient-safety/medication-safety, name: "Medication Safety"}
+    - {slug: patient-safety/falls, name: "Falls & Pressure Injuries"}
+    - {slug: patient-safety/quality, name: "Hospital Quality"}
+    - {slug: patient-safety/sepsis, name: "Sepsis"}
+    - {slug: patient-safety/alerts, name: "Safety Alerts"}
+    - {slug: patient-safety/staffing, name: "Staffing Ratios"}
+    - {slug: patient-safety/burnout, name: "Burnout & Wellbeing"}
+- slug: mental-health-care
+  name: "Mental Health Care"
+  description: "Treatment approaches and services."
+  children:
+    - {slug: mental-health-care/depression-anxiety, name: "Depression & Anxiety"}
+    - {slug: mental-health-care/ptsd, name: "Trauma & PTSD"}
+    - {slug: mental-health-care/addiction, name: "Addiction"}
+    - {slug: mental-health-care/child-adolescent, name: "Child & Adolescent"}
+    - {slug: mental-health-care/drugs, name: "Psychiatric Drugs"}
+    - {slug: mental-health-care/suicide-prevention, name: "Suicide Prevention"}
+    - {slug: mental-health-care/digital, name: "Digital Mental Health"}
+    - {slug: mental-health-care/psychedelics, name: "Psychedelic Therapy"}
+    - {slug: mental-health-care/crisis, name: "Crisis Services"}
+- slug: pharmacy-practice
+  name: "Pharmacy Practice"
+  description: "Dispensing, clinical pharmacy and business."
+  children:
+    - {slug: pharmacy-practice/dispensing, name: "Dispensing & Safety"}
+    - {slug: pharmacy-practice/clinical, name: "Clinical Pharmacy"}
+    - {slug: pharmacy-practice/compounding, name: "Compounding"}
+    - {slug: pharmacy-practice/reimbursement, name: "Pharmacy Reimbursement"}
+    - {slug: pharmacy-practice/pbms, name: "PBMs"}
+    - {slug: pharmacy-practice/automation, name: "Pharmacy Automation"}
+    - {slug: pharmacy-practice/immunization, name: "Immunization Services"}
+    - {slug: pharmacy-practice/controlled, name: "Controlled Substances"}
+- slug: dentistry
+  name: "Dentistry"
+  description: "Techniques, materials and specialties."
+  children:
+    - {slug: dentistry/restorative, name: "Restorative Dentistry"}
+    - {slug: dentistry/orthodontics, name: "Orthodontics"}
+    - {slug: dentistry/implants, name: "Implants"}
+    - {slug: dentistry/endodontics, name: "Endodontics"}
+    - {slug: dentistry/periodontics, name: "Periodontics"}
+    - {slug: dentistry/pediatric, name: "Pediatric Dentistry"}
+    - {slug: dentistry/materials, name: "Dental Materials"}
+    - {slug: dentistry/digital, name: "Digital Dentistry"}
+    - {slug: dentistry/research, name: "Oral Health Research"}
+    - {slug: dentistry/cosmetic, name: "Cosmetic Dentistry"}
+- slug: practice-management
+  name: "Practice Management"
+  description: "Running a clinic or practice."
+  children:
+    - {slug: practice-management/billing, name: "Billing & Coding"}
+    - {slug: practice-management/marketing, name: "Practice Marketing"}
+    - {slug: practice-management/staff, name: "Staff Management"}
+    - {slug: practice-management/patient-experience, name: "Patient Experience"}
+    - {slug: practice-management/software, name: "Practice Software"}
+    - {slug: practice-management/compliance, name: "Regulations & Compliance"}
+    - {slug: practice-management/insurance, name: "Insurance Contracts"}
+- slug: psychology-research
+  name: "Psychology Research"
+  description: "Findings in the field."
+  children:
+    - {slug: psychology-research/cognitive, name: "Cognitive Psychology"}
+    - {slug: psychology-research/developmental, name: "Developmental Psychology"}
+    - {slug: psychology-research/social, name: "Social Psychology"}
+    - {slug: psychology-research/neuroscience, name: "Neuroscience"}
+    - {slug: psychology-research/therapy-outcomes, name: "Therapy Outcomes"}
+    - {slug: psychology-research/methods, name: "Replication & Methods"}
+    - {slug: psychology-research/behavioral, name: "Behavioral Science"}
+    - {slug: psychology-research/personality, name: "Personality Research"}
+- slug: rehab-sports-med
+  name: "Rehab & Sports Medicine"
+  description: "Injury and recovery."
+  children:
+    - {slug: rehab-sports-med/orthopedic, name: "Orthopedic Rehab"}
+    - {slug: rehab-sports-med/injuries, name: "Sports Injuries"}
+    - {slug: rehab-sports-med/neuro, name: "Neuro Rehab"}
+    - {slug: rehab-sports-med/pain, name: "Pain Management"}
+    - {slug: rehab-sports-med/manual-therapy, name: "Manual Therapy"}
+    - {slug: rehab-sports-med/exercise-therapy, name: "Exercise Therapy"}
+    - {slug: rehab-sports-med/concussion, name: "Concussion"}
+    - {slug: rehab-sports-med/return-to-sport, name: "Return to Sport"}
+    - {slug: rehab-sports-med/geriatric, name: "Geriatric Rehab"}
+- slug: veterinary
+  name: "Veterinary Medicine"
+  description: "Companion and farm animals."
+  children:
+    - {slug: veterinary/small-animal, name: "Small Animal Medicine"}
+    - {slug: veterinary/equine, name: "Equine"}
+    - {slug: veterinary/livestock, name: "Livestock Health"}
+    - {slug: veterinary/surgery, name: "Veterinary Surgery"}
+    - {slug: veterinary/exotics, name: "Exotic Animals"}
+    - {slug: veterinary/nutrition, name: "Pet Nutrition"}
+    - {slug: veterinary/zoonoses, name: "Zoonotic Disease"}
+    - {slug: veterinary/drugs, name: "Veterinary Drugs"}
+    - {slug: veterinary/insurance, name: "Pet Insurance"}
+- slug: animal-science
+  name: "Animal Science"
+  description: "Welfare, breeding and conservation."
+  children:
+    - {slug: animal-science/welfare, name: "Animal Welfare"}
+    - {slug: animal-science/genetics, name: "Genetics & Breeding"}
+    - {slug: animal-science/wildlife, name: "Wildlife Medicine"}
+    - {slug: animal-science/aquaculture, name: "Aquaculture"}
+    - {slug: animal-science/amr, name: "Antimicrobial Resistance"}
+    - {slug: animal-science/pet-industry, name: "Pet Industry"}
+    - {slug: animal-science/behavior, name: "Behavior"}

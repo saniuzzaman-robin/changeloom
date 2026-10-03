@@ -9,6 +9,44 @@ import (
 	"context"
 )
 
+const deleteProfessionTopics = `-- name: DeleteProfessionTopics :exec
+DELETE FROM profession_topics WHERE profession_id = $1
+`
+
+func (q *Queries) DeleteProfessionTopics(ctx context.Context, professionID int64) error {
+	_, err := q.db.Exec(ctx, deleteProfessionTopics, professionID)
+	return err
+}
+
+const getProfessionIDsBySlugs = `-- name: GetProfessionIDsBySlugs :many
+SELECT id, slug FROM professions WHERE slug = ANY($1::text[])
+`
+
+type GetProfessionIDsBySlugsRow struct {
+	ID   int64
+	Slug string
+}
+
+func (q *Queries) GetProfessionIDsBySlugs(ctx context.Context, slugs []string) ([]GetProfessionIDsBySlugsRow, error) {
+	rows, err := q.db.Query(ctx, getProfessionIDsBySlugs, slugs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetProfessionIDsBySlugsRow{}
+	for rows.Next() {
+		var i GetProfessionIDsBySlugsRow
+		if err := rows.Scan(&i.ID, &i.Slug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getTopicIDsBySlugs = `-- name: GetTopicIDsBySlugs :many
 SELECT id, slug FROM topics WHERE slug = ANY($1::text[])
 `
@@ -38,6 +76,23 @@ func (q *Queries) GetTopicIDsBySlugs(ctx context.Context, slugs []string) ([]Get
 	return items, nil
 }
 
+const insertProfessionTopics = `-- name: InsertProfessionTopics :exec
+INSERT INTO profession_topics (profession_id, topic_id, position)
+SELECT $1, t.id, (u.ord - 1)::smallint
+FROM unnest($2::text[]) WITH ORDINALITY AS u(slug, ord)
+JOIN topics t ON t.slug = u.slug
+`
+
+type InsertProfessionTopicsParams struct {
+	ProfessionID int64
+	TopicSlugs   []string
+}
+
+func (q *Queries) InsertProfessionTopics(ctx context.Context, arg InsertProfessionTopicsParams) error {
+	_, err := q.db.Exec(ctx, insertProfessionTopics, arg.ProfessionID, arg.TopicSlugs)
+	return err
+}
+
 const listFollowedTopics = `-- name: ListFollowedTopics :many
 SELECT t.slug, t.name, t.description
 FROM topics t
@@ -62,6 +117,51 @@ func (q *Queries) ListFollowedTopics(ctx context.Context) ([]ListFollowedTopicsR
 	for rows.Next() {
 		var i ListFollowedTopicsRow
 		if err := rows.Scan(&i.Slug, &i.Name, &i.Description); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProfessions = `-- name: ListProfessions :many
+SELECT p.slug, p.name, p.description,
+    COALESCE(
+        array_agg(t.slug ORDER BY pt.position, t.slug) FILTER (WHERE t.id IS NOT NULL),
+        '{}'
+    )::text[] AS topics
+FROM professions p
+LEFT JOIN profession_topics pt ON pt.profession_id = p.id
+LEFT JOIN topics t ON t.id = pt.topic_id
+GROUP BY p.id
+ORDER BY p.position, p.slug
+`
+
+type ListProfessionsRow struct {
+	Slug        string
+	Name        string
+	Description string
+	Topics      []string
+}
+
+func (q *Queries) ListProfessions(ctx context.Context) ([]ListProfessionsRow, error) {
+	rows, err := q.db.Query(ctx, listProfessions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProfessionsRow{}
+	for rows.Next() {
+		var i ListProfessionsRow
+		if err := rows.Scan(
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.Topics,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -109,6 +209,33 @@ func (q *Queries) ListTopics(ctx context.Context) ([]ListTopicsRow, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const upsertProfession = `-- name: UpsertProfession :one
+INSERT INTO professions (slug, name, description, position)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (slug) DO UPDATE
+SET name = EXCLUDED.name, description = EXCLUDED.description, position = EXCLUDED.position, updated_at = now()
+RETURNING id
+`
+
+type UpsertProfessionParams struct {
+	Slug        string
+	Name        string
+	Description string
+	Position    int16
+}
+
+func (q *Queries) UpsertProfession(ctx context.Context, arg UpsertProfessionParams) (int64, error) {
+	row := q.db.QueryRow(ctx, upsertProfession,
+		arg.Slug,
+		arg.Name,
+		arg.Description,
+		arg.Position,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const upsertTopic = `-- name: UpsertTopic :one

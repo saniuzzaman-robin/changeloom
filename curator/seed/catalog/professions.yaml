@@ -1,0 +1,262 @@
+# Professions, in display order. topics: root topic slugs (areas) in display order. Every root
+# topic must belong to at least one profession.
+- slug: software-engineer
+  name: "Software Engineer"
+  description: "Building and running software."
+  topics: [frontend, backend, mobile, devops-cloud, databases, languages, devtools, security, ai-ml]
+- slug: data-scientist
+  name: "Data Scientist"
+  description: "Analytics, statistics and machine learning on data."
+  topics: [data-analytics, ai-ml, databases, data-engineering, languages]
+- slug: ml-engineer
+  name: "ML Engineer"
+  description: "Training, serving and shipping machine learning systems."
+  topics: [ai-ml, data-engineering, devops-cloud, languages, gpu-hardware]
+- slug: cybersecurity
+  name: "Cybersecurity Professional"
+  description: "Defending systems and responding to threats."
+  topics: [security, appsec, threat-intel, devops-cloud, compliance-privacy]
+- slug: it-devops
+  name: "IT & DevOps Engineer"
+  description: "Operating infrastructure, networks and platforms."
+  topics: [devops-cloud, sysadmin, networking, observability, security, databases]
+- slug: product-manager
+  name: "Product Manager"
+  description: "Deciding what to build and measuring whether it works."
+  topics: [product-craft, product-analytics, ux-design, ai-ml, startups]
+- slug: ux-designer
+  name: "UX & Product Designer"
+  description: "Designing interfaces, systems and research."
+  topics: [ux-design, design-tools, frontend, accessibility, product-craft]
+- slug: game-developer
+  name: "Game Developer"
+  description: "Building games, engines and tools."
+  topics: [game-engines, game-programming, game-art, game-industry, languages]
+- slug: doctor
+  name: "Doctor"
+  description: "Clinical medicine, guidelines and drug news."
+  topics: [clinical-guidelines, drug-approvals-safety, medical-specialties, medical-research, health-policy, medtech]
+- slug: nurse
+  name: "Nurse"
+  description: "Nursing practice, workforce and patient care."
+  topics: [nursing-practice, clinical-guidelines, patient-safety, health-policy, mental-health-care]
+- slug: pharmacist
+  name: "Pharmacist"
+  description: "Drugs, regulation and pharmacy practice."
+  topics: [drug-approvals-safety, pharmacy-practice, medical-research, health-policy]
+- slug: dentist
+  name: "Dentist"
+  description: "Dental techniques, materials and practice."
+  topics: [dentistry, medtech, health-policy, practice-management]
+- slug: psychologist
+  name: "Psychologist & Therapist"
+  description: "Mental health research and clinical practice."
+  topics: [mental-health-care, psychology-research, health-policy, practice-management]
+- slug: physiotherapist
+  name: "Physiotherapist"
+  description: "Rehabilitation, sports medicine and movement science."
+  topics: [rehab-sports-med, medical-research, medtech, practice-management]
+- slug: veterinarian
+  name: "Veterinarian"
+  description: "Animal health, treatments and practice."
+  topics: [veterinary, drug-approvals-safety, practice-management, animal-science]
+- slug: biologist
+  name: "Biologist"
+  description: "Life science research, tools and funding."
+  topics: [life-sciences, genetics-biotech, ecology-environment, lab-methods, research-funding]
+- slug: chemist
+  name: "Chemist"
+  description: "Chemistry research, materials and industry."
+  topics: [chemistry, materials-science, lab-methods, research-funding, chemical-industry]
+- slug: physicist
+  name: "Physicist"
+  description: "Physics research and experiments."
+  topics: [physics, astrophysics-cosmology, materials-science, lab-methods, research-funding]
+- slug: environmental-scientist
+  name: "Environmental Scientist"
+  description: "Climate, ecosystems and environmental policy."
+  topics: [ecology-environment, climate-science, energy-transition, environmental-policy, research-funding]
+- slug: teacher
+  name: "Teacher"
+  description: "Teaching practice, curriculum and school policy."
+  topics: [teaching-practice, curriculum-subjects, edtech, education-policy, student-wellbeing]
+- slug: professor-researcher
+  name: "Professor & Researcher"
+  description: "Academia, publishing and research careers."
+  topics: [academic-life, research-funding, edtech, higher-ed-policy]
+- slug: student
+  name: "Student"
+  description: "Study, exams, admissions and campus life."
+  topics: [study-skills, exams-admissions, student-life, careers-early, edtech]
+- slug: founder
+  name: "Founder & Entrepreneur"
+  description: "Starting, funding and growing companies."
+  topics: [startups, fundraising-vc, small-business, growth-sales, leadership]
+- slug: marketer
+  name: "Marketer"
+  description: "Channels, brands and campaigns."
+  topics: [digital-marketing, social-media-marketing, brand-content, marketing-analytics, ecommerce]
+- slug: salesperson
+  name: "Sales Professional"
+  description: "Selling, pipelines and revenue."
+  topics: [sales-practice, growth-sales, crm-sales-tech, leadership]
+- slug: hr-professional
+  name: "HR Professional"
+  description: "Hiring, people and workplace policy."
+  topics: [recruiting, people-management, employment-law, workplace-trends]
+- slug: finance-professional
+  name: "Finance Professional"
+  description: "Corporate finance, banking and markets."
+  topics: [corporate-finance, banking, stock-markets, fintech-payments, financial-regulation]
+- slug: accountant
+  name: "Accountant"
+  description: "Accounting, tax and audit."
+  topics: [accounting-standards, tax, audit-assurance, fintech-payments]
+- slug: consultant
+  name: "Consultant"
+  description: "Strategy, operations and advisory."
+  topics: [strategy-consulting, operations, leadership, global-economy]
+- slug: ecommerce-seller
+  name: "E-commerce Seller"
+  description: "Online selling, marketplaces and logistics."
+  topics: [ecommerce, digital-marketing, small-business, supply-chain-logistics]
+- slug: lawyer
+  name: "Lawyer"
+  description: "Case law, regulation and legal practice."
+  topics: [case-law, corporate-law, litigation-practice, legal-tech, ip-tech-law, regulation-compliance]
+- slug: public-servant
+  name: "Public Servant"
+  description: "Government, policy and public administration."
+  topics: [public-administration, policy-making, civic-tech, regulation-compliance, global-economy]
+- slug: police-security
+  name: "Police & Security Officer"
+  description: "Public safety, investigations and law enforcement."
+  topics: [law-enforcement, criminal-justice, civic-tech, public-safety]
+- slug: civil-engineer
+  name: "Civil Engineer"
+  description: "Infrastructure, structures and construction methods."
+  topics: [structural-geotech, transport-infrastructure, water-environment, construction-tech, engineering-standards]
+- slug: mechanical-engineer
+  name: "Mechanical Engineer"
+  description: "Machines, manufacturing and design."
+  topics: [mech-design, manufacturing-tech, robotics-automation, energy-systems, engineering-standards]
+- slug: electrical-engineer
+  name: "Electrical & Electronics Engineer"
+  description: "Power, circuits and embedded systems."
+  topics: [power-systems, electronics-embedded, semiconductors-industry, robotics-automation, engineering-standards]
+- slug: architect
+  name: "Architect"
+  description: "Buildings, design and the built environment."
+  topics: [architecture-design, construction-tech, urban-planning, sustainable-building]
+- slug: aerospace-engineer
+  name: "Aerospace Engineer"
+  description: "Aircraft, spacecraft and propulsion."
+  topics: [aerospace, space-tech, materials-science, robotics-automation]
+- slug: construction-worker
+  name: "Construction & Trades"
+  description: "Building trades, equipment and safety."
+  topics: [construction-trades, construction-tech, site-safety, real-estate-industry]
+- slug: electrician-plumber
+  name: "Electrician & Plumber"
+  description: "Installation, codes and tools."
+  topics: [skilled-trades-craft, site-safety, energy-systems, tools-equipment]
+- slug: automotive-technician
+  name: "Automotive Technician"
+  description: "Vehicle repair, diagnostics and EVs."
+  topics: [auto-repair, electric-vehicles, tools-equipment, site-safety]
+- slug: farmer
+  name: "Farmer & Agriculturist"
+  description: "Crops, livestock and farm economics."
+  topics: [crops-farming, livestock-ag, agtech, ag-markets-policy]
+- slug: logistics-pro
+  name: "Logistics & Transport"
+  description: "Freight, fleets and supply chains."
+  topics: [supply-chain-logistics, trucking-fleet, shipping-maritime, ecommerce]
+- slug: manufacturing-worker
+  name: "Manufacturing Professional"
+  description: "Plants, quality and production."
+  topics: [manufacturing-tech, robotics-automation, site-safety, supply-chain-logistics]
+- slug: pilot-aviation
+  name: "Pilot & Aviation Professional"
+  description: "Flight operations, safety and airlines."
+  topics: [flight-ops, airlines-airports, aerospace, aviation-regulation]
+- slug: hospitality-worker
+  name: "Hospitality & Tourism"
+  description: "Hotels, restaurants and guest experience."
+  topics: [hotels-lodging, restaurants, hospitality-ops, destinations]
+- slug: real-estate-agent
+  name: "Real Estate Professional"
+  description: "Property markets, sales and regulation."
+  topics: [real-estate-industry, real-estate-investing, mortgages-lending, property-tech]
+- slug: writer-journalist
+  name: "Writer & Journalist"
+  description: "Writing craft, publishing and the news business."
+  topics: [writing-craft, publishing, journalism, media-business]
+- slug: photographer
+  name: "Photographer"
+  description: "Cameras, craft and the photo business."
+  topics: [photography-gear, photography-craft, photo-business, video-production]
+- slug: musician
+  name: "Musician"
+  description: "Playing, producing and releasing music."
+  topics: [music-production, instruments, music-industry, concerts-festivals, music-releases]
+- slug: visual-artist
+  name: "Artist & Illustrator"
+  description: "Art techniques, markets and tools."
+  topics: [art-techniques, digital-art, art-market, design-tools]
+- slug: content-creator
+  name: "Content Creator"
+  description: "Platforms, audiences and monetization."
+  topics: [creator-platforms, video-production, creator-business, social-media-marketing]
+- slug: filmmaker
+  name: "Filmmaker & Video Editor"
+  description: "Production, post and distribution."
+  topics: [video-production, film-industry, post-production, movies]
+- slug: world-affairs
+  name: "World Affairs Follower"
+  description: "Geopolitics, elections and global news."
+  topics: [world-politics, us-politics, europe-politics, asia-politics, middle-east, conflicts, diplomacy, global-economy]
+- slug: gamer
+  name: "Gamer"
+  description: "Video games, esports and gaming culture."
+  topics: [pc-gaming, console-gaming, mobile-gaming, esports, game-releases, gaming-hardware]
+- slug: sports-fan
+  name: "Sports Fan"
+  description: "Leagues, tournaments and athletes."
+  topics: [football-soccer, us-sports, cricket, tennis-golf, motorsport, combat-sports, olympics]
+- slug: entertainment-fan
+  name: "Entertainment Fan"
+  description: "Film, TV, streaming and celebrity news."
+  topics: [movies, tv-streaming, anime-comics, celebrity-pop, awards]
+- slug: music-fan
+  name: "Music Lover"
+  description: "Releases, tours and the music industry."
+  topics: [music-releases, concerts-festivals, music-industry, k-pop-global]
+- slug: investor
+  name: "Investor"
+  description: "Markets, stocks and personal investing."
+  topics: [stock-markets, personal-finance, crypto, commodities-forex, real-estate-investing]
+- slug: tech-enthusiast
+  name: "Tech Enthusiast"
+  description: "Gadgets, big tech and consumer technology."
+  topics: [gadgets, big-tech, space-tech, electric-vehicles, consumer-ai, internet-culture]
+- slug: science-enthusiast
+  name: "Science Enthusiast"
+  description: "Discoveries across space, nature and medicine."
+  topics: [space-astronomy, climate-nature, discoveries, health-news]
+- slug: traveler
+  name: "Traveler"
+  description: "Destinations, airlines and travel rules."
+  topics: [destinations, airlines-airports, visas-rules, travel-deals]
+- slug: foodie
+  name: "Foodie"
+  description: "Restaurants, cooking and food trends."
+  topics: [cooking, restaurants, food-industry, drinks]
+- slug: fitness-wellness
+  name: "Fitness & Wellness"
+  description: "Training, nutrition and mental wellbeing."
+  topics: [training, nutrition-diet, mental-wellness, wearables-health]
+- slug: parent
+  name: "Parent"
+  description: "Child development, schooling and family life."
+  topics: [parenting, kids-education, family-health, kids-tech]

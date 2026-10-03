@@ -40,15 +40,17 @@ func decodeCursor(s string) (cursor, error) {
 
 // Timeline tiers, as ranked by ListTimeline.
 const (
-	tierFollowed = 0
-	tierRelated  = 1
-	tierExplore  = 2
+	tierFollowed   = 0
+	tierProfession = 1
+	tierRelated    = 2
+	tierExplore    = 3
 )
 
 var tierMatch = map[int32]StorySummaryMatch{
-	tierFollowed: StorySummaryMatchFollowed,
-	tierRelated:  StorySummaryMatchRelated,
-	tierExplore:  StorySummaryMatchExplore,
+	tierFollowed:   StorySummaryMatchFollowed,
+	tierProfession: StorySummaryMatchProfession,
+	tierRelated:    StorySummaryMatchRelated,
+	tierExplore:    StorySummaryMatchExplore,
 }
 
 // GetTimeline returns a page of recent stories ranked by the user's interests.
@@ -163,6 +165,32 @@ func (s *Server) MarkStoryRead(w http.ResponseWriter, r *http.Request, id StoryI
 // MarkStoryUnread clears the user's read state for the story.
 func (s *Server) MarkStoryUnread(w http.ResponseWriter, r *http.Request, id StoryID) {
 	s.setRead(w, r, id, false)
+}
+
+// maxViewIDs is the most story ids one views request may carry.
+const maxViewIDs = 100
+
+// RecordStoryViews records that stories were visible in the user's feed. It is idempotent and
+// ignores ids that are not stories.
+func (s *Server) RecordStoryViews(w http.ResponseWriter, r *http.Request) {
+	user := mustUser(r)
+
+	var body RecordStoryViewsJSONRequestBody
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body: "+err.Error())
+		return
+	}
+	if body.Ids == nil || len(body.Ids) > maxViewIDs {
+		writeError(w, http.StatusBadRequest, "bad_request", fmt.Sprintf("ids is required and holds at most %d ids", maxViewIDs))
+		return
+	}
+	if err := s.q.RecordStoryViews(r.Context(), db.RecordStoryViewsParams{UserID: user.ID, Ids: body.Ids}); err != nil {
+		internalError(w, r, "record story views", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) setRead(w http.ResponseWriter, r *http.Request, id StoryID, read bool) {

@@ -190,4 +190,28 @@ class TimelineRepositoryTest {
         assertFalse(repo.state.value.items.first { it.id == 2L }.isBookmarked)
         assertTrue(repo.state.value.error != null)
     }
+
+    @Test
+    fun professionTierSortsBetweenFollowedAndRelated() = runTest {
+        val at = "2026-09-03T10:00:00Z"
+        val repo = repo(MemoryCache()) { req ->
+            if (req.method == HttpMethod.Get) {
+                respond(
+                    page(
+                        item(1, at, false, "explore"),
+                        item(2, at, false, "related"),
+                        item(3, at, false, "profession"),
+                        item(4, at, false, "followed"),
+                    ),
+                    headers = json,
+                )
+            } else {
+                respond("", HttpStatusCode.NoContent)
+            }
+        }
+        repo.refresh()
+        repo.setRead(1, true) // local changes re-sort the list with the same order as the server
+        repo.setRead(1, false)
+        assertEquals(listOf(4L, 3L, 2L, 1L), repo.state.value.items.map { it.id })
+    }
 }

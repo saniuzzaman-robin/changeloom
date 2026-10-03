@@ -11,11 +11,11 @@ import (
 )
 
 func TestParseEmbeddedCatalog(t *testing.T) {
-	nodes, err := catalog.Parse(seed.CatalogYAML)
+	c, err := catalog.Load(seed.Catalog)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(nodes) == 0 {
+	if len(c.Topics) == 0 || len(c.Professions) == 0 {
 		t.Fatal("embedded catalog is empty")
 	}
 }
@@ -35,11 +35,25 @@ func TestParseRejects(t *testing.T) {
 		{"self related", `[{slug: a, name: A, related: [a]}]`, "lists itself"},
 		{"relative hint", `[{slug: a, name: A, hints: [/feed.xml]}]`, "absolute http(s) URL"},
 		{"non-http hint", `[{slug: a, name: A, hints: ["ftp://example.com/x"]}]`, "absolute http(s) URL"},
+		{"profession unknown topic", `professions: [{slug: p, name: P, topics: [zz]}]
+topics: [{slug: a, name: A}]`, "not a root topic"},
+		{"profession child topic", `professions: [{slug: p, name: P, topics: [a, a/x]}]
+topics: [{slug: a, name: A, children: [{slug: a/x, name: X}]}]`, "not a root topic"},
+		{"profession duplicate", `professions: [{slug: p, name: P, topics: [a]}, {slug: p, name: Q, topics: [a]}]
+topics: [{slug: a, name: A}]`, "duplicate profession"},
+		{"profession bad slug", `professions: [{slug: P_1, name: P, topics: [a]}]
+topics: [{slug: a, name: A}]`, "profession slug"},
+		{"unmapped root", `professions: [{slug: p, name: P, topics: [a]}]
+topics: [{slug: a, name: A}, {slug: b, name: B}]`, `root topic "b" belongs to no profession`},
 		{"unknown key", `[{slug: a, name: A, hint: [https://example.com]}]`, "field hint not found"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := catalog.Parse([]byte(tc.yaml))
+			yaml := tc.yaml
+			if !strings.Contains(yaml, "professions:") {
+				yaml = "professions: [{slug: p, name: P, topics: [a]}]\ntopics: " + yaml
+			}
+			_, err := catalog.Parse([]byte(yaml))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("Parse error = %v, want it to contain %q", err, tc.want)
 			}
@@ -47,30 +61,40 @@ func TestParseRejects(t *testing.T) {
 	}
 }
 
+const seedCatalog = `
+professions:
+  - {slug: p, name: P, topics: [a, b]}
+  - {slug: q, name: Q, topics: [b]}
+topics:
+  - slug: a
+    name: A
+    children:
+      - {slug: a/x, name: X, related: [b/y], hints: [https://example.com/x.xml]}
+  - slug: b
+    name: B
+    children:
+      - {slug: b/y, name: Y, related: [a/x]}
+`
+
 func TestSeed(t *testing.T) {
 	pool := dbtest.New(t)
 	ctx := t.Context()
 
-	nodes, err := catalog.Parse([]byte(`
-- slug: a
-  name: A
-  children:
-    - {slug: a/x, name: X, related: [b/y], hints: [https://example.com/x.xml]}
-- slug: b
-  name: B
-  children:
-    - {slug: b/y, name: Y, related: [a/x]}
-`))
+	c, err := catalog.Parse([]byte(seedCatalog))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	res, err := catalog.Seed(ctx, pool, nodes)
+	res, err := catalog.Seed(ctx, pool, c)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (catalog.Result{Topics: 4, Relations: 1, Hints: 1}); res != want {
+	if want := (catalog.Result{Topics: 4, Professions: 2, Relations: 1, Hints: 1}); res != want {
 		t.Fatalf("first seed = %+v, want %+v", res, want)
+	}
+	var links int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM profession_topics`).Scan(&links); err != nil || links != 3 {
+		t.Fatalf("profession_topics = %d, %v; want 3", links, err)
 	}
 
 	var parent string
@@ -92,19 +116,22 @@ func TestSeed(t *testing.T) {
 	before := updatedAt("a/x")
 
 	// Re-seeding is idempotent and leaves unchanged topics' updated_at alone.
-	res, err = catalog.Seed(ctx, pool, nodes)
+	res, err = catalog.Seed(ctx, pool, c)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (catalog.Result{Topics: 4}); res != want {
+	if want := (catalog.Result{Topics: 4, Professions: 2}); res != want {
 		t.Fatalf("second seed = %+v, want %+v", res, want)
 	}
 	if got := updatedAt("a/x"); !got.Equal(before) {
 		t.Fatalf("unchanged topic updated_at moved from %v to %v", before, got)
 	}
 
-	// A changed name bumps updated_at; topics missing from the catalog are kept.
-	renamed, err := catalog.Parse([]byte(`[{slug: a, name: A, children: [{slug: a/x, name: X2}]}]`))
+	// A changed name bumps updated_at; topics missing from the catalog are kept, and a
+	// profession's topic list is replaced.
+	renamed, err := catalog.Parse([]byte(`
+professions: [{slug: p, name: P, topics: [a]}]
+topics: [{slug: a, name: A, children: [{slug: a/x, name: X2}]}]`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,5 +147,8 @@ func TestSeed(t *testing.T) {
 	}
 	if topics != 4 || relations != 1 {
 		t.Fatalf("after partial seed: %d topics, %d relations; want 4 and 1", topics, relations)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM profession_topics pt JOIN professions p ON p.id = pt.profession_id WHERE p.slug = 'p'`).Scan(&links); err != nil || links != 1 {
+		t.Fatalf("profession p has %d topics, %v; want 1", links, err)
 	}
 }

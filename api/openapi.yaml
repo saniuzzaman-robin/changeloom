@@ -54,11 +54,15 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [items]
+                required: [items, professions]
                 properties:
                   items:
                     type: array
                     items: {$ref: "#/components/schemas/Topic"}
+                  professions:
+                    type: array
+                    description: Professions, in display order.
+                    items: {$ref: "#/components/schemas/Profession"}
         "304":
           description: The catalog matches the If-None-Match ETag.
         "401": {$ref: "#/components/responses/Unauthorized"}
@@ -100,6 +104,32 @@ paths:
                 topics:
                   type: array
                   description: Topic slugs to follow.
+                  items: {type: string}
+      responses:
+        "200":
+          description: The updated user.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Me"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/me/professions:
+    put:
+      operationId: putMyProfessions
+      summary: Replace the user's professions (at most 3).
+      description: Stories in a profession's areas rank above everything except followed topics.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [professions]
+              properties:
+                professions:
+                  type: array
+                  description: Profession slugs.
+                  maxItems: 3
                   items: {type: string}
       responses:
         "200":
@@ -243,6 +273,27 @@ paths:
         "200": {$ref: "#/components/responses/StoryPage"}
         "400": {$ref: "#/components/responses/BadRequest"}
         "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/stories/views:
+    post:
+      operationId: recordStoryViews
+      summary: Record stories that were visible in the user's feed (idempotent).
+      description: Counted once per user and story. Unknown ids are ignored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  maxItems: 100
+                  items: {type: integer, format: int64}
+      responses:
+        "204": {description: Recorded.}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
   /v1/stories/{id}/bookmark:
     parameters:
       - $ref: "#/components/parameters/StoryID"
@@ -363,15 +414,30 @@ components:
         name: {type: string, example: Go}
         parent: {type: string, description: Parent topic slug; absent for root topics.}
         description: {type: string}
+    Profession:
+      type: object
+      required: [slug, name, description, topics]
+      properties:
+        slug: {type: string, example: software-engineer}
+        name: {type: string, example: Software Engineer}
+        description: {type: string}
+        topics:
+          type: array
+          description: Root topic slugs (areas), in display order.
+          items: {type: string}
     Me:
       type: object
-      required: [id, topics, stats]
+      required: [id, topics, professions, stats]
       properties:
         id: {type: integer, format: int64}
         email: {type: string}
         topics:
           type: array
           description: Followed topic slugs.
+          items: {type: string}
+        professions:
+          type: array
+          description: Profession slugs.
           items: {type: string}
         stats: {$ref: "#/components/schemas/MeStats"}
     MeStats:
@@ -382,7 +448,7 @@ components:
         read: {type: integer, format: int64, description: Number of stories marked read.}
     StoryKind:
       type: string
-      enum: [release, breaking, security, deprecation, announcement, article]
+      enum: [release, breaking, security, deprecation, announcement, article, research, policy]
     Severity:
       type: string
       enum: [low, medium, high, critical]
@@ -405,10 +471,10 @@ components:
         read_at: {type: string, format: date-time}
         match:
           type: string
-          enum: [followed, related, explore]
+          enum: [followed, profession, related, explore]
           description: >
-            Timeline only: whether the story is in a followed topic, a topic related to one,
-            or neither.
+            Timeline only: whether the story is in a followed topic, an area of one of the
+            user's professions, a topic related to a followed one, or none of these.
     TopicRequest:
       type: object
       required: [id, text, status, created_at]
