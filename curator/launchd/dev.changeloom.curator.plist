@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Runs `curator run` at 02:00, 07:00, 12:00, 17:00 and 22:00; launchd runs a missed job when the Mac wakes.
+  Runs `curator run --if-due` at 02:00, 08:00, 14:00 and 20:00 (6 hours apart) and at login. launchd runs a missed
+  job when the Mac wakes; RunAtLoad covers a shutdown, and --if-due skips a run that is not yet due.
   Template: replace __REPO__ with the absolute path of this repo and __HOME__ with your home
   directory, then install:
     make curator-build
@@ -15,7 +16,9 @@
     <key>Label</key>
     <string>dev.changeloom.curator</string>
     <!--
-      A login shell finds `claude` on PATH; curator/.env supplies the settings. Its KEY=value lines are
+      A login shell finds `claude` on PATH; curator/.env supplies the settings. Claude runs with the
+      claude-personal profile (CLAUDE_CONFIG_DIR=~/.claude-personal, as the shell alias sets it) unless
+      .env sets CLAUDE_CONFIG_DIR. Its KEY=value lines are
       exported as-is rather than sourced: Make reads the same file, so values stay unquoted, and a
       Neon URL's `&` would break `. ./.env`.
     -->
@@ -23,15 +26,16 @@
     <array>
         <string>/bin/zsh</string>
         <string>-lc</string>
-        <string>cd __REPO__/curator &amp;&amp; export $(grep -E '^[A-Z_]+=' .env | xargs) &amp;&amp; exec ./bin/curator run</string>
+        <string>cd __REPO__/curator &amp;&amp; export $(grep -E '^[A-Z_]+=' .env | xargs) &amp;&amp; export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-personal}" &amp;&amp; exec ./bin/curator run --if-due</string>
     </array>
+    <key>RunAtLoad</key>
+    <true/>
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
     </array>
     <key>StandardOutPath</key>
     <string>__HOME__/Library/Logs/changeloom-curator.log</string>

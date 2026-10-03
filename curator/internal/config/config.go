@@ -91,6 +91,13 @@ type Config struct {
 	// BackfillCallsPerRun is the backfill calls `curator run` makes (CURATOR_BACKFILL_CALLS_PER_RUN).
 	BackfillCallsPerRun int
 
+	// RunEnvs are the hosted envs `curator run` pulls from, syncs to and prunes (CURATOR_RUN_ENVS,
+	// comma-separated; default prod).
+	RunEnvs []Env
+	// RunMinGap is the least time since the last successful fetch for `curator run --if-due` to run
+	// (CURATOR_RUN_MIN_GAP_HOURS).
+	RunMinGap time.Duration
+
 	// PruneInterval is how often `curator run` prunes a hosted DB (CURATOR_PRUNE_INTERVAL_DAYS).
 	PruneInterval time.Duration
 	// PruneMaxAge: unsaved stories published longer ago than this are deleted
@@ -153,6 +160,8 @@ func Load() (Config, error) {
 		BackfillTopicsPerCall: envInt(&errs, "CURATOR_BACKFILL_TOPICS_PER_CALL", 2),
 		BackfillCallsPerRun:   envInt(&errs, "CURATOR_BACKFILL_CALLS_PER_RUN", 2),
 
+		RunMinGap: time.Duration(envInt(&errs, "CURATOR_RUN_MIN_GAP_HOURS", 5)) * time.Hour,
+
 		PruneInterval: time.Duration(envInt(&errs, "CURATOR_PRUNE_INTERVAL_DAYS", 7)) * 24 * time.Hour,
 		PruneMaxAge:   time.Duration(envInt(&errs, "CURATOR_PRUNE_MAX_AGE_DAYS", 14)) * 24 * time.Hour,
 		PruneGrace:    time.Duration(envInt(&errs, "CURATOR_PRUNE_GRACE_DAYS", 7)) * 24 * time.Hour,
@@ -165,6 +174,15 @@ func Load() (Config, error) {
 			APIBaseURL:   strings.TrimRight(getenv("API_BASE_URL_"+env.Suffix(), ""), "/"),
 			NotifySecret: getenv("NOTIFY_SECRET_"+env.Suffix(), ""),
 		}
+	}
+
+	for _, name := range strings.Split(getenv("CURATOR_RUN_ENVS", string(EnvProd)), ",") {
+		env, err := ParseEnv(strings.TrimSpace(name))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("CURATOR_RUN_ENVS: %w", err))
+			continue
+		}
+		cfg.RunEnvs = append(cfg.RunEnvs, env)
 	}
 
 	if len(errs) > 0 {

@@ -48,8 +48,10 @@ commands:
                                    (staging, the default, or prod), then ask its api to notify
   prune [--env ENV]                delete old and unseen stories nobody saved from the hosted DB of
                                    ENV (staging, the default, or prod)
-  run                              requests pull, requests group, fetch, backfill, then sync and
-                                   (weekly) prune, for each hosted env with REMOTE_DATABASE_URL_<ENV> set
+  run [--if-due]                   requests pull, requests group, fetch, backfill, then sync and
+                                   (weekly) prune, for each env in CURATOR_RUN_ENVS (default prod);
+                                   --if-due skips the run when the last successful fetch was less
+                                   than CURATOR_RUN_MIN_GAP_HOURS ago
 
 Configuration comes from the environment; see curator/.env.example.
 `
@@ -144,10 +146,12 @@ func run(args []string) error {
 		}
 		return runSync(ctx, cfg, env)
 	case "run":
-		if err := parse(flag.NewFlagSet("run", flag.ContinueOnError), rest); err != nil {
+		fs := flag.NewFlagSet("run", flag.ContinueOnError)
+		ifDue := fs.Bool("if-due", false, "skip the run when the last successful fetch was under CURATOR_RUN_MIN_GAP_HOURS ago")
+		if err := parse(fs, rest); err != nil {
 			return err
 		}
-		return runAll(ctx, cfg)
+		return runAll(ctx, cfg, *ifDue)
 	default:
 		return fmt.Errorf("%w: unknown command %q", errUsage, cmd)
 	}
@@ -374,15 +378,26 @@ func syncEnv(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env co
 // runAll is requests pull, requests group, fetch, backfill, then sync and a weekly prune. Pull,
 // sync and prune run for each hosted env with a database URL. A failing step is logged and the run continues where that is safe, so a
 // failed fetch still pushes request decisions; the error returned lists every failed step.
-func runAll(ctx context.Context, cfg config.Config) error {
+func runAll(ctx context.Context, cfg config.Config, ifDue bool) error {
 	local, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
 	if err != nil {
 		return err
 	}
 	defer local.Close()
 
+	if ifDue {
+		var last *time.Time
+		if err := local.QueryRow(ctx, `SELECT max(started_at) FROM fetch_runs WHERE status = 'succeeded'`).Scan(&last); err != nil {
+			return fmt.Errorf("read the last successful fetch: %w", err)
+		}
+		if last != nil && time.Since(*last) < cfg.RunMinGap {
+			slog.InfoContext(ctx, "skipping run: last successful fetch is recent", "last", *last, "min_gap", cfg.RunMinGap)
+			return nil
+		}
+	}
+
 	var envs []config.Env
-	for _, env := range config.Envs {
+	for _, env := range cfg.RunEnvs {
 		if cfg.Remotes[env].DatabaseURL == "" {
 			slog.InfoContext(ctx, "skipping env without REMOTE_DATABASE_URL", "env", env)
 			continue
@@ -390,7 +405,7 @@ func runAll(ctx context.Context, cfg config.Config) error {
 		envs = append(envs, env)
 	}
 	if len(envs) == 0 {
-		return errors.New("no hosted env configured: set REMOTE_DATABASE_URL_STAGING or REMOTE_DATABASE_URL_PROD (see curator/.env.example)")
+		return errors.New("no hosted env to run for: set REMOTE_DATABASE_URL_<ENV> for each env in CURATOR_RUN_ENVS (see curator/.env.example)")
 	}
 
 	var errs []error
