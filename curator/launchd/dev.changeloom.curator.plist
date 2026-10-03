@@ -14,12 +14,16 @@
 <dict>
     <key>Label</key>
     <string>dev.changeloom.curator</string>
-    <!-- A login shell finds `claude` on PATH; curator/.env supplies the settings. -->
+    <!--
+      A login shell finds `claude` on PATH; curator/.env supplies the settings. Its KEY=value lines are
+      exported as-is rather than sourced: Make reads the same file, so values stay unquoted, and a
+      Neon URL's `&` would break `. ./.env`.
+    -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/zsh</string>
         <string>-lc</string>
-        <string>cd __REPO__/curator &amp;&amp; set -a &amp;&amp; . ./.env &amp;&amp; set +a &amp;&amp; exec ./bin/curator run</string>
+        <string>cd __REPO__/curator &amp;&amp; export $(grep -E '^[A-Z_]+=' .env | xargs) &amp;&amp; exec ./bin/curator run</string>
     </array>
     <key>StartCalendarInterval</key>
     <array>
