@@ -28,10 +28,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -94,27 +92,19 @@ data class TopicPickerState(
 
 /**
  * Followed topics for both onboarding (it also gates the main UI on [TopicPickerState.followed]) and
- * editing. Reloads whenever the signed-in user changes, so a second account never sees the first's picks.
+ * editing. Scoped to the signed-in account (see [SessionViewModels]), so it loads once per sign-in.
  */
 class TopicPickerViewModel(
     private val api: ChangeloomApi,
     private val catalog: TopicCatalog,
     private val repo: TimelineRepository,
-    auth: AuthRepository,
 ) : ViewModel() {
     private val _state = MutableStateFlow(TopicPickerState())
     val state: StateFlow<TopicPickerState> = _state.asStateFlow()
     private var loadJob: Job? = null
 
     init {
-        viewModelScope.launch {
-            auth.currentUser.map { it?.uid }.distinctUntilChanged().collect { uid ->
-                loadJob?.cancel()
-                // Stays "loading" while signed out so the next sign-in never flashes the previous user's state.
-                _state.value = TopicPickerState()
-                if (uid != null) load()
-            }
-        }
+        load()
     }
 
     fun load() {

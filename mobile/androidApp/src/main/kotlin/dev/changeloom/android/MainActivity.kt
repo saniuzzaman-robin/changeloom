@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     AppRoot(
-                        signedIn = signedIn,
+                        userId = user?.uid,
                         onSignOut = ::signOut,
                         openStoryId = storyId,
                         onOpenStoryHandled = { pendingStoryId.value = null },
