@@ -184,61 +184,67 @@ func (q *Queries) ListStorySources(ctx context.Context, storyID int64) ([]ListSt
 
 const listTimeline = `-- name: ListTimeline :many
 WITH RECURSIVE followed AS (
-    SELECT ut.topic_id AS id FROM user_topics ut WHERE ut.user_id = $6
+    SELECT ut.topic_id AS id FROM user_topics ut WHERE ut.user_id = $1
     UNION
     SELECT t.id FROM topics t JOIN followed f ON t.parent_id = f.id
 ), ancestors AS (
     SELECT t.parent_id AS id FROM topics t JOIN user_topics ut ON ut.topic_id = t.id
-    WHERE ut.user_id = $6 AND t.parent_id IS NOT NULL
+    WHERE ut.user_id = $1 AND t.parent_id IS NOT NULL
     UNION
     SELECT t.parent_id FROM topics t JOIN ancestors a ON a.id = t.id WHERE t.parent_id IS NOT NULL
-), related AS (
-    SELECT tr.related_id AS id FROM topic_relations tr JOIN followed f ON f.id = tr.topic_id
-    UNION
-    SELECT tr.topic_id FROM topic_relations tr JOIN followed f ON f.id = tr.related_id
-    UNION
-    SELECT a.id FROM ancestors a
+), topic_tier AS (
+    SELECT f.id, 0 AS tier FROM followed f
+    UNION ALL
+    SELECT tr.related_id, 1 FROM topic_relations tr JOIN followed f ON f.id = tr.topic_id
+    UNION ALL
+    SELECT tr.topic_id, 1 FROM topic_relations tr JOIN followed f ON f.id = tr.related_id
+    UNION ALL
+    SELECT a.id, 1 FROM ancestors a
+), story_tier AS (
+    SELECT st.story_id, min(tt.tier) AS tier
+    FROM story_topics st JOIN topic_tier tt ON tt.id = st.topic_id
+    GROUP BY st.story_id
 ), ranked AS (
     SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
         (uss.read_at IS NOT NULL) AS is_read,
         (ub.story_id IS NOT NULL) AS is_bookmarked,
-        (CASE
-            WHEN EXISTS (SELECT 1 FROM story_topics st JOIN followed f ON f.id = st.topic_id WHERE st.story_id = s.id) THEN 0
-            WHEN EXISTS (SELECT 1 FROM story_topics st JOIN related r ON r.id = st.topic_id WHERE st.story_id = s.id) THEN 1
-            ELSE 2
-        END) AS tier
+        COALESCE(stt.tier, 2) AS tier
     FROM stories s
-    LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = $6
-    LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = $6
-    WHERE s.published_at >= $7
+    LEFT JOIN story_tier stt ON stt.story_id = s.id
+    LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = $1
+    LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = $1
+    WHERE s.published_at >= $2
+), page AS (
+    SELECT r.id, r.title, r.summary, r.kind, r.severity, r.importance, r.published_at, r.read_at, r.is_read, r.is_bookmarked, r.tier FROM ranked r
+    WHERE $3::bigint IS NULL
+        OR r.is_read > $4::boolean
+        OR (r.is_read = $4::boolean AND r.tier > $5::integer)
+        OR (
+            r.is_read = $4::boolean AND r.tier = $5::integer
+            AND (r.published_at, r.id) < ($6::timestamptz, $3::bigint)
+        )
+    ORDER BY r.is_read ASC, r.tier ASC, r.published_at DESC, r.id DESC
+    LIMIT $7
 )
-SELECT r.id, r.title, r.summary, r.kind, r.severity, r.importance, r.published_at, r.read_at,
-    r.is_bookmarked::boolean AS is_bookmarked,
-    r.tier::integer AS tier,
+SELECT p.id, p.title, p.summary, p.kind, p.severity, p.importance, p.published_at, p.read_at,
+    p.is_bookmarked::boolean AS is_bookmarked,
+    p.tier::integer AS tier,
     ARRAY(
         SELECT tp.slug FROM story_topics stp JOIN topics tp ON tp.id = stp.topic_id
-        WHERE stp.story_id = r.id ORDER BY tp.slug
+        WHERE stp.story_id = p.id ORDER BY tp.slug
     )::text[] AS topics
-FROM ranked r
-WHERE $1::bigint IS NULL
-    OR r.is_read > $2::boolean
-    OR (r.is_read = $2::boolean AND r.tier > $3::integer)
-    OR (
-        r.is_read = $2::boolean AND r.tier = $3::integer
-        AND (r.published_at, r.id) < ($4::timestamptz, $1::bigint)
-    )
-ORDER BY r.is_read ASC, r.tier ASC, r.published_at DESC, r.id DESC
-LIMIT $5
+FROM page p
+ORDER BY p.is_read ASC, p.tier ASC, p.published_at DESC, p.id DESC
 `
 
 type ListTimelineParams struct {
+	UserID            int64
+	Since             time.Time
 	CursorID          *int64
 	CursorRead        *bool
 	CursorTier        *int32
 	CursorPublishedAt *time.Time
 	PageSize          int32
-	UserID            int64
-	Since             time.Time
 }
 
 type ListTimelineRow struct {
@@ -259,15 +265,18 @@ type ListTimelineRow struct {
 // topic (or a descendant of one), tier 1 with a related topic (a relation neighbour or an
 // ancestor of a followed topic), tier 2 with anything else. Unread first, then by tier,
 // then newest first. Keyset pagination on (is_read, tier, published_at, id).
+// Tiers come from one aggregate over the in-tier topics' story_topics rows instead of per-story
+// subqueries, and topic slugs are built only for the page: per-row subplans over the whole window
+// inflated the plan cost past jit_above_cost, and JIT compilation took ~90% of the query time.
 func (q *Queries) ListTimeline(ctx context.Context, arg ListTimelineParams) ([]ListTimelineRow, error) {
 	rows, err := q.db.Query(ctx, listTimeline,
+		arg.UserID,
+		arg.Since,
 		arg.CursorID,
 		arg.CursorRead,
 		arg.CursorTier,
 		arg.CursorPublishedAt,
 		arg.PageSize,
-		arg.UserID,
-		arg.Since,
 	)
 	if err != nil {
 		return nil, err

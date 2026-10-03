@@ -13,3 +13,7 @@ LEFT JOIN topics t ON t.id = tr.topic_id
 WHERE tr.user_id = @user_id
 ORDER BY tr.created_at DESC, tr.id DESC
 LIMIT @max_rows;
+
+-- name: LockUserTopicRequests :exec
+-- Serializes topic-request creation per user until the transaction ends, so the pending cap holds.
+SELECT pg_advisory_xact_lock(hashtextextended('topic_requests:' || @user_id::bigint, 0));

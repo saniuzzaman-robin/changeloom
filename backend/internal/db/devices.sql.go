@@ -10,6 +10,51 @@ import (
 	"time"
 )
 
+const claimStoryToNotify = `-- name: ClaimStoryToNotify :one
+SELECT id, title, summary FROM stories
+WHERE notified_at IS NULL
+    AND kind = 'security' AND severity IN ('high', 'critical')
+    AND created_at >= $1
+    AND NOT (id = ANY($2::bigint[]))
+ORDER BY id
+LIMIT 1
+FOR UPDATE SKIP LOCKED
+`
+
+type ClaimStoryToNotifyParams struct {
+	Since   time.Time
+	SkipIds []int64
+}
+
+type ClaimStoryToNotifyRow struct {
+	ID      int64
+	Title   string
+	Summary string
+}
+
+// Locks the oldest recent high-severity security story that has not been pushed yet, skipping
+// stories another call holds and the ones in skip_ids. The conditions match stories_notify_pending_idx.
+func (q *Queries) ClaimStoryToNotify(ctx context.Context, arg ClaimStoryToNotifyParams) (ClaimStoryToNotifyRow, error) {
+	row := q.db.QueryRow(ctx, claimStoryToNotify, arg.Since, arg.SkipIds)
+	var i ClaimStoryToNotifyRow
+	err := row.Scan(&i.ID, &i.Title, &i.Summary)
+	return i, err
+}
+
+const countStoriesToNotify = `-- name: CountStoriesToNotify :one
+SELECT count(*) FROM stories
+WHERE notified_at IS NULL
+    AND kind = 'security' AND severity IN ('high', 'critical')
+    AND created_at >= $1
+`
+
+func (q *Queries) CountStoriesToNotify(ctx context.Context, since time.Time) (int64, error) {
+	row := q.db.QueryRow(ctx, countStoriesToNotify, since)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteDeviceToken = `-- name: DeleteDeviceToken :exec
 DELETE FROM device_tokens WHERE token = $1 AND user_id = $2
 `
@@ -59,41 +104,6 @@ func (q *Queries) ListDeviceTokensForStory(ctx context.Context, storyID int64) (
 			return nil, err
 		}
 		items = append(items, token)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listStoriesToNotify = `-- name: ListStoriesToNotify :many
-SELECT id, title, summary FROM stories
-WHERE notified_at IS NULL
-    AND kind = 'security' AND severity IN ('high', 'critical')
-    AND created_at >= $1
-ORDER BY id
-`
-
-type ListStoriesToNotifyRow struct {
-	ID      int64
-	Title   string
-	Summary string
-}
-
-// Recent high-severity security stories that have not been pushed yet.
-func (q *Queries) ListStoriesToNotify(ctx context.Context, since time.Time) ([]ListStoriesToNotifyRow, error) {
-	rows, err := q.db.Query(ctx, listStoriesToNotify, since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListStoriesToNotifyRow{}
-	for rows.Next() {
-		var i ListStoriesToNotifyRow
-		if err := rows.Scan(&i.ID, &i.Title, &i.Summary); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

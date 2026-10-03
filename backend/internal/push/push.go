@@ -11,6 +11,7 @@ import (
 
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/messaging"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/db"
@@ -22,6 +23,8 @@ const (
 	// storyWindow is how long after creation a story can still be pushed.
 	storyWindow  = 24 * time.Hour
 	maxBodyRunes = 160
+	// maxStoriesPerRun bounds one Run so it fits in a request; the caller repeats until none remain.
+	maxStoriesPerRun = 10
 )
 
 // Message is one notification for a set of device tokens.
@@ -103,27 +106,55 @@ func NewNotifier(pool *pgxpool.Pool, sender Sender) *Notifier {
 	return &Notifier{pool: pool, sender: sender, now: time.Now}
 }
 
-// Run sends every pending notification and returns how many stories were pushed. A story
-// whose send fails is left pending and retried on the next run (until it is a day old).
-func (n *Notifier) Run(ctx context.Context) (int, error) {
-	q := db.New(n.pool)
-	stories, err := q.ListStoriesToNotify(ctx, n.now().Add(-storyWindow))
-	if err != nil {
-		return 0, fmt.Errorf("list stories to notify: %w", err)
-	}
+// Run pushes up to maxStoriesPerRun pending stories and returns how many it pushed and how many
+// are still pending. Each story is claimed with a row lock, so concurrent runs never push the same
+// one, and is marked notified as soon as its sends succeed. A story whose send fails is left
+// pending, skipped for the rest of this run and retried on the next (until it is a day old).
+func (n *Notifier) Run(ctx context.Context) (pushed, remaining int, err error) {
+	since := n.now().Add(-storyWindow)
 	var errs []error
-	pushed := 0
-	for _, st := range stories {
-		if err := n.notify(ctx, q, st); err != nil {
-			errs = append(errs, fmt.Errorf("story %d: %w", st.ID, err))
+	skip := []int64{}
+	for pushed+len(skip) < maxStoriesPerRun {
+		id, claimed, err := n.pushNext(ctx, since, skip)
+		if err != nil {
+			if id == 0 {
+				return pushed, 0, errors.Join(append(errs, err)...)
+			}
+			errs = append(errs, fmt.Errorf("story %d: %w", id, err))
+			skip = append(skip, id)
 			continue
+		}
+		if !claimed {
+			break
 		}
 		pushed++
 	}
-	return pushed, errors.Join(errs...)
+	left, err := db.New(n.pool).CountStoriesToNotify(ctx, since)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("count stories to notify: %w", err))
+	}
+	return pushed, int(left), errors.Join(errs...)
 }
 
-func (n *Notifier) notify(ctx context.Context, q *db.Queries, st db.ListStoriesToNotifyRow) error {
+// pushNext claims one pending story outside skip and pushes it in one transaction. It returns
+// claimed=false when no story is left to claim, and the story's id with any error after a claim.
+func (n *Notifier) pushNext(ctx context.Context, since time.Time, skip []int64) (id int64, claimed bool, err error) {
+	err = pgx.BeginFunc(ctx, n.pool, func(tx pgx.Tx) error {
+		q := db.New(tx)
+		st, err := q.ClaimStoryToNotify(ctx, db.ClaimStoryToNotifyParams{Since: since, SkipIds: skip})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("claim story to notify: %w", err)
+		}
+		id, claimed = st.ID, true
+		return n.notify(ctx, q, st)
+	})
+	return id, claimed, err
+}
+
+func (n *Notifier) notify(ctx context.Context, q *db.Queries, st db.ClaimStoryToNotifyRow) error {
 	tokens, err := q.ListDeviceTokensForStory(ctx, st.ID)
 	if err != nil {
 		return fmt.Errorf("list device tokens: %w", err)

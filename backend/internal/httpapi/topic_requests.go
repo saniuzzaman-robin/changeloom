@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/db"
@@ -20,6 +21,8 @@ const (
 	maxTopicRequestsListed = 100
 	pgUniqueViolation      = "23505"
 )
+
+var errTooManyPending = errors.New("too many pending topic requests")
 
 // ListMyTopicRequests returns the user's topic requests, newest first.
 func (s *Server) ListMyTopicRequests(w http.ResponseWriter, r *http.Request) {
@@ -63,18 +66,31 @@ func (s *Server) CreateTopicRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pending, err := s.q.CountPendingTopicRequests(r.Context(), user.ID)
-	if err != nil {
-		internalError(w, r, "count pending topic requests", err)
-		return
-	}
-	if pending >= int64(s.opts.TopicRequestMaxPending) {
+	// The per-user lock makes the count and the insert atomic, so parallel requests can't exceed the cap.
+	var (
+		row     db.CreateTopicRequestRow
+		pending int64
+	)
+	err := pgx.BeginFunc(r.Context(), s.pool, func(tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		if err := q.LockUserTopicRequests(r.Context(), user.ID); err != nil {
+			return fmt.Errorf("lock topic requests: %w", err)
+		}
+		var err error
+		if pending, err = q.CountPendingTopicRequests(r.Context(), user.ID); err != nil {
+			return fmt.Errorf("count pending topic requests: %w", err)
+		}
+		if pending >= int64(s.opts.TopicRequestMaxPending) {
+			return errTooManyPending
+		}
+		row, err = q.CreateTopicRequest(r.Context(), db.CreateTopicRequestParams{UserID: user.ID, Text: text})
+		return err
+	})
+	if errors.Is(err, errTooManyPending) {
 		writeError(w, http.StatusTooManyRequests, "too_many_requests",
 			fmt.Sprintf("you already have %d pending topic requests; wait for them to be reviewed", pending))
 		return
 	}
-
-	row, err := s.q.CreateTopicRequest(r.Context(), db.CreateTopicRequestParams{UserID: user.ID, Text: text})
 	if pgErr := (*pgconn.PgError)(nil); errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
 		writeError(w, http.StatusConflict, "conflict", "the same topic request is already pending")
 		return

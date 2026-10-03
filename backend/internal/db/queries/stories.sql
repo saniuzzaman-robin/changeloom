@@ -3,6 +3,9 @@
 -- topic (or a descendant of one), tier 1 with a related topic (a relation neighbour or an
 -- ancestor of a followed topic), tier 2 with anything else. Unread first, then by tier,
 -- then newest first. Keyset pagination on (is_read, tier, published_at, id).
+-- Tiers come from one aggregate over the in-tier topics' story_topics rows instead of per-story
+-- subqueries, and topic slugs are built only for the page: per-row subplans over the whole window
+-- inflated the plan cost past jit_above_cost, and JIT compilation took ~90% of the query time.
 WITH RECURSIVE followed AS (
     SELECT ut.topic_id AS id FROM user_topics ut WHERE ut.user_id = @user_id
     UNION
@@ -12,43 +15,49 @@ WITH RECURSIVE followed AS (
     WHERE ut.user_id = @user_id AND t.parent_id IS NOT NULL
     UNION
     SELECT t.parent_id FROM topics t JOIN ancestors a ON a.id = t.id WHERE t.parent_id IS NOT NULL
-), related AS (
-    SELECT tr.related_id AS id FROM topic_relations tr JOIN followed f ON f.id = tr.topic_id
-    UNION
-    SELECT tr.topic_id FROM topic_relations tr JOIN followed f ON f.id = tr.related_id
-    UNION
-    SELECT a.id FROM ancestors a
+), topic_tier AS (
+    SELECT f.id, 0 AS tier FROM followed f
+    UNION ALL
+    SELECT tr.related_id, 1 FROM topic_relations tr JOIN followed f ON f.id = tr.topic_id
+    UNION ALL
+    SELECT tr.topic_id, 1 FROM topic_relations tr JOIN followed f ON f.id = tr.related_id
+    UNION ALL
+    SELECT a.id, 1 FROM ancestors a
+), story_tier AS (
+    SELECT st.story_id, min(tt.tier) AS tier
+    FROM story_topics st JOIN topic_tier tt ON tt.id = st.topic_id
+    GROUP BY st.story_id
 ), ranked AS (
     SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
         (uss.read_at IS NOT NULL) AS is_read,
         (ub.story_id IS NOT NULL) AS is_bookmarked,
-        (CASE
-            WHEN EXISTS (SELECT 1 FROM story_topics st JOIN followed f ON f.id = st.topic_id WHERE st.story_id = s.id) THEN 0
-            WHEN EXISTS (SELECT 1 FROM story_topics st JOIN related r ON r.id = st.topic_id WHERE st.story_id = s.id) THEN 1
-            ELSE 2
-        END) AS tier
+        COALESCE(stt.tier, 2) AS tier
     FROM stories s
+    LEFT JOIN story_tier stt ON stt.story_id = s.id
     LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = @user_id
     LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = @user_id
     WHERE s.published_at >= @since
+), page AS (
+    SELECT r.* FROM ranked r
+    WHERE sqlc.narg(cursor_id)::bigint IS NULL
+        OR r.is_read > sqlc.narg(cursor_read)::boolean
+        OR (r.is_read = sqlc.narg(cursor_read)::boolean AND r.tier > sqlc.narg(cursor_tier)::integer)
+        OR (
+            r.is_read = sqlc.narg(cursor_read)::boolean AND r.tier = sqlc.narg(cursor_tier)::integer
+            AND (r.published_at, r.id) < (sqlc.narg(cursor_published_at)::timestamptz, sqlc.narg(cursor_id)::bigint)
+        )
+    ORDER BY r.is_read ASC, r.tier ASC, r.published_at DESC, r.id DESC
+    LIMIT @page_size
 )
-SELECT r.id, r.title, r.summary, r.kind, r.severity, r.importance, r.published_at, r.read_at,
-    r.is_bookmarked::boolean AS is_bookmarked,
-    r.tier::integer AS tier,
+SELECT p.id, p.title, p.summary, p.kind, p.severity, p.importance, p.published_at, p.read_at,
+    p.is_bookmarked::boolean AS is_bookmarked,
+    p.tier::integer AS tier,
     ARRAY(
         SELECT tp.slug FROM story_topics stp JOIN topics tp ON tp.id = stp.topic_id
-        WHERE stp.story_id = r.id ORDER BY tp.slug
+        WHERE stp.story_id = p.id ORDER BY tp.slug
     )::text[] AS topics
-FROM ranked r
-WHERE sqlc.narg(cursor_id)::bigint IS NULL
-    OR r.is_read > sqlc.narg(cursor_read)::boolean
-    OR (r.is_read = sqlc.narg(cursor_read)::boolean AND r.tier > sqlc.narg(cursor_tier)::integer)
-    OR (
-        r.is_read = sqlc.narg(cursor_read)::boolean AND r.tier = sqlc.narg(cursor_tier)::integer
-        AND (r.published_at, r.id) < (sqlc.narg(cursor_published_at)::timestamptz, sqlc.narg(cursor_id)::bigint)
-    )
-ORDER BY r.is_read ASC, r.tier ASC, r.published_at DESC, r.id DESC
-LIMIT @page_size;
+FROM page p
+ORDER BY p.is_read ASC, p.tier ASC, p.published_at DESC, p.id DESC;
 
 -- name: GetStory :one
 SELECT s.id, s.title, s.summary, s.body_md, s.kind, s.severity, s.importance, s.published_at, uss.read_at,

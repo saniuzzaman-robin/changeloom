@@ -228,3 +228,35 @@ func TestNotify(t *testing.T) {
 		t.Error("unset config: want an error")
 	}
 }
+
+func TestNotifyRepeatsUntilNoneRemain(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		batches   []string
+		wantSent  int
+		wantCalls int
+	}{
+		{"drains the backlog", []string{`{"sent":10,"remaining":15}`, `{"sent":10,"remaining":5}`, `{"sent":5,"remaining":0}`}, 25, 3},
+		{"stops without progress", []string{`{"sent":3,"remaining":2}`, `{"sent":0,"remaining":2}`}, 3, 2},
+		{"older api without remaining", []string{`{"sent":4}`}, 4, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if calls >= len(tc.batches) {
+					t.Errorf("unexpected call %d", calls+1)
+					http.Error(w, "no", http.StatusInternalServerError)
+					return
+				}
+				_, _ = w.Write([]byte(tc.batches[calls]))
+				calls++
+			}))
+			defer srv.Close()
+
+			n, err := cursync.Notify(t.Context(), srv.Client(), config.Remote{APIBaseURL: srv.URL, NotifySecret: "s"})
+			if err != nil || n != tc.wantSent || calls != tc.wantCalls {
+				t.Fatalf("Notify = %d, %v after %d calls; want %d, nil after %d", n, err, calls, tc.wantSent, tc.wantCalls)
+			}
+		})
+	}
+}

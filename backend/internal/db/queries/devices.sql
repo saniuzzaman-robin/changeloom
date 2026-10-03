@@ -10,13 +10,23 @@ DELETE FROM device_tokens WHERE token = @token AND user_id = @user_id;
 -- name: DeleteDeviceTokens :exec
 DELETE FROM device_tokens WHERE token = ANY(@tokens::text[]);
 
--- name: ListStoriesToNotify :many
--- Recent high-severity security stories that have not been pushed yet.
+-- name: ClaimStoryToNotify :one
+-- Locks the oldest recent high-severity security story that has not been pushed yet, skipping
+-- stories another call holds and the ones in skip_ids. The conditions match stories_notify_pending_idx.
 SELECT id, title, summary FROM stories
 WHERE notified_at IS NULL
     AND kind = 'security' AND severity IN ('high', 'critical')
     AND created_at >= @since
-ORDER BY id;
+    AND NOT (id = ANY(@skip_ids::bigint[]))
+ORDER BY id
+LIMIT 1
+FOR UPDATE SKIP LOCKED;
+
+-- name: CountStoriesToNotify :one
+SELECT count(*) FROM stories
+WHERE notified_at IS NULL
+    AND kind = 'security' AND severity IN ('high', 'critical')
+    AND created_at >= @since;
 
 -- name: ListDeviceTokensForStory :many
 -- Device tokens of users who follow a topic of the story or an ancestor of one.

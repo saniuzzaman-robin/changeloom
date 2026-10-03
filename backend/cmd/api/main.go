@@ -83,6 +83,8 @@ func run() error {
 		TopicRequestMaxPending: cfg.TopicRequestMaxPending,
 		NotifySecret:           cfg.NotifySecret,
 		RequestTimeout:         cfg.RequestTimeout,
+		RateLimitPerIP:         cfg.RateLimitIPPerMin,
+		RateLimitPerUser:       cfg.RateLimitUserPerMin,
 	}
 	if cfg.PushEnabled {
 		sender, err := push.NewFCMSender(ctx, cfg.FirebaseProjectID)

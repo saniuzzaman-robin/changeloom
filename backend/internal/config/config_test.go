@@ -52,6 +52,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Env != EnvDev || cfg.DBMaxConns != 10 || cfg.RequestTimeout != 30*time.Second {
 		t.Errorf("Load() = env %q, max conns %d, timeout %s; want dev, 10, 30s", cfg.Env, cfg.DBMaxConns, cfg.RequestTimeout)
 	}
+	if cfg.RateLimitIPPerMin != 300 || cfg.RateLimitUserPerMin != 120 {
+		t.Errorf("Load() = rate limits %d per IP, %d per user; want 300, 120", cfg.RateLimitIPPerMin, cfg.RateLimitUserPerMin)
+	}
 }
 
 func TestLoadPoolAndTimeout(t *testing.T) {
@@ -73,6 +76,8 @@ func TestLoadRejectsBadPoolAndTimeout(t *testing.T) {
 		{"DB_MAX_CONNS", "99999999999"},
 		{"REQUEST_TIMEOUT", "30"},
 		{"REQUEST_TIMEOUT", "-1s"},
+		{"RATE_LIMIT_IP_PER_MIN", "0"},
+		{"RATE_LIMIT_USER_PER_MIN", "many"},
 	} {
 		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
 			setBase(t)

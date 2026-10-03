@@ -47,6 +47,10 @@ type Config struct {
 	// RequestTimeout bounds each request, including its database queries (REQUEST_TIMEOUT, a Go
 	// duration). It must leave room for POST /internal/notify, which sends every pending push.
 	RequestTimeout time.Duration
+	// RateLimitIPPerMin and RateLimitUserPerMin are the requests per minute allowed per client IP
+	// and per signed-in user on each instance (RATE_LIMIT_IP_PER_MIN, RATE_LIMIT_USER_PER_MIN).
+	RateLimitIPPerMin   int
+	RateLimitUserPerMin int
 }
 
 // Load reads configuration from the environment and validates it.
@@ -97,6 +101,8 @@ func Load() (Config, error) {
 		dbMaxConns = 1
 	}
 	requestTimeout := envDuration(&errs, "REQUEST_TIMEOUT", 30*time.Second)
+	rateLimitIP := envInt(&errs, "RATE_LIMIT_IP_PER_MIN", 300)
+	rateLimitUser := envInt(&errs, "RATE_LIMIT_USER_PER_MIN", 120)
 	if pushEnabled && firebaseProjectID == "" {
 		errs = append(errs, errors.New("FIREBASE_PROJECT_ID is required when FCM_ENABLED=true (see .env.example)"))
 	}
@@ -119,6 +125,8 @@ func Load() (Config, error) {
 		TopicRequestMaxPending: topicRequestMaxPending,
 		DBMaxConns:             int32(dbMaxConns),
 		RequestTimeout:         requestTimeout,
+		RateLimitIPPerMin:      rateLimitIP,
+		RateLimitUserPerMin:    rateLimitUser,
 	}, nil
 }
 

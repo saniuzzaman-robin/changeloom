@@ -25,3 +25,7 @@ SELECT @user_id, unnest(@topic_ids::bigint[]);
 SELECT
     (SELECT count(*) FROM user_bookmarks ub WHERE ub.user_id = @user_id)::bigint AS saved,
     (SELECT count(*) FROM user_story_state uss WHERE uss.user_id = @user_id)::bigint AS read;
+
+-- name: DeleteUser :exec
+-- Deleting the user cascades to their follows, read state, bookmarks, devices and topic requests.
+DELETE FROM users WHERE id = @id;

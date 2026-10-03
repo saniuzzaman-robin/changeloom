@@ -9,6 +9,16 @@ import (
 	"context"
 )
 
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM users WHERE id = $1
+`
+
+// Deleting the user cascades to their follows, read state, bookmarks, devices and topic requests.
+func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteUser, id)
+	return err
+}
+
 const deleteUserTopics = `-- name: DeleteUserTopics :exec
 DELETE FROM user_topics WHERE user_id = $1
 `

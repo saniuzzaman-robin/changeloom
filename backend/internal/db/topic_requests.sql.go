@@ -106,3 +106,13 @@ func (q *Queries) ListMyTopicRequests(ctx context.Context, arg ListMyTopicReques
 	}
 	return items, nil
 }
+
+const lockUserTopicRequests = `-- name: LockUserTopicRequests :exec
+SELECT pg_advisory_xact_lock(hashtextextended('topic_requests:' || $1::bigint, 0))
+`
+
+// Serializes topic-request creation per user until the transaction ends, so the pending cap holds.
+func (q *Queries) LockUserTopicRequests(ctx context.Context, userID int64) error {
+	_, err := q.db.Exec(ctx, lockUserTopicRequests, userID)
+	return err
+}

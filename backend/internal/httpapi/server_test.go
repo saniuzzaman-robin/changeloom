@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -528,14 +529,14 @@ func TestTopicRequests(t *testing.T) {
 }
 
 type fakeNotifier struct {
-	sent int
-	err  error
-	runs int
+	sent, remaining int
+	err             error
+	runs            int
 }
 
-func (f *fakeNotifier) Run(context.Context) (int, error) {
+func (f *fakeNotifier) Run(context.Context) (int, int, error) {
 	f.runs++
-	return f.sent, f.err
+	return f.sent, f.remaining, f.err
 }
 
 func TestNotify(t *testing.T) {
@@ -551,7 +552,7 @@ func TestNotify(t *testing.T) {
 		t.Errorf("no secret configured: status %d, want 404", code)
 	}
 
-	fake := &fakeNotifier{sent: 2}
+	fake := &fakeNotifier{sent: 2, remaining: 5}
 	e := newEnvWith(t, func(o *httpapi.Options) { o.NotifySecret, o.Notifier = secret, fake })
 	for _, token := range []string{"", "wrong", secret + "x", aliceToken} {
 		if code, _ := notify(e, token); code != http.StatusUnauthorized {
@@ -561,7 +562,7 @@ func TestNotify(t *testing.T) {
 	if fake.runs != 0 {
 		t.Fatalf("notifier ran %d times on rejected requests", fake.runs)
 	}
-	if code, out := notify(e, secret); code != http.StatusOK || out["sent"] != 2 || fake.runs != 1 {
+	if code, out := notify(e, secret); code != http.StatusOK || out["sent"] != 2 || out["remaining"] != 5 || fake.runs != 1 {
 		t.Fatalf("notify: status %d, body %v, runs %d", code, out, fake.runs)
 	}
 	if code := e.do(http.MethodGet, "/internal/notify", secret, nil, nil); code != http.StatusMethodNotAllowed {
@@ -576,5 +577,194 @@ func TestNotify(t *testing.T) {
 	pushOff := newEnvWith(t, func(o *httpapi.Options) { o.NotifySecret = secret })
 	if code, out := notify(pushOff, secret); code != http.StatusOK || out["sent"] != 0 {
 		t.Fatalf("push disabled: status %d, body %v", code, out)
+	}
+}
+
+func TestTopicRequestCapHoldsUnderConcurrency(t *testing.T) {
+	e := newEnv(t)
+	const attempts = 3 * testMaxPending
+	codes := make(chan int, attempts)
+	var wg sync.WaitGroup
+	for i := range attempts {
+		wg.Go(func() {
+			codes <- e.do(http.MethodPost, "/v1/topic-requests", aliceToken, map[string]any{"text": "topic " + strconv.Itoa(i)}, nil)
+		})
+	}
+	wg.Wait()
+	close(codes)
+	created := 0
+	for code := range codes {
+		switch code {
+		case http.StatusCreated:
+			created++
+		case http.StatusTooManyRequests:
+		default:
+			t.Errorf("status %d, want 201 or 429", code)
+		}
+	}
+	if created != testMaxPending {
+		t.Fatalf("created %d requests in parallel, want the cap of %d", created, testMaxPending)
+	}
+}
+
+// emailVerifier accepts any token as the UID and returns the email set for it.
+type emailVerifier struct {
+	mu     sync.Mutex
+	emails map[string]string
+}
+
+func (v *emailVerifier) Verify(_ context.Context, token string) (auth.Identity, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	id := auth.Identity{UID: token}
+	if email, ok := v.emails[token]; ok {
+		id.Email = &email
+	}
+	return id, nil
+}
+
+func TestMeRefreshesEmail(t *testing.T) {
+	pool := dbtest.New(t)
+	verifier := &emailVerifier{emails: map[string]string{"u": "old@example.com"}}
+	srv := httptest.NewServer(httpapi.NewHandler(httpapi.NewServer(pool, httpapi.Options{TimelineWindow: testWindow}), verifier))
+	t.Cleanup(srv.Close)
+	e := &env{t: t, pool: pool, srv: srv}
+
+	email := func() string {
+		t.Helper()
+		var me httpapi.Me
+		if code := e.do(http.MethodGet, "/v1/me", "u", nil, &me); code != http.StatusOK || me.Email == nil {
+			t.Fatalf("get me: status %d, %+v", code, me)
+		}
+		return *me.Email
+	}
+	if got := email(); got != "old@example.com" {
+		t.Fatalf("email = %q, want old@example.com", got)
+	}
+	verifier.mu.Lock()
+	verifier.emails["u"] = "new@example.com"
+	verifier.mu.Unlock()
+	if got := email(); got != "new@example.com" {
+		t.Fatalf("email after change = %q, want new@example.com", got)
+	}
+	verifier.mu.Lock()
+	delete(verifier.emails, "u")
+	verifier.mu.Unlock()
+	if got := email(); got != "new@example.com" {
+		t.Fatalf("email from a token without one = %q, want the stored new@example.com", got)
+	}
+}
+
+func TestDeleteMe(t *testing.T) {
+	e := newEnv(t)
+	e.follow(aliceToken, "languages/go")
+	e.follow(bobToken, "languages/go")
+	story := e.insertStory("Go 2", time.Now(), "languages/go")
+	e.markRead(aliceToken, story)
+	path := "/v1/stories/" + strconv.FormatInt(story, 10) + "/bookmark"
+	if code := e.do(http.MethodPut, path, aliceToken, nil, nil); code != http.StatusNoContent {
+		t.Fatalf("bookmark: status %d", code)
+	}
+	if code := e.do(http.MethodPost, "/v1/topic-requests", aliceToken, map[string]any{"text": "Zig"}, nil); code != http.StatusCreated {
+		t.Fatalf("topic request: status %d", code)
+	}
+	var aliceID int64
+	if err := e.pool.QueryRow(t.Context(), `SELECT id FROM users WHERE firebase_uid = $1`, aliceToken).Scan(&aliceID); err != nil {
+		t.Fatalf("alice id: %v", err)
+	}
+
+	if code := e.do(http.MethodDelete, "/v1/me", aliceToken, nil, nil); code != http.StatusNoContent {
+		t.Fatalf("delete me: status %d, want 204", code)
+	}
+	var left int
+	err := e.pool.QueryRow(t.Context(), `
+		SELECT (SELECT count(*) FROM users WHERE id = $1)
+			+ (SELECT count(*) FROM user_topics WHERE user_id = $1)
+			+ (SELECT count(*) FROM user_story_state WHERE user_id = $1)
+			+ (SELECT count(*) FROM user_bookmarks WHERE user_id = $1)
+			+ (SELECT count(*) FROM topic_requests WHERE user_id = $1)`, aliceID).Scan(&left)
+	if err != nil || left != 0 {
+		t.Fatalf("rows left for deleted user = %d (%v), want 0", left, err)
+	}
+	var me httpapi.Me
+	if e.do(http.MethodGet, "/v1/me", bobToken, nil, &me); len(me.Topics) != 1 {
+		t.Fatalf("other user's topics = %v, want untouched", me.Topics)
+	}
+}
+
+func TestCacheHeaders(t *testing.T) {
+	e := newEnv(t)
+	get := func(path, ifNoneMatch string) (int, http.Header) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, e.srv.URL+path, nil)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+aliceToken)
+		if ifNoneMatch != "" {
+			req.Header.Set("If-None-Match", ifNoneMatch)
+		}
+		resp, err := e.srv.Client().Do(req)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode, resp.Header
+	}
+
+	code, header := get("/v1/topics", "")
+	etag := header.Get("ETag")
+	if code != http.StatusOK || etag == "" || !strings.HasPrefix(header.Get("Cache-Control"), "private, max-age=") {
+		t.Fatalf("topics: status %d, ETag %q, Cache-Control %q", code, etag, header.Get("Cache-Control"))
+	}
+	for _, inm := range []string{etag, "W/" + etag, `"other", ` + etag, "*"} {
+		if code, header := get("/v1/topics", inm); code != http.StatusNotModified || header.Get("ETag") != etag {
+			t.Errorf("If-None-Match %q: status %d, ETag %q; want 304 with the same ETag", inm, code, header.Get("ETag"))
+		}
+	}
+	if code, _ := get("/v1/topics", `"stale"`); code != http.StatusOK {
+		t.Errorf("stale If-None-Match: status %d, want 200", code)
+	}
+
+	for _, path := range []string{"/v1/me", "/v1/timeline", "/v1/nope"} {
+		if _, header := get(path, ""); header.Get("Cache-Control") != "private, no-store" {
+			t.Errorf("%s: Cache-Control %q, want private, no-store", path, header.Get("Cache-Control"))
+		}
+	}
+}
+
+func TestRateLimits(t *testing.T) {
+	e := newEnvWith(t, func(o *httpapi.Options) { o.RateLimitPerUser = 2 })
+	for i := range 2 {
+		if code := e.do(http.MethodGet, "/v1/me", aliceToken, nil, nil); code != http.StatusOK {
+			t.Fatalf("request %d: status %d", i, code)
+		}
+	}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, e.srv.URL+"/v1/me", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+aliceToken)
+	resp, err := e.srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("GET /v1/me: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get("Retry-After") == "" {
+		t.Fatalf("over the user limit: status %d, Retry-After %q; want 429 with Retry-After", resp.StatusCode, resp.Header.Get("Retry-After"))
+	}
+	if code := e.do(http.MethodGet, "/v1/me", bobToken, nil, nil); code != http.StatusOK {
+		t.Fatalf("another user: status %d, want 200", code)
+	}
+
+	ipLimited := newEnvWith(t, func(o *httpapi.Options) { o.RateLimitPerIP = 1 })
+	if code := ipLimited.do(http.MethodGet, "/v1/me", aliceToken, nil, nil); code != http.StatusOK {
+		t.Fatalf("first request: status %d", code)
+	}
+	if code := ipLimited.do(http.MethodGet, "/v1/me", bobToken, nil, nil); code != http.StatusTooManyRequests {
+		t.Fatalf("over the IP limit: status %d, want 429", code)
+	}
+	if code := ipLimited.do(http.MethodGet, "/health", "", nil, nil); code != http.StatusOK {
+		t.Fatalf("health check over the IP limit: status %d, want 200", code)
 	}
 }

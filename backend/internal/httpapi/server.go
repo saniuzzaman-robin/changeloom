@@ -25,9 +25,10 @@ const (
 	maxTokenChars   = 4096
 )
 
-// Notifier sends pending push notifications and reports how many stories were pushed.
+// Notifier sends a batch of pending push notifications and reports how many stories it pushed
+// and how many are still pending.
 type Notifier interface {
-	Run(ctx context.Context) (int, error)
+	Run(ctx context.Context) (pushed, remaining int, err error)
 }
 
 // Options configures a Server.
@@ -42,6 +43,10 @@ type Options struct {
 	Notifier Notifier
 	// RequestTimeout bounds each request's context; zero means no limit.
 	RequestTimeout time.Duration
+	// RateLimitPerIP and RateLimitPerUser are the requests per minute a client IP (on every route
+	// but health checks) and a signed-in user (on /v1/) may make; zero disables that limit.
+	RateLimitPerIP   int
+	RateLimitPerUser int
 }
 
 // Server implements ServerInterface.
@@ -50,18 +55,28 @@ type Server struct {
 	q    *db.Queries
 	opts Options
 	now  func() time.Time
+	// ipLimiter and userLimiter are nil when their limit is disabled.
+	ipLimiter   *rateLimiter
+	userLimiter *rateLimiter
 }
 
 var _ ServerInterface = (*Server)(nil)
 
 // NewServer returns a Server backed by pool.
 func NewServer(pool *pgxpool.Pool, opts Options) *Server {
-	return &Server{pool: pool, q: db.New(pool), opts: opts, now: time.Now}
+	s := &Server{pool: pool, q: db.New(pool), opts: opts, now: time.Now}
+	if opts.RateLimitPerIP > 0 {
+		s.ipLimiter = newRateLimiter(opts.RateLimitPerIP, s.now)
+	}
+	if opts.RateLimitPerUser > 0 {
+		s.userLimiter = newRateLimiter(opts.RateLimitPerUser, s.now)
+	}
+	return s
 }
 
 // NewHandler routes all API operations and requires a verified bearer token on /v1/ paths.
 // POST /internal/notify sits outside /v1/ and checks its own shared secret. Every request is
-// traced, logged and protected from panics, and bounded by Options.RequestTimeout.
+// traced, logged and protected from panics, bounded by Options.RequestTimeout and rate limited.
 func NewHandler(s *Server, verifier auth.Verifier) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(http.MethodPost+" /internal/notify", s.notify)
@@ -69,7 +84,10 @@ func NewHandler(s *Server, verifier auth.Verifier) http.Handler {
 		BaseRouter:       mux,
 		ErrorHandlerFunc: badParam,
 	})
-	h := s.authenticate(verifier, jsonFallback(mux))
+	h := noStore(s.authenticate(verifier, jsonFallback(mux)))
+	if s.ipLimiter != nil {
+		h = limitIP(s.ipLimiter, h)
+	}
 	if s.opts.RequestTimeout > 0 {
 		h = withTimeout(s.opts.RequestTimeout, h)
 	}
@@ -99,8 +117,18 @@ func badParam(w http.ResponseWriter, _ *http.Request, err error) {
 	writeError(w, http.StatusBadRequest, "bad_request", msg)
 }
 
-// authenticate verifies the bearer token on /v1/ requests and attaches the user,
-// creating the user row on first sign-in.
+// noStore keeps /v1/ responses, which are per user, out of every cache. A handler may override it.
+func noStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/v1/") {
+			w.Header().Set("Cache-Control", "private, no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// authenticate verifies the bearer token on /v1/ requests, applies the per-user rate limit and
+// attaches the user, creating the user row on first sign-in.
 func (s *Server) authenticate(verifier auth.Verifier, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/v1/") {
@@ -119,6 +147,12 @@ func (s *Server) authenticate(verifier auth.Verifier, next http.Handler) http.Ha
 			}
 			writeError(w, http.StatusUnauthorized, "unauthorized", "invalid bearer token")
 			return
+		}
+		if s.userLimiter != nil {
+			if ok, wait := s.userLimiter.allow(id.UID); !ok {
+				tooManyRequests(w, wait)
+				return
+			}
 		}
 		user, err := s.resolveUser(r, id)
 		if err != nil {
@@ -155,7 +189,8 @@ func mustUser(r *http.Request) auth.User {
 	return u
 }
 
-// notify sends pending push notifications. It is called by the curator after a sync.
+// notify sends one batch of pending push notifications. The curator calls it after a sync and
+// repeats while "remaining" is above zero.
 func (s *Server) notify(w http.ResponseWriter, r *http.Request) {
 	if s.opts.NotifySecret == "" {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
@@ -166,16 +201,16 @@ func (s *Server) notify(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid notify secret")
 		return
 	}
-	sent := 0
+	sent, remaining := 0, 0
 	if s.opts.Notifier != nil {
-		n, err := s.opts.Notifier.Run(r.Context())
+		var err error
+		sent, remaining, err = s.opts.Notifier.Run(r.Context())
 		if err != nil {
 			internalError(w, r, "send notifications", err)
 			return
 		}
-		sent = n
 	}
-	writeJSON(w, http.StatusOK, map[string]int{"sent": sent})
+	writeJSON(w, http.StatusOK, map[string]int{"sent": sent, "remaining": remaining})
 }
 
 // GetHealthz reports liveness; kept for existing callers of the old path.

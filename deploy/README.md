@@ -129,6 +129,8 @@ Play rejects a `versionCode` it has seen before.
 - Staging: upload the APK to Firebase App Distribution in the staging Firebase project (console, or
   `firebase appdistribution:distribute <apk> --app <staging Firebase Android app id> --groups <group>`).
 - Prod: upload the AAB in Play Console, to the internal testing track first, then promote it to production.
+  Play also needs a public account-deletion URL (App content → Data safety). Host the text in
+  `deploy/account-deletion.md` after filling in its placeholders.
 
 ## Release order
 

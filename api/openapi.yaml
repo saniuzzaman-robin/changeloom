@@ -4,7 +4,10 @@ info:
   version: 1.0.0
   description: >
     Personal tech-news timeline. All /v1 endpoints require a Firebase ID token
-    in `Authorization: Bearer <token>`.
+    in `Authorization: Bearer <token>`. Requests are rate limited per client IP
+    and per user; over the limit the api answers 429 with a Retry-After header.
+    Responses under /v1 are `Cache-Control: private, no-store` unless an operation
+    says otherwise.
 servers:
   - url: http://localhost:8080
 security:
@@ -41,6 +44,9 @@ paths:
     get:
       operationId: listTopics
       summary: List all topics.
+      description: >
+        Cacheable (`Cache-Control: private, max-age`) with an ETag; send it back in
+        If-None-Match to get 304 when the catalog is unchanged.
       responses:
         "200":
           description: All topics, ordered by slug.
@@ -53,6 +59,8 @@ paths:
                   items:
                     type: array
                     items: {$ref: "#/components/schemas/Topic"}
+        "304":
+          description: The catalog matches the If-None-Match ETag.
         "401": {$ref: "#/components/responses/Unauthorized"}
   /v1/me:
     get:
@@ -64,6 +72,17 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Me"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+    delete:
+      operationId: deleteMe
+      summary: Delete the signed-in user's account data.
+      description: >
+        Deletes the user with their followed topics, read state, bookmarks, devices and
+        topic requests. The Firebase account itself is not deleted; the app deletes it and
+        signs out, or the next request recreates an empty user.
+      responses:
+        "204":
+          description: Deleted.
         "401": {$ref: "#/components/responses/Unauthorized"}
   /v1/me/topics:
     put:
