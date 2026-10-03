@@ -3,7 +3,7 @@
 ## Status
 - P0–P8 done (backend, ingestion, AI, auth, deploy, Android app, FCM/discovery/dedupe/search/bookmarks).
 - **P9 iOS: deferred** by the user. Not started; don't work on it unless asked (iOS targets, SwiftUI/CMP app, Sign in with Apple, APNs, TestFlight).
-- In progress: local Claude curator + Neon/Cloud Run (see `PLAN.md`). The RSS/Gemini worker pipeline is deleted; the backend is the `api` binary only, and content comes from the curator (`curator/`, separate Go module; `migrate`/`seed`/`fetch` work, `requests`/`sync`/`run` are stubs until Phases 5–6).
+- Local Claude curator + Neon/Cloud Run done in code (hosted setup is the user's Phase 8); production hardening H1–H9 in progress (see `PLAN.md`). The RSS/Gemini worker pipeline is deleted; the backend is the `api` binary only, and content comes from the curator (`curator/`, separate Go module; `migrate`/`seed`/`fetch`/`requests`/`sync`/`run` all implemented).
 - Never verified live: real Firebase tokens/FCM sends, Android emulator/lint, CI workflow, real deploy (Neon, Cloud Run).
 
 ## Gotchas

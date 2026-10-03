@@ -102,6 +102,10 @@ android {
     }
 }
 
+// CI builds release variants without a signing key: -Pchangeloom.allowUnsignedRelease=true skips
+// only the signing check below, and the build output is unsigned.
+val allowUnsignedRelease = providers.gradleProperty("changeloom.allowUnsignedRelease").orNull == "true"
+
 // A release build fails early, before compiling, unless its env is fully configured.
 androidComponents {
     onVariants(selector().withBuildType("release")) { variant ->
@@ -116,7 +120,7 @@ androidComponents {
             if (config?.exists() != true) {
                 add("src/$env/google-services.json is missing: download it from the $env Firebase project")
             }
-            if (!keystorePropertiesFile.exists()) {
+            if (!keystorePropertiesFile.exists() && !allowUnsignedRelease) {
                 add("${keystorePropertiesFile.path} is missing, so the build would be unsigned")
             }
         }

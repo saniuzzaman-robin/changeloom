@@ -1,0 +1,41 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /backend
+    schedule:
+      interval: weekly
+    groups:
+      backend:
+        patterns: ["*"]
+
+  - package-ecosystem: gomod
+    directory: /curator
+    schedule:
+      interval: weekly
+    groups:
+      curator:
+        patterns: ["*"]
+
+  - package-ecosystem: gradle
+    directory: /mobile
+    schedule:
+      interval: weekly
+    groups:
+      mobile:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: weekly
+    groups:
+      docker:
+        patterns: ["*"]
