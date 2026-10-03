@@ -67,9 +67,9 @@ class DeviceRegistrar(private val api: ChangeloomApi) {
 private const val LEGACY_CHANNEL_ID = "security_alerts"
 
 /**
- * Two channels, so users can silence the routine ones and keep the urgent ones: story alerts (high importance,
- * pops up; the api sends high-severity security stories here) and story updates (default importance; the
- * fallback for any message without a channel).
+ * Three channels, so users can silence the routine ones and keep the urgent ones: story alerts (high importance,
+ * pops up; the api sends high-severity security stories here), the daily digest, and story updates (default
+ * importance; the fallback for any message without a channel).
  */
 fun createNotificationChannels(context: Context) {
     val manager = context.getSystemService(NotificationManager::class.java)
@@ -81,6 +81,11 @@ fun createNotificationChannels(context: Context) {
                 context.getString(R.string.story_alerts_channel_name),
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply { description = context.getString(R.string.story_alerts_channel_description) },
+            NotificationChannel(
+                context.getString(R.string.daily_digest_channel_id),
+                context.getString(R.string.daily_digest_channel_name),
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply { description = context.getString(R.string.daily_digest_channel_description) },
             NotificationChannel(
                 context.getString(R.string.story_updates_channel_id),
                 context.getString(R.string.story_updates_channel_name),

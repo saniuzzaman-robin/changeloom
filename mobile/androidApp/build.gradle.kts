@@ -268,6 +268,7 @@ dependencies {
     implementation(libs.googleid)
 
     implementation(libs.androidx.profileinstaller)
+    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.core.splashscreen)
     baselineProfile(project(":baselineprofile"))
 

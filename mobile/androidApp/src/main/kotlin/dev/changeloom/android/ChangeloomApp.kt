@@ -14,6 +14,7 @@ import dev.changeloom.android.play.AppPreferences
 import dev.changeloom.android.play.InAppUpdater
 import dev.changeloom.android.play.ReviewPrompter
 import dev.changeloom.android.push.createNotificationChannels
+import dev.changeloom.android.push.scheduleDailyDigest
 import dev.changeloom.android.telemetry.Analytics
 import dev.changeloom.android.telemetry.FirebaseAnalyticsTracker
 import dev.changeloom.android.ui.AndroidStrings
@@ -45,6 +46,7 @@ class ChangeloomApp : Application() {
         super.onCreate()
         if (BuildConfig.DEBUG) enableStrictMode()
         createNotificationChannels(this)
+        scheduleDailyDigest(this)
         startKoin {
             androidContext(this@ChangeloomApp)
             modules(
