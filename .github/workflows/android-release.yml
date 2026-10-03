@@ -94,6 +94,10 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.ANDROID_RELEASE_SA }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        if: env.FLAVOR == 'staging'
+      # The App Distribution REST API with a gcloud token: firebase-tools can't use Workload Identity credentials
+      # ("Failed to authenticate, have you run firebase login?").
       - name: Send to Firebase App Distribution
         if: env.FLAVOR == 'staging'
         env:
@@ -102,10 +106,30 @@ jobs:
         run: |
           [[ -n $FIREBASE_ANDROID_APP_ID && -n $TESTER_GROUPS ]] \
             || { echo "Set FIREBASE_ANDROID_APP_ID and APP_DISTRIBUTION_GROUPS on the staging environment."; exit 1; }
-          npx --yes firebase-tools@15.32.1 appdistribution:distribute \
-            androidApp/build/outputs/apk/staging/release/androidApp-staging-release.apk \
-            --app "$FIREBASE_ANDROID_APP_ID" --groups "$TESTER_GROUPS" \
-            --release-notes "$(git log -1 --format='%h %s')"
+          api=https://firebaseappdistribution.googleapis.com
+          project_number="$(cut -d: -f2 <<<"$FIREBASE_ANDROID_APP_ID")"
+          apk=androidApp/build/outputs/apk/staging/release/androidApp-staging-release.apk
+          auth="Authorization: Bearer $(gcloud auth print-access-token)"
+          call() { curl --fail-with-body -sS -H "$auth" "$@"; }
+
+          operation="$(call -X POST "$api/upload/v1/projects/$project_number/apps/$FIREBASE_ANDROID_APP_ID/releases:upload" \
+            -H "X-Goog-Upload-Protocol: raw" -H "X-Goog-Upload-File-Name: $(basename "$apk")" \
+            -H "Content-Type: application/octet-stream" --data-binary "@$apk" | jq -r .name)"
+          # Processing the upload is asynchronous; poll the operation for up to 3 minutes.
+          for _ in $(seq 36); do
+            result="$(call "$api/v1/$operation")"
+            [[ $(jq -r '.done // false' <<<"$result") == true ]] && break
+            sleep 5
+          done
+          [[ $(jq -r '.done // false' <<<"$result") == true ]] || { echo "App Distribution was still processing the APK after 3 minutes"; exit 1; }
+          if jq -e .error <<<"$result" >/dev/null; then jq .error <<<"$result"; exit 1; fi
+          release="$(jq -r .response.release.name <<<"$result")"
+
+          call -X PATCH "$api/v1/$release?updateMask=release_notes.text" -H "Content-Type: application/json" \
+            -d "$(jq -n --arg text "$(git log -1 --format='%h %s')" '{releaseNotes: {text: $text}}')" >/dev/null
+          call -X POST "$api/v1/$release:distribute" -H "Content-Type: application/json" \
+            -d "$(jq -n --arg groups "$TESTER_GROUPS" '{groupAliases: ($groups | split(",") | map(gsub("^\\s+|\\s+$"; "")))}')" >/dev/null
+          echo "Sent $(jq -r '.response.release.displayVersion + " (" + .response.release.buildVersion + ")"' <<<"$result") to $TESTER_GROUPS"
       - name: Upload to Play (internal track)
         if: env.FLAVOR == 'prod'
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5

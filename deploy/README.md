@@ -310,7 +310,10 @@ GitHub environment: `staging`, or `production` for prod.
      --attribute-condition "assertion.repository == '$REPO'"
    NUM=$(gcloud projects describe "$P" --format 'value(projectNumber)')
    WIF_PROVIDER="projects/$NUM/locations/global/workloadIdentityPools/github/providers/github"
-   PRINCIPAL="principal://iam.googleapis.com/projects/$NUM/locations/global/workloadIdentityPools/github/subject/repo:$REPO:environment:$GH_ENV"
+   # The job's OIDC subject. This repo uses GitHub's immutable subject, which adds the owner and repo ids:
+   # `gh api repos/$REPO/actions/oidc/customization/sub` shows the prefix (sub_claim_prefix).
+   SUBJECT="repo:saniuzzaman-robin@32646654/changeloom@1400225189:environment:$GH_ENV"
+   PRINCIPAL="principal://iam.googleapis.com/projects/$NUM/locations/global/workloadIdentityPools/github/subject/$SUBJECT"
    ```
 3. **Deployer service account. IAM:** it can deploy Cloud Run revisions as `$SA`, push images and
    read the migration URL. It can't change the service's IAM policy.
