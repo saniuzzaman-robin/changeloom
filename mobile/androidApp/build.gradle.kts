@@ -11,7 +11,7 @@ plugins {
 val envs = listOf("staging", "prod")
 
 // Firebase config, never committed: src/<env>/google-services.json from each env's Firebase project,
-// else google-services.json next to this file (its Firebase project must list that env's app id).
+// else the shared google-services.json next to this file (used by staging and all debug builds).
 // Without config a variant still builds, but the app crashes at launch (Firebase is not
 // initialized); release builds require it (see verify<Env>ReleaseConfig below).
 val googleServicesFiles = envs.associateWith { env ->
@@ -59,8 +59,6 @@ android {
     productFlavors {
         create("staging") {
             dimension = "env"
-            // Installs next to the prod app; register this id in the staging Firebase project.
-            applicationIdSuffix = ".staging"
             versionNameSuffix = "-staging"
         }
         create("prod") {
@@ -113,7 +111,9 @@ androidComponents {
             if (!url.startsWith("https://")) {
                 add("the api URL is $url: set changeloom.$env.apiBaseUrl to the $env Cloud Run URL")
             }
-            if (googleServicesFiles[env]?.exists() != true) {
+            // The shared fallback is staging's Firebase project, so prod must ship its own.
+            val config = if (env == "prod") file("src/$env/google-services.json") else googleServicesFiles[env]
+            if (config?.exists() != true) {
                 add("src/$env/google-services.json is missing: download it from the $env Firebase project")
             }
             if (!keystorePropertiesFile.exists()) {

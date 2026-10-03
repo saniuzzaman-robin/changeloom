@@ -9,7 +9,7 @@ Cloud Run service and Android app.
 | api `ENV` | `dev` (dev auth: `Bearer dev:<name>`) | `staging` (Firebase auth) | `prod` (Firebase auth) |
 | api settings | root `.env` | `deploy/staging.env` | `deploy/prod.env` |
 | Database | dev Postgres (`make db-up`) | Neon, staging | Neon, prod |
-| Android flavor | `staging`/`prod` debug, local api by default | `staging`: `dev.changeloom.android.staging`, "Changeloom Staging" | `prod`: `dev.changeloom.android` |
+| Android flavor | `staging`/`prod` debug, local api by default | `staging`: `dev.changeloom.android` (same id as prod, so one replaces the other on a device), "Changeloom Staging" | `prod`: `dev.changeloom.android` |
 | Curator target | local DB | `--env staging` | `--env prod` |
 
 Make targets that touch a hosted env take `DEPLOY_ENV=staging|prod`, which **defaults to staging**.
@@ -33,7 +33,8 @@ These commands create cloud resources and may cost money. Read them, then run th
    an Android app with the env's application id (table above). Add the SHA-1 of every key that signs
    that app: your debug key (`~/.android/changeloom-debug.keystore` if you use one), the upload key,
    and for prod the Play app signing key (Play Console → Test and release → App integrity).
-   Download `google-services.json` to `mobile/androidApp/src/<env>/google-services.json`.
+   Download `google-services.json`: staging's goes to `mobile/androidApp/google-services.json`, shared by
+   staging and all debug builds; prod's goes to `mobile/androidApp/src/prod/google-services.json`.
 3. **Neon.** Create a database for the env, in a region near `R`. Note two URLs:
    - the **direct** (non-pooled) URL → `REMOTE_DATABASE_URL_<ENV>` in `curator/.env` (migrations and sync);
    - the **pooled** URL → the api's `DATABASE_URL` secret (next step). If the api reports prepared
