@@ -64,6 +64,7 @@ Keep the repo outside `~/Documents`; launchd jobs cannot read it (`Operation not
 Steps are in `deploy/README.md`. Add `DEPLOY_ENV=prod` only when you mean prod.
 ```sh
 make migrate-remote DEPLOY_ENV=staging   # REMOTE_DATABASE_URL_<ENV> in curator/.env
+make curator-sync DEPLOY_ENV=staging     # push the curator's local catalog and stories to the hosted DB
 make deploy-api DEPLOY_ENV=staging       # Cloud Run; reads deploy/<env>.env; migrate first
 make release                             # propose next version from commits, tag main and push (asks first)
 make release VERSION=x.y.z DRY_RUN=1     # only show what it would do
