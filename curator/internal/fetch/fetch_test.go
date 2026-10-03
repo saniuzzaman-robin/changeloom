@@ -150,7 +150,7 @@ func TestFetchStoresAndMerges(t *testing.T) {
 
 	// A follower makes the topic due again; known stories go into the prompt, and a story with an
 	// already stored URL is merged rather than duplicated.
-	if _, err := pool.Exec(ctx, `INSERT INTO topic_stats (topic_id, followers) SELECT id, 3 FROM topics WHERE slug = 'languages'`); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO topic_stats (topic_id, env, followers) SELECT id, 'staging', 3 FROM topics WHERE slug = 'languages'`); err != nil {
 		t.Fatal(err)
 	}
 	fake.responses = []any{map[string]any{"stories": []any{

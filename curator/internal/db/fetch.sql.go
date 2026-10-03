@@ -173,7 +173,7 @@ SELECT t.id,
     t.name,
     t.description,
     p.slug AS parent_slug,
-    COALESCE(s.followers, 0)::integer AS followers,
+    COALESCE((SELECT sum(s.followers) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS followers,
     EXISTS (SELECT 1 FROM topics c WHERE c.parent_id = t.id) AS has_children,
     COALESCE((SELECT array_agg(h.url ORDER BY h.url) FROM topic_hints h WHERE h.topic_id = t.id), '{}')::text[] AS hints,
     -- 'epoch' when no call covering the topic has succeeded yet.
@@ -183,7 +183,6 @@ SELECT t.id,
     ), 'epoch')::timestamptz AS last_fetched_at
 FROM topics t
 LEFT JOIN topics p ON p.id = t.parent_id
-LEFT JOIN topic_stats s ON s.topic_id = t.id
 ORDER BY t.slug
 `
 

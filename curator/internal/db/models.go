@@ -30,6 +30,8 @@ type FetchRun struct {
 }
 
 type RequestInbox struct {
+	ID         int64
+	Env        string
 	RemoteID   int64
 	Text       string
 	CreatedAt  time.Time
@@ -69,7 +71,6 @@ type StoryTombstone struct {
 	Uid           pgtype.UUID
 	MergedIntoUid pgtype.UUID
 	DeletedAt     time.Time
-	PushedAt      *time.Time
 }
 
 type StoryTopic struct {
@@ -80,6 +81,12 @@ type StoryTopic struct {
 type SyncState struct {
 	Key   string
 	Value time.Time
+}
+
+type TombstonePush struct {
+	Uid      pgtype.UUID
+	Env      string
+	PushedAt time.Time
 }
 
 type Topic struct {
@@ -114,6 +121,7 @@ type TopicRequest struct {
 
 type TopicStat struct {
 	TopicID   int64
+	Env       string
 	Followers int32
 	UpdatedAt time.Time
 }

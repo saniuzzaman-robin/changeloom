@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Runs `curator run` at 07:00, 12:00, 17:00 and 22:00; launchd runs a missed job when the Mac wakes.
+  Template: replace __REPO__ with the absolute path of this repo and __HOME__ with your home
+  directory, then install:
+    make curator-build
+    sed -e "s|__REPO__|$PWD|g" -e "s|__HOME__|$HOME|g" curator/launchd/dev.changeloom.curator.plist \
+      > ~/Library/LaunchAgents/dev.changeloom.curator.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.changeloom.curator.plist
+  Remove with: launchctl bootout gui/$(id -u)/dev.changeloom.curator
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.changeloom.curator</string>
+    <!-- A login shell finds `claude` on PATH; curator/.env supplies the settings. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-lc</string>
+        <string>cd __REPO__/curator &amp;&amp; set -a &amp;&amp; . ./.env &amp;&amp; set +a &amp;&amp; exec ./bin/curator run</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/changeloom-curator.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/changeloom-curator.log</string>
+</dict>
+</plist>

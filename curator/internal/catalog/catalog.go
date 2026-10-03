@@ -57,7 +57,7 @@ func validateTree(nodes []Node, parent string, seen map[string]bool) error {
 		if n.Slug == "" || n.Name == "" {
 			return fmt.Errorf("topic under %q needs both slug and name", parent)
 		}
-		if err := checkSlug(n.Slug, parent); err != nil {
+		if err := CheckSlug(n.Slug, parent); err != nil {
 			return err
 		}
 		if seen[n.Slug] {
@@ -74,7 +74,8 @@ func validateTree(nodes []Node, parent string, seen map[string]bool) error {
 	return nil
 }
 
-func checkSlug(slug, parent string) error {
+// CheckSlug checks a topic slug: a root slug, or "<parent>/<segment>" when parent is set.
+func CheckSlug(slug, parent string) error {
 	if parent == "" {
 		if !slugPart.MatchString(slug) {
 			return fmt.Errorf("root topic slug %q must be lowercase letters, digits and single hyphens", slug)
@@ -100,14 +101,22 @@ func validateLinks(nodes []Node, slugs map[string]bool) error {
 			}
 		}
 		for _, h := range n.Hints {
-			u, err := url.Parse(h)
-			if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-				return fmt.Errorf("topic %q: hint %q must be an absolute http(s) URL", n.Slug, h)
+			if err := CheckHint(h); err != nil {
+				return fmt.Errorf("topic %q: %w", n.Slug, err)
 			}
 		}
 		if err := validateLinks(n.Children, slugs); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// CheckHint checks that a source hint is an absolute http(s) URL.
+func CheckHint(h string) error {
+	u, err := url.Parse(h)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return fmt.Errorf("hint %q must be an absolute http(s) URL", h)
 	}
 	return nil
 }

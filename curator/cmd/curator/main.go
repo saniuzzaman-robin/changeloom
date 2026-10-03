@@ -4,10 +4,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,6 +23,8 @@ import (
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/config"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/fetch"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/migrate"
+	"github.com/saniuzzaman-robin/changeloom/curator/internal/requests"
+	cursync "github.com/saniuzzaman-robin/changeloom/curator/internal/sync"
 	"github.com/saniuzzaman-robin/changeloom/curator/seed"
 )
 
@@ -34,10 +38,13 @@ commands:
                                    of ENV (staging, the default, or prod): REMOTE_DATABASE_URL_<ENV>
   seed                             load the topic catalog (seed/catalog.yaml) into the local DB
   fetch                            fetch new stories with Claude into the local DB
-  requests pull                    copy pending topic requests and follower counts from the hosted DB
+  requests pull [--env ENV]        copy pending topic requests and follower counts from the hosted
+                                   DB of ENV (staging, the default, or prod)
   requests group [--dry-run]       turn pending requests into topics with Claude
-  sync                             push content and request decisions to the hosted DB
-  run                              requests pull, requests group, fetch, then sync
+  sync [--env ENV]                 push content and request decisions to the hosted DB of ENV
+                                   (staging, the default, or prod), then ask its api to notify
+  run                              requests pull, requests group, fetch, then sync, for each
+                                   hosted env with REMOTE_DATABASE_URL_<ENV> set
 
 Configuration comes from the environment; see curator/.env.example.
 `
@@ -90,17 +97,28 @@ func run(args []string) error {
 		}
 		return runSeed(ctx, cfg)
 	case "requests":
-		if len(rest) == 0 || (rest[0] != "pull" && rest[0] != "group") {
-			return fmt.Errorf("%w: requests needs pull or group", errUsage)
-		}
-		return fmt.Errorf("curator requests %s is not implemented yet", rest[0])
+		return runRequests(ctx, cfg, rest)
 	case "fetch":
 		if err := parse(flag.NewFlagSet("fetch", flag.ContinueOnError), rest); err != nil {
 			return err
 		}
 		return runFetch(ctx, cfg)
-	case "sync", "run":
-		return fmt.Errorf("curator %s is not implemented yet", cmd)
+	case "sync":
+		fs := flag.NewFlagSet("sync", flag.ContinueOnError)
+		envName := fs.String("env", string(config.EnvStaging), "hosted environment to push to: staging or prod")
+		if err := parse(fs, rest); err != nil {
+			return err
+		}
+		env, err := config.ParseEnv(*envName)
+		if err != nil {
+			return fmt.Errorf("%w: sync --env: %w", errUsage, err)
+		}
+		return runSync(ctx, cfg, env)
+	case "run":
+		if err := parse(flag.NewFlagSet("run", flag.ContinueOnError), rest); err != nil {
+			return err
+		}
+		return runAll(ctx, cfg)
 	default:
 		return fmt.Errorf("%w: unknown command %q", errUsage, cmd)
 	}
@@ -158,6 +176,75 @@ func runSeed(ctx context.Context, cfg config.Config) error {
 	return nil
 }
 
+func runRequests(ctx context.Context, cfg config.Config, args []string) error {
+	if len(args) == 0 || (args[0] != "pull" && args[0] != "group") {
+		return fmt.Errorf("%w: requests needs pull or group", errUsage)
+	}
+	sub, rest := args[0], args[1:]
+	fs := flag.NewFlagSet("requests "+sub, flag.ContinueOnError)
+	var (
+		envName *string
+		dryRun  *bool
+	)
+	if sub == "pull" {
+		envName = fs.String("env", string(config.EnvStaging), "hosted environment to pull from: staging or prod")
+	} else {
+		dryRun = fs.Bool("dry-run", false, "print the proposed topics and decisions without applying them")
+	}
+	if err := parse(fs, rest); err != nil {
+		return err
+	}
+
+	local, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer local.Close()
+
+	if sub == "group" {
+		return runGroup(ctx, cfg, local, *dryRun)
+	}
+	env, err := config.ParseEnv(*envName)
+	if err != nil {
+		return fmt.Errorf("%w: requests pull --env: %w", errUsage, err)
+	}
+	return pullRequests(ctx, cfg, local, env)
+}
+
+func pullRequests(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env config.Env) error {
+	remote, err := openPool(ctx, "REMOTE_DATABASE_URL_"+env.Suffix(), cfg.Remotes[env].DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer remote.Close()
+	res, err := requests.Pull(ctx, local, remote, env)
+	if err != nil {
+		return err
+	}
+	slog.InfoContext(ctx, "requests pulled", "env", env, "pending", res.Requests, "new", res.New,
+		"topics_with_followers", res.Topics, "unknown_topics", res.Unknown)
+	return nil
+}
+
+func runGroup(ctx context.Context, cfg config.Config, local *pgxpool.Pool, dryRun bool) error {
+	res, err := requests.New(local, claude.New(cfg.Claude), cfg).Run(ctx, dryRun)
+	if res.Pending > 0 {
+		slog.InfoContext(ctx, "requests grouped", "requests", res.Pending, "new_topics", len(res.Plan.NewTopics),
+			"decisions", len(res.Plan.Decisions), "applied", res.Applied, "cost_usd", res.CostUSD)
+	}
+	if err != nil {
+		return err
+	}
+	if dryRun && res.Pending > 0 {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(res.Plan); err != nil {
+			return fmt.Errorf("print plan: %w", err)
+		}
+	}
+	return nil
+}
+
 func runFetch(ctx context.Context, cfg config.Config) error {
 	pool, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
 	if err != nil {
@@ -169,6 +256,83 @@ func runFetch(ctx context.Context, cfg config.Config) error {
 	slog.InfoContext(ctx, "fetch finished", "calls", sum.Calls, "failed", sum.Failed, "added", sum.Added,
 		"merged", sum.Merged, "rejected", sum.Rejected, "deferred_topics", len(sum.Deferred), "cost_usd", sum.CostUSD)
 	return err
+}
+
+func runSync(ctx context.Context, cfg config.Config, env config.Env) error {
+	local, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer local.Close()
+	return syncEnv(ctx, cfg, local, env)
+}
+
+// syncEnv pushes to env's hosted DB, then asks its api to notify. A failed notify is logged only:
+// the sync stands, and the next notify picks up what was missed.
+func syncEnv(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env config.Env) error {
+	remote, err := openPool(ctx, "REMOTE_DATABASE_URL_"+env.Suffix(), cfg.Remotes[env].DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer remote.Close()
+
+	res, err := cursync.Push(ctx, local, remote, env)
+	if err != nil {
+		return err
+	}
+	slog.InfoContext(ctx, "synced", "env", env, "topics", res.Topics, "stories", res.Stories,
+		"tombstones", res.Tombstones, "skipped_tombstones", res.SkippedTombstones, "decisions", res.Decisions)
+
+	sent, err := cursync.Notify(ctx, http.DefaultClient, cfg.Remotes[env])
+	if err != nil {
+		slog.WarnContext(ctx, "notify failed; the next sync retries", "env", env, "err", err)
+		return nil
+	}
+	slog.InfoContext(ctx, "notified", "env", env, "sent", sent)
+	return nil
+}
+
+// runAll is requests pull, requests group, fetch, then sync. Pull and sync run for each hosted env
+// with a database URL. A failing step is logged and the run continues where that is safe, so a
+// failed fetch still pushes request decisions; the error returned lists every failed step.
+func runAll(ctx context.Context, cfg config.Config) error {
+	local, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer local.Close()
+
+	var envs []config.Env
+	for _, env := range config.Envs {
+		if cfg.Remotes[env].DatabaseURL == "" {
+			slog.InfoContext(ctx, "skipping env without REMOTE_DATABASE_URL", "env", env)
+			continue
+		}
+		envs = append(envs, env)
+	}
+	if len(envs) == 0 {
+		return errors.New("no hosted env configured: set REMOTE_DATABASE_URL_STAGING or REMOTE_DATABASE_URL_PROD (see curator/.env.example)")
+	}
+
+	var errs []error
+	step := func(name string, fn func() error) {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := fn(); err != nil {
+			slog.ErrorContext(ctx, "step failed", "step", name, "err", err)
+			errs = append(errs, fmt.Errorf("%s: %w", name, err))
+		}
+	}
+	for _, env := range envs {
+		step("requests pull "+string(env), func() error { return pullRequests(ctx, cfg, local, env) })
+	}
+	step("requests group", func() error { return runGroup(ctx, cfg, local, false) })
+	step("fetch", func() error { return runFetch(ctx, cfg) })
+	for _, env := range envs {
+		step("sync "+string(env), func() error { return syncEnv(ctx, cfg, local, env) })
+	}
+	return errors.Join(errs...)
 }
 
 // openPool connects to the database in the env var key and checks it is reachable.
