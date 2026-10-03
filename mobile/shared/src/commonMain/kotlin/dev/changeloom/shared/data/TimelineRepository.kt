@@ -49,7 +49,7 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
             throw e
         } catch (e: Exception) {
             _state.update {
-                it.copy(refreshing = false, offline = it.items.isNotEmpty(), error = e.message ?: "Could not load timeline")
+                it.copy(refreshing = false, offline = it.items.isNotEmpty(), error = userMessage(e, "Couldn't load your timeline"))
             }
         }
     }
@@ -71,7 +71,7 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            _state.update { it.copy(loadingMore = false, error = e.message ?: "Could not load more") }
+            _state.update { it.copy(loadingMore = false, error = userMessage(e, "Couldn't load more stories")) }
         }
     }
 
@@ -89,7 +89,7 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
             _state.update { s ->
                 s.copy(
                     items = s.items.map { if (it.id == id) before else it }.sortedWith(timelineOrder),
-                    error = e.message ?: "Could not update read state",
+                    error = userMessage(e, "Couldn't update the read state"),
                 )
             }
         }
@@ -109,7 +109,7 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
             throw e
         } catch (e: Exception) {
             applyBookmark(id, !on)
-            _state.update { it.copy(error = e.message ?: "Could not update bookmark") }
+            _state.update { it.copy(error = userMessage(e, "Couldn't update the bookmark")) }
             return false
         }
     }

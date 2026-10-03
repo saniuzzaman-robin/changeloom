@@ -141,11 +141,13 @@ jobs:
             "configuration_version": "1"
           }
           EOF
-      # The release build also requires an https api URL; this one is never called.
+      # The release build also requires an https api URL; this one is never called. The placeholder
+      # Firebase project can't take Crashlytics mapping uploads.
       - run: >-
           ./gradlew
           -Pchangeloom.staging.apiBaseUrl=https://ci.invalid
           -Pchangeloom.allowUnsignedRelease=true
+          -Pchangeloom.crashlyticsMappingUpload=false
           :shared:testAndroidHostTest
           :androidApp:testStagingDebugUnitTest
           :androidApp:lintStagingDebug

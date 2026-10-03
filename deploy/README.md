@@ -35,6 +35,9 @@ These commands create cloud resources and may cost money. Read them, then run th
    and for prod the Play app signing key (Play Console → Test and release → App integrity).
    Download `google-services.json`: staging's goes to `mobile/androidApp/google-services.json`, shared by
    staging and all debug builds; prod's goes to `mobile/androidApp/src/prod/google-services.json`.
+   Release builds report to Crashlytics, Analytics and Performance Monitoring (debug builds don't):
+   link Google Analytics to the Firebase project (Project settings → Integrations), and declare crash
+   logs, diagnostics and app interactions in Play's Data safety form.
 3. **Neon.** Create a database for the env, in a region near `R`. Note two URLs:
    - the **direct** (non-pooled) URL → `REMOTE_DATABASE_URL_<ENV>` in `curator/.env` (migrations and sync);
    - the **pooled** URL → the api's `DATABASE_URL` secret (next step). If the api reports prepared
@@ -191,8 +194,55 @@ keyAlias=upload
 keyPassword=...
 ```
 
+**Ads (AdMob).** Every build except prod release uses Google's test ids, so debug and staging builds only
+ever show test ads (real ads on test devices count as invalid traffic). Prod release needs the real ids:
+
+```properties
+changeloom.prod.admobAppId=ca-app-pub-<publisher>~<app>
+changeloom.prod.admobNativeAdUnitId=ca-app-pub-<publisher>/<unit>
+```
+
+One-time setup (you do these; none of it can be scripted from here):
+1. In AdMob, create the account, add the Android app (`dev.changeloom.android`) and one **Native advanced**
+   ad unit. The app id and the unit id are the two properties above.
+2. AdMob → Privacy & messaging: create and publish a **European regulations (GDPR)** message for the app,
+   and a **US state regulations** message if you serve US users. The app shows them through UMP; without
+   a published message UMP reports consent as not required. Turn on **Consent mode** for Google Analytics in
+   the same section if it is offered.
+3. Publish `app-ads.txt` (AdMob → Apps → app-ads.txt) at the root of the developer website listed in Play
+   Console, and a privacy policy that covers ads, Analytics and Crashlytics. Link the policy in Play Console.
+4. Play Console → App content: answer **Contains ads: yes**, declare the **Advertising ID** use (ads and
+   analytics), and update **Data safety**: device or other IDs, app interactions, crash logs and diagnostics,
+   collected and shared for advertising and analytics.
+5. Firebase (prod and staging) → Remote Config: add `ads_enabled` (boolean, default `true`; the kill switch)
+   and `ads_interval` (number, default `6`: stories between feed ads, clamped to 3–100), then publish. The
+   app's built-in defaults match, so this step only matters when you want to change them.
+
+To see the consent form outside the EEA, run a debug build once, copy the device hash UMP logs
+(`adb logcat | grep -i UserMessagingPlatform`), and put `changeloom.umpTestDeviceId=<hash>` in
+`~/.gradle/gradle.properties`: debug builds on that device then act as if in the EEA. To start over,
+clear the app's data.
+
+**App Check.** The app sends a Firebase App Check token with every api request (Play Integrity in
+release builds, the debug provider in debug builds), and the api checks it outside dev. Until
+`APPCHECK_ENFORCE=true` in `deploy/<env>.env`, the api only logs requests it would reject
+(`"app check would reject"`, with `app_check: missing|invalid`); enforced, they get a 403. Per env:
+1. Firebase console → App Check → Apps: register the Android app with **Play Integrity**. Add the SHA-256
+   of the app signing key (Play Console → Test and release → App integrity → App signing) in Firebase
+   project settings, and link the Firebase project to the app in Play Console (App integrity → Play
+   Integrity API) so the API is enabled for it.
+2. For debug builds, run one, find the secret it logs (`adb logcat | grep DebugAppCheckProvider`) and add
+   it under App Check → Apps → Manage debug tokens. Keep these out of shared notes.
+3. Watch the "app check would reject" lines in Cloud Logging after a release. Enforce in prod only once
+   they come almost only from versions older than this one, then redeploy the api. Leave staging
+   unenforced: App Distribution installs aren't from Play, so Play Integrity rejects them.
+
+**Notifications.** Pushes go to the "Story alerts" channel (high importance); "Story updates" (default
+importance) is the fallback for anything else. The app explains alerts once before Android 13+ asks for
+the notification permission.
+
 **Builds.** A release build stops before compiling unless its env has an https api URL, its
-`google-services.json` and the signing key (`:androidApp:verify<Env>ReleaseConfig`).
+`google-services.json`, the AdMob ids (prod) and the signing key (`:androidApp:verify<Env>ReleaseConfig`).
 
 | What | Command | Output (under `mobile/androidApp/build/outputs/`) |
 |---|---|---|
@@ -304,6 +354,7 @@ GitHub environment: `staging`, or `production` for prod.
    | `FIREBASE_ANDROID_APP_ID` | variable, staging | the Firebase Android app id (`1:...:android:...`) |
    | `APP_DISTRIBUTION_GROUPS` | variable, staging | tester group aliases, comma-separated |
    | `PLAY_RELEASE_STATUS` | variable, prod, optional | `draft` until the app is out of draft; default `completed` |
+   | `ANDROID_ADMOB_APP_ID`, `ANDROID_ADMOB_NATIVE_AD_UNIT_ID` | variables, prod | the AdMob app and native ad unit ids |
    | `GOOGLE_SERVICES_JSON` | secret | the env's `google-services.json` |
    | `ANDROID_KEYSTORE_BASE64` | secret | `base64 -i ~/keys/changeloom-upload.jks` |
    | `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | secrets | as in `mobile/keystore.properties` |

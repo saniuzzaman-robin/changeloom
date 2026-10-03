@@ -21,8 +21,10 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import dev.changeloom.android.R
 import dev.changeloom.android.ui.theme.ChangeloomTheme
 
 // Geometry in a unit square. Keep in sync with the launcher icon and splash drawables in res/drawable.
@@ -67,7 +69,8 @@ fun LoomMark(modifier: Modifier = Modifier, animate: Boolean = false) {
         if (animate) progress.animateTo(1f, tween(1400, easing = FastOutSlowInEasing))
     }
     // Offscreen so the BlendMode.Clear strokes cut the weave's gaps out of the mark, not the screen behind it.
-    Canvas(modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.semantics { contentDescription = "Changeloom" }) {
+    val description = stringResource(R.string.app_brand)
+    Canvas(modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.semantics { contentDescription = description }) {
         val p = progress.value
         val w = size.minDimension
         val warpGrow = (p / 0.45f).coerceIn(0f, 1f)

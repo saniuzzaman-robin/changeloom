@@ -1,29 +1,37 @@
 package dev.changeloom.android
 
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Color
-import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.animation.AnimationUtils
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.RequiresApi
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.core.content.ContextCompat
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.core.splashscreen.SplashScreen
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
+import dev.changeloom.android.ads.ConsentManager
+import dev.changeloom.android.auth.SessionManager
+import dev.changeloom.android.play.InAppUpdater
+import dev.changeloom.android.play.UpdateReadyBanner
 import dev.changeloom.android.push.DeviceRegistrar
 import dev.changeloom.android.push.EXTRA_STORY_ID
+import dev.changeloom.android.telemetry.Analytics
 import dev.changeloom.android.ui.AppRoot
 import dev.changeloom.android.ui.theme.ChangeloomTheme
 import dev.changeloom.android.ui.theme.ThemePreferences
@@ -32,29 +40,41 @@ import dev.changeloom.shared.auth.AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
-import java.time.Duration
-import java.time.Instant
 
 private const val SPLASH_EXIT_MS = 500L
 private const val SPLASH_EXIT_SCALE = 1.15f
+
+/** Longest the splash waits for the first screen; after that the in-app loading mark shows instead. */
+private const val SPLASH_MAX_MS = 1_500L
 
 class MainActivity : ComponentActivity() {
     private val auth: AuthRepository by inject()
     private val registrar: DeviceRegistrar by inject()
     private val themePreferences: ThemePreferences by inject()
+    private val session: SessionManager by inject()
+    private val analytics: Analytics by inject()
+    private val consent: ConsentManager by inject()
+    private val updater: InAppUpdater by inject()
+
+    /** Set once AppRoot shows a real screen (sign-in, onboarding or the feed); the splash stays up until then. */
+    @Volatile private var contentReady = false
 
     /** Story to open from a tapped push notification, until the UI has consumed it. */
     private val pendingStoryId = MutableStateFlow<Long?>(null)
 
-    private val notificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* push is optional; registration does not depend on it */ }
+    /** Play's update confirmation; declining just skips this version until the next launch. */
+    private val updateFlow = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        setTheme(R.style.Theme_Changeloom)
+        val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) animateSplashExit()
-        readStoryId(intent)
+        val splashDeadline = SystemClock.uptimeMillis() + SPLASH_MAX_MS
+        splash.setKeepOnScreenCondition { !contentReady && SystemClock.uptimeMillis() < splashDeadline }
+        animateSplashExit(splash)
+        // A recreated activity still holds the launch intent; its notification was already handled.
+        if (savedInstanceState == null) readStoryId(intent)
         enableEdgeToEdge()
+        lifecycleScope.launch { updater.check(updateFlow) }
         setContent {
             val mode by themePreferences.mode.collectAsState()
             val dark = mode.isDark()
@@ -68,41 +88,55 @@ class MainActivity : ComponentActivity() {
                 onDispose {}
             }
             ChangeloomTheme(mode) {
-                Surface(Modifier.fillMaxSize()) {
+                // Test tags double as resource ids for the macrobenchmarks in :baselineprofile.
+                @OptIn(ExperimentalComposeUiApi::class)
+                Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
                     val user by auth.currentUser.collectAsState()
                     val storyId by pendingStoryId.collectAsState()
+                    val updateReady by updater.readyToInstall.collectAsState()
                     val signedIn = user != null
                     LaunchedEffect(signedIn) {
-                        if (signedIn) {
-                            askForNotificationPermission()
-                            registrar.register()
-                        }
+                        if (signedIn) registrar.register()
                     }
-                    AppRoot(
-                        userId = user?.uid,
-                        onSignOut = ::signOut,
-                        openStoryId = storyId,
-                        onOpenStoryHandled = { pendingStoryId.value = null },
-                    )
+                    Box {
+                        AppRoot(
+                            userId = user?.uid,
+                            onSignOut = session::signOut,
+                            openStoryId = storyId,
+                            onOpenStoryHandled = { pendingStoryId.value = null },
+                            onContentReady = ::onContentReady,
+                        )
+                        if (updateReady) UpdateReadyBanner(onInstall = updater::install, Modifier.align(Alignment.TopCenter))
+                    }
                 }
             }
         }
     }
 
-    /** Lets the splash mark finish weaving, then lifts it away: a slight zoom while the splash fades out. */
-    @RequiresApi(Build.VERSION_CODES.S)
-    private fun animateSplashExit() {
-        splashScreen.setOnExitAnimationListener { view ->
-            val start = view.iconAnimationStart
-            val duration = view.iconAnimationDuration
-            val remaining = if (start != null && duration != null) Duration.between(Instant.now(), start + duration).toMillis() else 0L
-            val delay = remaining.coerceAtLeast(0L)
+    private fun onContentReady() {
+        if (contentReady) return
+        contentReady = true
+        // Only now, so the consent form (where one is needed) never holds up the first screen.
+        consent.gather(this)
+    }
+
+    /** Lets the splash mark finish weaving (API 31+), then lifts it away: a slight zoom while the splash fades out. */
+    private fun animateSplashExit(splash: SplashScreen) {
+        splash.setOnExitAnimationListener { provider ->
+            // Both are 0 when the icon doesn't animate (before API 31).
+            val end = provider.iconAnimationStartMillis + provider.iconAnimationDurationMillis
+            val delay = (end - System.currentTimeMillis()).coerceAtLeast(0L)
             val easing = AnimationUtils.loadInterpolator(this, R.interpolator.ease_out_expo)
-            view.iconView?.animate()?.scaleX(SPLASH_EXIT_SCALE)?.scaleY(SPLASH_EXIT_SCALE)
-                ?.setStartDelay(delay)?.setDuration(SPLASH_EXIT_MS)?.setInterpolator(easing)?.start()
-            view.animate().alpha(0f).setStartDelay(delay).setDuration(SPLASH_EXIT_MS).setInterpolator(easing)
-                .withEndAction(view::remove).start()
+            provider.iconView.animate().scaleX(SPLASH_EXIT_SCALE).scaleY(SPLASH_EXIT_SCALE)
+                .setStartDelay(delay).setDuration(SPLASH_EXIT_MS).setInterpolator(easing).start()
+            provider.view.animate().alpha(0f).setStartDelay(delay).setDuration(SPLASH_EXIT_MS).setInterpolator(easing)
+                .withEndAction(provider::remove).start()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        lifecycleScope.launch { updater.refresh() }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -111,22 +145,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun readStoryId(intent: Intent?) {
-        intent?.getStringExtra(EXTRA_STORY_ID)?.toLongOrNull()?.let { pendingStoryId.value = it }
-    }
-
-    private fun askForNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }
-
-    /** Stops pushes for this device while still signed in, then signs out. */
-    private fun signOut() {
-        lifecycleScope.launch {
-            registrar.unregister()
-            auth.signOut()
+        intent?.getStringExtra(EXTRA_STORY_ID)?.toLongOrNull()?.let {
+            analytics.notificationOpen(it)
+            pendingStoryId.value = it
         }
     }
 }

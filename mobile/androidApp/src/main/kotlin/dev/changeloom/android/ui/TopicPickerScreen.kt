@@ -74,6 +74,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -82,6 +84,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.changeloom.android.R
 import dev.changeloom.android.ui.components.BannerTone
 import dev.changeloom.android.ui.components.ChangeloomTextField
 import dev.changeloom.android.ui.components.EmptyState
@@ -181,7 +184,7 @@ internal fun TopicPickerContent(
                 Icons.Rounded.ErrorOutline,
                 Modifier.padding(horizontal = Spacing.gutter).padding(top = 12.dp),
                 tone = BannerTone.Error,
-                actionLabel = if (selection == null) "Retry" else null,
+                actionLabel = if (selection == null) stringResource(R.string.retry) else null,
                 onAction = onRetry,
             )
             LazyColumn(
@@ -193,8 +196,8 @@ internal fun TopicPickerContent(
                     selection == null -> if (state.loading) items(SKELETON_CARDS) { SkeletonTopicCard() }
                     rows.isEmpty() -> item {
                         EmptyState(
-                            title = "No topics match",
-                            message = "Try a broader term like \"web\" or \"cloud\".",
+                            title = stringResource(R.string.topics_empty_title),
+                            message = stringResource(R.string.topics_empty_body),
                             art = { IconTile(Icons.Rounded.SearchOff) },
                         )
                     }
@@ -224,30 +227,30 @@ private fun PickerHeader(mode: TopicPickerMode, onExit: () -> Unit) {
             if (onboarding) {
                 LoomMark(Modifier.size(30.dp))
                 Spacer(Modifier.weight(1f))
-                TextAction("Sign out", onExit, color = c.fgMuted)
+                TextAction(stringResource(R.string.sign_out), onExit, color = c.fgMuted)
             } else {
                 IconButton(onClick = onExit) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = c.fg)
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.back), tint = c.fg)
                 }
             }
         }
         Spacer(Modifier.height(12.dp))
-        Eyebrow(if (onboarding) "Personalise your feed" else "Followed topics", Modifier.enter(delayMillis = 0), color = c.primaryText)
+        Eyebrow(stringResource(if (onboarding) R.string.topics_onboarding_eyebrow else R.string.topics_edit_eyebrow), Modifier.enter(delayMillis = 0), color = c.primaryText)
         Spacer(Modifier.height(8.dp))
         Column(Modifier.enter(delayMillis = 80)) {
             if (onboarding) {
-                Text("What do you", style = MaterialTheme.typography.headlineLarge, color = c.fg)
-                GradientText("build with?", style = MaterialTheme.typography.headlineLarge)
+                Text(stringResource(R.string.topics_onboarding_title_1), style = MaterialTheme.typography.headlineLarge, color = c.fg)
+                GradientText(stringResource(R.string.topics_onboarding_title_2), style = MaterialTheme.typography.headlineLarge)
             } else {
-                Text("Edit topics", style = MaterialTheme.typography.headlineLarge, color = c.fg)
+                Text(stringResource(R.string.edit_topics), style = MaterialTheme.typography.headlineLarge, color = c.fg)
             }
         }
         Spacer(Modifier.height(8.dp))
         Text(
             if (onboarding) {
-                "Follow a whole area or pick specific tools. You can change this any time."
+                stringResource(R.string.topics_onboarding_body)
             } else {
-                "Your feed updates as soon as you save."
+                stringResource(R.string.topics_edit_body)
             },
             Modifier.enter(delayMillis = 160),
             style = MaterialTheme.typography.bodyMedium,
@@ -263,12 +266,12 @@ private fun SearchField(query: String, onChange: (String) -> Unit, enabled: Bool
         onValueChange = onChange,
         modifier = modifier.fillMaxWidth(),
         enabled = enabled,
-        placeholder = "Search topics",
+        placeholder = stringResource(R.string.search_topics),
         leadingIcon = Icons.Rounded.Search,
         trailing = if (query.isEmpty()) {
             null
         } else {
-            { IconButton(onClick = { onChange("") }) { Icon(Icons.Rounded.Close, contentDescription = "Clear search") } }
+            { IconButton(onClick = { onChange("") }) { Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.clear_search)) } }
         },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
     )
@@ -323,19 +326,19 @@ private fun RootTopicCard(
                 Spacer(Modifier.height(2.dp))
                 Eyebrow(
                     when {
-                        !hasChildren -> if (state == CheckState.Checked) "Following" else "Single topic"
-                        picked == leaves.size -> "All ${leaves.size} topics"
-                        picked > 0 -> "$picked of ${leaves.size} selected"
-                        else -> "${leaves.size} topics"
+                        !hasChildren -> stringResource(if (state == CheckState.Checked) R.string.following else R.string.single_topic)
+                        picked == leaves.size -> stringResource(R.string.all_topics, leaves.size)
+                        picked > 0 -> stringResource(R.string.topics_selected, picked, leaves.size)
+                        else -> pluralStringResource(R.plurals.topic_count, leaves.size, leaves.size)
                     },
                     color = if (picked > 0) c.primaryText else c.fgSubtle,
                 )
             }
-            TriStateCheck(state, label = "Follow ${root.name}", onClick = { onToggle(root.slug) })
+            TriStateCheck(state, label = stringResource(R.string.follow_topic, root.name), onClick = { onToggle(root.slug) })
             if (hasChildren) {
                 Icon(
                     Icons.Rounded.ExpandMore,
-                    contentDescription = if (open) "Collapse ${root.name}" else "Expand ${root.name}",
+                    contentDescription = stringResource(if (open) R.string.collapse_topic else R.string.expand_topic, root.name),
                     tint = c.fgSubtle,
                     modifier = Modifier.rotate(chevron),
                 )
@@ -461,16 +464,16 @@ private fun PickerBar(
             .padding(horizontal = Spacing.gutter, vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextAction("Select all", onSelectAll, enabled = editable)
-            TextAction("Clear", onClear, enabled = editable && selection?.isEmpty == false)
+            TextAction(stringResource(R.string.select_all), onSelectAll, enabled = editable)
+            TextAction(stringResource(R.string.clear), onClear, enabled = editable && selection?.isEmpty == false)
             Spacer(Modifier.weight(1f))
             AnimatedContent(count, label = "selectedCount") { n ->
-                Eyebrow(if (n == 1) "1 topic" else "$n topics", color = if (n > 0) c.primaryText else c.fgSubtle)
+                Eyebrow(pluralStringResource(R.plurals.topic_count, n, n), color = if (n > 0) c.primaryText else c.fgSubtle)
             }
         }
         Spacer(Modifier.height(8.dp))
         PrimaryButton(
-            text = (if (mode == TopicPickerMode.Onboarding) "Continue" else "Save") + " · $count",
+            text = stringResource(if (mode == TopicPickerMode.Onboarding) R.string.continue_count else R.string.save_count, count),
             onClick = onSave,
             modifier = Modifier.fillMaxWidth(),
             enabled = canSave,

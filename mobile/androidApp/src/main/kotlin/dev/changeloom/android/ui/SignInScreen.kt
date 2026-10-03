@@ -75,6 +75,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -84,6 +85,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.changeloom.android.R
 import dev.changeloom.android.auth.requestGoogleIdToken
 import dev.changeloom.android.ui.components.BannerTone
 import dev.changeloom.android.ui.components.ChangeloomTextField
@@ -113,16 +115,28 @@ private const val MIN_PASSWORD_LENGTH = 6
 private const val ORB_PERIOD_MS = 24_000
 private val SHEET_MAX_WIDTH = 520.dp
 
-private enum class AuthMode(val action: String, val title: String, val subtitle: String, val switchPrompt: String) {
-    SignIn("Sign in", "Welcome back", "Pick up your feed where you left off.", "New here?"),
-    Register("Create account", "Create your account", "It takes a few seconds. You'll pick your topics next.", "Have an account?");
+private val AuthMode.action: Int get() = if (this == AuthMode.SignIn) R.string.sign_in else R.string.create_account
+private val AuthMode.title: Int get() = if (this == AuthMode.SignIn) R.string.sign_in_title else R.string.register_title
+private val AuthMode.subtitle: Int get() = if (this == AuthMode.SignIn) R.string.sign_in_subtitle else R.string.register_subtitle
+private val AuthMode.switchPrompt: Int get() = if (this == AuthMode.SignIn) R.string.sign_in_switch_prompt else R.string.register_switch_prompt
 
-    val other: AuthMode get() = if (this == SignIn) Register else SignIn
-}
+/** What the email form shows and does; the text lives in the view model so it survives process death. */
+private class AuthForm(
+    val mode: AuthMode,
+    val email: String,
+    val password: String,
+    val onMode: (AuthMode) -> Unit,
+    val onEmail: (String) -> Unit,
+    val onPassword: (String) -> Unit,
+    val onSubmit: () -> Unit,
+)
 
 @Composable
 fun SignInScreen(vm: SignInViewModel = koinViewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val mode by vm.mode.collectAsStateWithLifecycle()
+    val email by vm.email.collectAsStateWithLifecycle()
+    val password by vm.password.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // A second credential request while the account picker is up makes the system cancel the first one
@@ -130,8 +144,7 @@ fun SignInScreen(vm: SignInViewModel = koinViewModel()) {
     var picking by remember { mutableStateOf(false) }
     SignInContent(
         state = if (picking) state.copy(busy = true) else state,
-        onSignIn = vm::signIn,
-        onRegister = vm::register,
+        form = AuthForm(mode, email, password, vm::setMode, vm::setEmail, vm::setPassword, vm::submit),
         onGoogle = {
             if (!picking) {
                 picking = true
@@ -143,7 +156,7 @@ fun SignInScreen(vm: SignInViewModel = koinViewModel()) {
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        vm.fail(e.message ?: "Google sign-in failed")
+                        vm.googleFailed(e)
                     } finally {
                         picking = false
                     }
@@ -157,8 +170,7 @@ fun SignInScreen(vm: SignInViewModel = koinViewModel()) {
 @Composable
 private fun SignInContent(
     state: SignInState,
-    onSignIn: (String, String) -> Unit,
-    onRegister: (String, String) -> Unit,
+    form: AuthForm,
     onGoogle: () -> Unit,
 ) {
     val c = ChangeloomTheme.colors
@@ -176,7 +188,7 @@ private fun SignInContent(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Hero()
-                AuthSheet(state, onSignIn, onRegister, onGoogle)
+                AuthSheet(state, form, onGoogle)
             }
         }
     }
@@ -200,10 +212,10 @@ private fun Hero() {
     ) {
         LoomMark(Modifier.size(72.dp), animate = !LocalInspectionMode.current)
         Spacer(Modifier.height(20.dp))
-        GradientText("Changeloom", Modifier.enter(delayMillis = 350), style = MaterialTheme.typography.displayMedium)
+        GradientText(stringResource(R.string.app_brand), Modifier.enter(delayMillis = 350), style = MaterialTheme.typography.displayMedium)
         Spacer(Modifier.height(10.dp))
         WordRiseText(
-            "Every release that matters, woven into one feed.",
+            stringResource(R.string.tagline),
             Modifier.widthIn(max = 320.dp),
             style = MaterialTheme.typography.titleMedium,
             color = ChangeloomTheme.colors.fgMuted,
@@ -216,20 +228,17 @@ private fun Hero() {
 @Composable
 private fun AuthSheet(
     state: SignInState,
-    onSignIn: (String, String) -> Unit,
-    onRegister: (String, String) -> Unit,
+    form: AuthForm,
     onGoogle: () -> Unit,
 ) {
     val c = ChangeloomTheme.colors
     val focus = LocalFocusManager.current
-    var mode by rememberSaveable { mutableStateOf(AuthMode.SignIn) }
-    var email by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
+    val mode = form.mode
     var showPassword by rememberSaveable { mutableStateOf(false) }
-    val filled = email.isNotBlank() && password.isNotEmpty()
+    val filled = form.email.isNotBlank() && form.password.isNotEmpty()
     val submit = {
         focus.clearFocus()
-        if (mode == AuthMode.SignIn) onSignIn(email, password) else onRegister(email, password)
+        form.onSubmit()
     }
 
     // Shake the form whenever a new error arrives (the view model clears it at the start of each attempt).
@@ -255,14 +264,14 @@ private fun AuthSheet(
     ) {
         AnimatedContent(mode, transitionSpec = { fadeIn(expoTween()) togetherWith fadeOut(expoTween()) }, label = "authTitle") { m ->
             Column {
-                Text(m.title, style = MaterialTheme.typography.headlineSmall, color = c.fg)
+                Text(stringResource(m.title), style = MaterialTheme.typography.headlineSmall, color = c.fg)
                 Spacer(Modifier.height(4.dp))
-                Text(m.subtitle, style = MaterialTheme.typography.bodyMedium, color = c.fgMuted)
+                Text(stringResource(m.subtitle), style = MaterialTheme.typography.bodyMedium, color = c.fgMuted)
             }
         }
         Spacer(Modifier.height(24.dp))
         SecondaryButton(
-            text = "Continue with Google",
+            text = stringResource(R.string.continue_with_google),
             onClick = onGoogle,
             modifier = Modifier.fillMaxWidth(),
             enabled = !state.busy,
@@ -270,35 +279,35 @@ private fun AuthSheet(
         )
         Row(Modifier.padding(vertical = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             HorizontalDivider(Modifier.weight(1f), color = c.line)
-            Eyebrow("or with email", Modifier.padding(horizontal = 12.dp))
+            Eyebrow(stringResource(R.string.or_with_email), Modifier.padding(horizontal = 12.dp))
             HorizontalDivider(Modifier.weight(1f), color = c.line)
         }
         Column(Modifier.graphicsLayer { translationX = shake.value }) {
             ChangeloomTextField(
-                value = email,
-                onValueChange = { email = it },
-                label = "Email",
-                placeholder = "you@example.com",
+                value = form.email,
+                onValueChange = form.onEmail,
+                label = stringResource(R.string.email),
+                placeholder = stringResource(R.string.email_placeholder),
                 leadingIcon = Icons.Rounded.AlternateEmail,
                 enabled = !state.busy,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
             )
             Spacer(Modifier.height(16.dp))
             ChangeloomTextField(
-                value = password,
-                onValueChange = { password = it },
-                label = "Password",
+                value = form.password,
+                onValueChange = form.onPassword,
+                label = stringResource(R.string.password),
                 leadingIcon = Icons.Rounded.Lock,
                 enabled = !state.busy,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { if (filled && !state.busy) submit() }),
                 visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                supportingText = if (mode == AuthMode.Register) "At least $MIN_PASSWORD_LENGTH characters" else null,
+                supportingText = if (mode == AuthMode.Register) stringResource(R.string.password_hint, MIN_PASSWORD_LENGTH) else null,
                 trailing = {
                     IconButton(onClick = { showPassword = !showPassword }) {
                         Icon(
                             if (showPassword) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                            contentDescription = if (showPassword) "Hide password" else "Show password",
+                            contentDescription = stringResource(if (showPassword) R.string.hide_password else R.string.show_password),
                         )
                     }
                 },
@@ -311,7 +320,7 @@ private fun AuthSheet(
             )
             Spacer(Modifier.height(20.dp))
             PrimaryButton(
-                text = mode.action,
+                text = stringResource(mode.action),
                 onClick = submit,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = filled,
@@ -324,8 +333,8 @@ private fun AuthSheet(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(mode.switchPrompt, style = MaterialTheme.typography.bodyMedium, color = c.fgMuted)
-            TextAction(mode.other.action, onClick = { mode = mode.other }, enabled = !state.busy)
+            Text(stringResource(mode.switchPrompt), style = MaterialTheme.typography.bodyMedium, color = c.fgMuted)
+            TextAction(stringResource(mode.other.action), onClick = { form.onMode(mode.other) }, enabled = !state.busy)
         }
     }
 }
@@ -383,7 +392,7 @@ private fun GoogleMark(modifier: Modifier = Modifier) {
 }
 
 /** Generated by the google-services plugin only when the Firebase config has a Google OAuth client. */
-private fun webClientId(context: android.content.Context): String {
+internal fun webClientId(context: android.content.Context): String {
     val id = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
     check(id != 0) {
         "Google sign-in is not configured: enable the Google provider and add your SHA-1 in Firebase, then re-download google-services.json"
@@ -394,7 +403,7 @@ private fun webClientId(context: android.content.Context): String {
 @Preview(name = "Dark", heightDp = 860)
 @Composable
 private fun SignInDark() = ChangeloomTheme(ThemeMode.Dark) {
-    SignInContent(SignInState(), onSignIn = { _, _ -> }, onRegister = { _, _ -> }, onGoogle = {})
+    SignInContent(SignInState(), previewForm(AuthMode.SignIn), onGoogle = {})
 }
 
 @Preview(name = "Light, error", heightDp = 860)
@@ -402,8 +411,9 @@ private fun SignInDark() = ChangeloomTheme(ThemeMode.Dark) {
 private fun SignInLight() = ChangeloomTheme(ThemeMode.Light) {
     SignInContent(
         SignInState(error = "The supplied auth credential is incorrect."),
-        onSignIn = { _, _ -> },
-        onRegister = { _, _ -> },
+        previewForm(AuthMode.Register),
         onGoogle = {},
     )
 }
+
+private fun previewForm(mode: AuthMode) = AuthForm(mode, "ada@example.com", "", {}, {}, {}, {})

@@ -1,6 +1,8 @@
 package dev.changeloom.android.ui
 
+import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -40,11 +42,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.LazyItemScope
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
@@ -96,12 +98,25 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.changeloom.android.R
+import dev.changeloom.android.ads.FeedAds
+import dev.changeloom.android.ads.NativeAdCard
+import dev.changeloom.android.ads.NativeAdRepository
+import dev.changeloom.android.play.ReviewPromptEffect
+import dev.changeloom.android.push.NotificationRationale
+import dev.changeloom.android.telemetry.TrackScreen
 import dev.changeloom.android.ui.components.BannerTone
 import dev.changeloom.android.ui.components.EmptyState
 import dev.changeloom.android.ui.components.Eyebrow
@@ -133,6 +148,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -142,11 +158,11 @@ import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.util.Locale
 
-private enum class Tab(val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
-    Feed("Feed", Icons.Outlined.Home, Icons.Rounded.Home),
-    Search("Search", Icons.Rounded.Search, Icons.Rounded.Search),
-    Saved("Saved", Icons.Rounded.BookmarkBorder, Icons.Rounded.Bookmark),
-    Profile("Profile", Icons.Rounded.PersonOutline, Icons.Rounded.Person),
+private enum class Tab(@StringRes val label: Int, val icon: ImageVector, val selectedIcon: ImageVector) {
+    Feed(R.string.tab_feed, Icons.Outlined.Home, Icons.Rounded.Home),
+    Search(R.string.tab_search, Icons.Rounded.Search, Icons.Rounded.Search),
+    Saved(R.string.tab_saved, Icons.Rounded.BookmarkBorder, Icons.Rounded.Bookmark),
+    Profile(R.string.tab_profile, Icons.Rounded.PersonOutline, Icons.Rounded.Person),
 }
 
 /** What covers the tab shell, if anything. */
@@ -196,8 +212,17 @@ fun MainScreen(openStoryId: Long? = null, onOpenStoryHandled: () -> Unit = {}) {
     }
 
     val overlay = storyId?.let { Overlay.Story(it) } ?: if (editingTopics) Overlay.Topics else Overlay.None
+    TrackScreen(
+        when (overlay) {
+            is Overlay.Story -> "story"
+            Overlay.Topics -> "topics_edit"
+            Overlay.None -> tab.name.lowercase()
+        },
+    )
     BackHandler(enabled = storyId != null) { storyId = null }
     BackHandler(enabled = overlay == Overlay.None && tab != Tab.Feed) { tab = Tab.Feed }
+    NotificationRationale()
+    ReviewPromptEffect(enabled = overlay == Overlay.None)
 
     CompositionLocalProvider(LocalTopicName provides topicName) {
         SharedTransitionLayout(Modifier.fillMaxSize().background(ChangeloomTheme.colors.bg)) {
@@ -287,7 +312,7 @@ private fun TabItem(tab: Tab, selected: Boolean, badge: Boolean, onClick: () -> 
             }
         }
         Spacer(Modifier.height(4.dp))
-        Text(tab.label, style = MaterialTheme.typography.labelSmall, color = fg)
+        Text(stringResource(tab.label), style = MaterialTheme.typography.labelSmall, color = fg)
     }
 }
 
@@ -299,16 +324,23 @@ private fun FeedScreen(
     userEmail: String?,
     contentPadding: PaddingValues,
     vm: TimelineViewModel = koinViewModel(),
+    adRepository: NativeAdRepository = koinInject(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val ads by adRepository.feedAds.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { adRepository.refresh() }
     FeedContent(
         state = state,
         displayName = displayName,
         userEmail = userEmail,
         contentPadding = contentPadding,
+        ads = ads,
         onOpen = onOpen,
         onProfile = onProfile,
-        onRefresh = vm::refresh,
+        onRefresh = {
+            vm.refresh()
+            adRepository.refresh()
+        },
         onLoadMore = vm::loadMore,
         onSetRead = vm::setRead,
         onSetSaved = vm::setBookmarked,
@@ -330,6 +362,7 @@ internal fun FeedContent(
     onSetRead: (Long, Boolean) -> Unit,
     onSetSaved: (Long, Boolean) -> Unit,
     onDismissError: () -> Unit,
+    ads: FeedAds? = null,
 ) {
     val c = ChangeloomTheme.colors
     val listState = rememberLazyListState()
@@ -357,7 +390,7 @@ internal fun FeedContent(
             },
         ) {
             LazyColumn(
-                Modifier.fillMaxSize(),
+                Modifier.fillMaxSize().testTag("feed"),
                 state = listState,
                 contentPadding = listPadding(contentPadding),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -365,30 +398,34 @@ internal fun FeedContent(
                 item(key = "header") { FeedHeader(displayName, userEmail, fresh.size, onProfile) }
                 item(key = "banners") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        StatusBanner(if (state.offline) "Offline — showing saved stories" else null, Icons.Rounded.CloudOff, tone = BannerTone.Warning)
-                        StatusBanner(state.error, Icons.Rounded.ErrorOutline, tone = BannerTone.Error, actionLabel = "Dismiss", onAction = onDismissError)
+                        StatusBanner(if (state.offline) stringResource(R.string.offline_banner) else null, Icons.Rounded.CloudOff, tone = BannerTone.Warning)
+                        StatusBanner(state.error, Icons.Rounded.ErrorOutline, tone = BannerTone.Error, actionLabel = stringResource(R.string.dismiss), onAction = onDismissError)
                     }
                 }
                 when {
                     state.items.isEmpty() && state.refreshing -> items(LIST_SKELETON_CARDS) { SkeletonStoryCard() }
                     state.items.isEmpty() -> item(key = "empty") {
                         EmptyState(
-                            title = "No stories yet",
-                            message = "New releases and changes for your topics land here. Pull down to check again.",
-                            action = { SecondaryButton("Refresh", onRefresh, icon = Icons.Rounded.Refresh) },
+                            title = stringResource(R.string.feed_empty_title),
+                            message = stringResource(R.string.feed_empty_body),
+                            action = { SecondaryButton(stringResource(R.string.refresh), onRefresh, icon = Icons.Rounded.Refresh) },
                         )
                     }
                     else -> {
                         if (fresh.isNotEmpty()) {
-                            item(key = "new") { SectionHeader("New for you", fresh.size, highlight = true, Modifier.animateItem()) }
-                            itemsIndexed(fresh, key = { _, s -> s.id }) { i, story ->
-                                FeedCard(story, staggered, i, onOpen, onSetRead, onSetSaved)
+                            item(key = "new") { SectionHeader(stringResource(R.string.section_new), fresh.size, highlight = true, Modifier.animateItem()) }
+                            fresh.forEachIndexed { i, story ->
+                                item(key = story.id, contentType = STORY_CONTENT) { FeedCard(story, staggered, i, onOpen, onSetRead, onSetSaved) }
+                                feedAd(ads, i)
                             }
                         }
                         if (earlier.isNotEmpty()) {
-                            item(key = "earlier") { SectionHeader("Earlier", null, highlight = false, Modifier.animateItem()) }
-                            itemsIndexed(earlier, key = { _, s -> s.id }) { i, story ->
-                                FeedCard(story, staggered, fresh.size + i, onOpen, onSetRead, onSetSaved)
+                            item(key = "earlier") { SectionHeader(stringResource(R.string.section_earlier), null, highlight = false, Modifier.animateItem()) }
+                            earlier.forEachIndexed { i, story ->
+                                item(key = story.id, contentType = STORY_CONTENT) {
+                                    FeedCard(story, staggered, fresh.size + i, onOpen, onSetRead, onSetSaved)
+                                }
+                                feedAd(ads, fresh.size + i)
                             }
                         }
                         if (state.loadingMore) item(key = "more") { SkeletonStoryCard() }
@@ -398,6 +435,13 @@ internal fun FeedContent(
         }
         StatusBarScrim(listState.canScrollBackward)
     }
+}
+
+/** The ad after the story at [index] in the feed, if one goes there. Ads never show outside the feed. */
+private fun LazyListScope.feedAd(ads: FeedAds?, index: Int) {
+    val slot = ads?.slotAfter(index) ?: return
+    val ad = ads.adFor(slot) ?: return
+    item(key = "ad-$slot", contentType = AD_CONTENT) { NativeAdCard(ad, Modifier.animateItem()) }
 }
 
 @Composable
@@ -412,13 +456,13 @@ private fun LazyItemScope.FeedCard(
     val entrance = if (animateIn && index < STAGGERED_CARDS) Modifier.enter(delayMillis = STAGGER_START_MILLIS + index * STAGGER_STEP_MILLIS) else Modifier
     SwipeActions(
         startToEnd = SwipeAction(
-            label = if (story.isRead) "Mark unread" else "Mark read",
+            label = stringResource(if (story.isRead) R.string.mark_unread else R.string.mark_read),
             icon = if (story.isRead) Icons.Rounded.MarkEmailUnread else Icons.Rounded.DoneAll,
             color = ChangeloomTheme.colors.success,
             onSwipe = { onSetRead(story.id, !story.isRead) },
         ),
         endToStart = SwipeAction(
-            label = if (story.isBookmarked) "Unsave" else "Save",
+            label = stringResource(if (story.isBookmarked) R.string.unsave else R.string.save),
             icon = if (story.isBookmarked) Icons.Rounded.BookmarkRemove else Icons.Rounded.Bookmark,
             color = ChangeloomTheme.colors.primary,
             onSwipe = { onSetSaved(story.id, !story.isBookmarked) },
@@ -435,29 +479,34 @@ private fun LazyItemScope.FeedCard(
 private fun FeedHeader(displayName: String?, userEmail: String?, freshCount: Int, onProfile: () -> Unit) {
     val c = ChangeloomTheme.colors
     val name = greetingName(displayName, userEmail)
-    val today = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMM d", Locale.getDefault())) }
+    val today = remember { LocalDate.now().format(localizedPattern("EEEEMMMd")) }
     Column(Modifier.padding(top = 8.dp, bottom = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Eyebrow(today, Modifier.enter(delayMillis = 0), color = c.primaryText)
                 Spacer(Modifier.height(8.dp))
                 Column(Modifier.enter(delayMillis = 80)) {
-                    Text(greeting(LocalTime.now()) + if (name != null) "," else "", style = MaterialTheme.typography.headlineMedium, color = c.fg)
-                    GradientText(name ?: "your changelog", style = MaterialTheme.typography.headlineMedium)
+                    val greeting = stringResource(greeting(LocalTime.now()))
+                    Text(
+                        if (name != null) stringResource(R.string.greeting_before_name, greeting) else greeting,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = c.fg,
+                    )
+                    GradientText(name ?: stringResource(R.string.greeting_fallback_name), style = MaterialTheme.typography.headlineMedium)
                 }
             }
             GradientAvatar(
                 displayName ?: userEmail ?: "?",
-                Modifier.clip(CircleShape).clickable(onClickLabel = "Open profile", onClick = onProfile).enter(delayMillis = 120),
+                Modifier.clip(CircleShape).clickable(onClickLabel = stringResource(R.string.open_profile), onClick = onProfile).enter(delayMillis = 120),
                 size = 48.dp,
             )
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            when (freshCount) {
-                0 -> "You're all caught up."
-                1 -> "1 new update across your topics."
-                else -> "$freshCount new updates across your topics."
+            if (freshCount == 0) {
+                stringResource(R.string.feed_caught_up)
+            } else {
+                pluralStringResource(R.plurals.feed_new_updates, freshCount, freshCount)
             },
             Modifier.enter(delayMillis = 160),
             style = MaterialTheme.typography.bodyMedium,
@@ -489,7 +538,7 @@ internal fun StoryCard(story: StorySummary, onOpen: () -> Unit, onToggleSave: ()
     val brand = ChangeloomTheme.gradients.brand
     val accent by animateFloatAsState(if (story.isRead) 0f else 1f, expoTween(Durations.SLOW), label = "unreadAccent")
     GlassCard(
-        modifier.fillMaxWidth(),
+        modifier.fillMaxWidth().testTag("story_card"),
         onClick = onOpen,
         contentPadding = PaddingValues(start = Spacing.cardPadding, end = 4.dp, top = Spacing.cardPadding, bottom = 4.dp),
     ) {
@@ -508,7 +557,7 @@ internal fun StoryCard(story: StorySummary, onOpen: () -> Unit, onToggleSave: ()
                 Spacer(Modifier.weight(1f))
                 // Only the timeline sets `match`; followed stories need no label.
                 if (story.match != null && story.match != "followed") {
-                    Eyebrow("Suggested", Modifier.padding(end = 8.dp), color = c.accent)
+                    Eyebrow(stringResource(R.string.suggested), Modifier.padding(end = 8.dp), color = c.accent)
                 }
                 Eyebrow(relativeTime(story.publishedAt))
             }
@@ -599,7 +648,14 @@ internal fun SwipeActions(
     }
     SwipeToDismissBox(
         state = state,
-        modifier = modifier,
+        modifier = modifier.semantics {
+            customActions = listOfNotNull(startToEnd, endToStart).map { action ->
+                CustomAccessibilityAction(action.label) {
+                    action.onSwipe()
+                    true
+                }
+            }
+        },
         enableDismissFromStartToEnd = startToEnd != null,
         enableDismissFromEndToStart = endToStart != null,
         onDismiss = onDismiss,
@@ -672,11 +728,16 @@ internal fun listPadding(shellPadding: PaddingValues, top: Boolean = true): Padd
     )
 }
 
-private fun greeting(now: LocalTime): String = when (now.hour) {
-    in 5..11 -> "Good morning"
-    in 12..17 -> "Good afternoon"
-    else -> "Good evening"
+@StringRes
+private fun greeting(now: LocalTime): Int = when (now.hour) {
+    in 5..11 -> R.string.greeting_morning
+    in 12..17 -> R.string.greeting_afternoon
+    else -> R.string.greeting_evening
 }
+
+/** A date format with [skeleton]'s fields in the user's locale's order, e.g. "MMMd" → "Oct 3" or "3 Oct". */
+internal fun localizedPattern(skeleton: String): DateTimeFormatter =
+    DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(Locale.getDefault(), skeleton), Locale.getDefault())
 
 /** First word of the account's display name ("Ada Lovelace" → "Ada"), else a guess from the email. */
 internal fun greetingName(displayName: String?, email: String?): String? =
@@ -687,7 +748,8 @@ internal fun firstNameOf(email: String): String? =
     email.substringBefore('@').split('.', '_', '-', '+').firstOrNull { it.isNotBlank() }
         ?.replaceFirstChar { it.titlecase(Locale.getDefault()) }
 
-/** "just now", "5m", "3h", "2d", then a short date. Falls back to the raw date if the timestamp won't parse. */
+/** "just now", "5m ago", "3h ago", "2d ago", then a short date. Falls back to the raw date if the timestamp won't parse. */
+@Composable
 internal fun relativeTime(publishedAt: String, now: Instant = Instant.now()): String {
     val then = try {
         Instant.parse(publishedAt)
@@ -696,11 +758,11 @@ internal fun relativeTime(publishedAt: String, now: Instant = Instant.now()): St
     }
     val age = Duration.between(then, now)
     return when {
-        age.toMinutes() < 1 -> "just now"
-        age.toHours() < 1 -> "${age.toMinutes()}m ago"
-        age.toDays() < 1 -> "${age.toHours()}h ago"
-        age.toDays() < WEEK_DAYS -> "${age.toDays()}d ago"
-        else -> DateTimeFormatter.ofPattern("MMM d", Locale.getDefault()).format(then.atZone(ZoneId.systemDefault()))
+        age.toMinutes() < 1 -> stringResource(R.string.time_just_now)
+        age.toHours() < 1 -> stringResource(R.string.time_minutes_ago, age.toMinutes())
+        age.toDays() < 1 -> stringResource(R.string.time_hours_ago, age.toHours())
+        age.toDays() < WEEK_DAYS -> stringResource(R.string.time_days_ago, age.toDays())
+        else -> localizedPattern("MMMd").format(then.atZone(ZoneId.systemDefault()))
     }
 }
 
@@ -767,3 +829,5 @@ private const val WEEK_DAYS = 7
 private const val TITLE_LINES = 3
 private const val SUMMARY_LINES = 3
 private const val MAX_CARD_TOPICS = 2
+private const val STORY_CONTENT = "story"
+private const val AD_CONTENT = "ad"

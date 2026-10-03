@@ -32,6 +32,46 @@
         </service>
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="@string/security_channel_id" />
+            android:value="@string/story_updates_channel_id" />
+
+        <!-- Off in debug builds (build.gradle.kts). No user id is ever set. -->
+        <meta-data
+            android:name="firebase_crashlytics_collection_enabled"
+            android:value="${firebaseCollectionEnabled}" />
+        <meta-data
+            android:name="firebase_analytics_collection_enabled"
+            android:value="${firebaseCollectionEnabled}" />
+        <meta-data
+            android:name="firebase_performance_collection_enabled"
+            android:value="${firebaseCollectionEnabled}" />
+        <!-- One activity hosts every screen, so the app logs screen_view itself (Analytics.screenView). -->
+        <meta-data
+            android:name="google_analytics_automatic_screen_reporting_enabled"
+            android:value="false" />
+        <!-- Consent mode starts denied; ConsentManager applies the user's UMP answer (granted outside the EEA/UK). -->
+        <meta-data
+            android:name="google_analytics_default_allow_analytics_storage"
+            android:value="false" />
+        <meta-data
+            android:name="google_analytics_default_allow_ad_storage"
+            android:value="false" />
+        <meta-data
+            android:name="google_analytics_default_allow_ad_user_data"
+            android:value="false" />
+        <meta-data
+            android:name="google_analytics_default_allow_ad_personalization_signals"
+            android:value="false" />
+
+        <!-- AdMob: Google's test app id except in prod release builds (build.gradle.kts). -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="${admobAppId}" />
+        <!-- Moves the SDK's start-up and ad-loading work off the main thread. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.flag.OPTIMIZE_INITIALIZATION"
+            android:value="true" />
+        <meta-data
+            android:name="com.google.android.gms.ads.flag.OPTIMIZE_AD_LOADING"
+            android:value="true" />
     </application>
 </manifest>

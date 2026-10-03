@@ -18,8 +18,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import dev.changeloom.android.R
 import dev.changeloom.android.ui.components.ChangeloomTextField
 import dev.changeloom.android.ui.components.Eyebrow
 import dev.changeloom.android.ui.components.PrimaryButton
@@ -33,10 +35,10 @@ internal fun TopicRequestSection(state: ProfileState, onText: (String) -> Unit, 
     val c = ChangeloomTheme.colors
     val canSubmit = state.requestText.trim().length >= REQUEST_MIN_LENGTH && !state.submittingRequest
     Column {
-        Eyebrow("Request a topic")
+        Eyebrow(stringResource(R.string.request_title))
         Spacer(Modifier.height(4.dp))
         Text(
-            "Can't find what you want to follow? Tell us and we'll add it.",
+            stringResource(R.string.request_body),
             style = MaterialTheme.typography.bodyMedium,
             color = c.fgMuted,
         )
@@ -46,7 +48,7 @@ internal fun TopicRequestSection(state: ProfileState, onText: (String) -> Unit, 
             onValueChange = { if (it.length <= REQUEST_MAX_LENGTH) onText(it) },
             modifier = Modifier.fillMaxWidth(),
             enabled = !state.submittingRequest,
-            placeholder = "e.g. Rust, Kubernetes, Figma",
+            placeholder = stringResource(R.string.request_placeholder),
             isError = state.requestError != null,
             supportingText = state.requestError,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -54,7 +56,7 @@ internal fun TopicRequestSection(state: ProfileState, onText: (String) -> Unit, 
         )
         Spacer(Modifier.height(12.dp))
         PrimaryButton(
-            "Send request",
+            stringResource(R.string.request_send),
             onClick = onSubmit,
             modifier = Modifier.fillMaxWidth(),
             enabled = canSubmit || state.submittingRequest,
@@ -63,7 +65,7 @@ internal fun TopicRequestSection(state: ProfileState, onText: (String) -> Unit, 
         val requests = state.requests.orEmpty()
         if (requests.isNotEmpty()) {
             Spacer(Modifier.height(20.dp))
-            Eyebrow("Your requests")
+            Eyebrow(stringResource(R.string.request_list_title))
             Spacer(Modifier.height(8.dp))
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { requests.forEach { RequestRow(it) } }
         }
@@ -75,10 +77,10 @@ private fun RequestRow(request: TopicRequest) {
     val c = ChangeloomTheme.colors
     val topicName = LocalTopicName.current
     val (label, color) = when (request.status) {
-        "accepted" -> "Added" to c.success
-        "merged" -> "Already covered" to c.success
-        "rejected" -> "Declined" to c.rose
-        else -> "Pending" to c.fgMuted
+        "accepted" -> R.string.request_added to c.success
+        "merged" -> R.string.request_covered to c.success
+        "rejected" -> R.string.request_declined to c.rose
+        else -> R.string.request_pending to c.fgMuted
     }
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -89,9 +91,9 @@ private fun RequestRow(request: TopicRequest) {
                 color = c.fg,
                 maxLines = 1,
             )
-            StatusChip(label, color)
+            StatusChip(stringResource(label), color)
         }
-        val detail = listOfNotNull(request.topic?.let { "Topic: ${topicName(it)}" }, request.note).joinToString(" · ")
+        val detail = listOfNotNull(request.topic?.let { stringResource(R.string.request_topic, topicName(it)) }, request.note).joinToString(" · ")
         if (detail.isNotEmpty()) {
             Text(detail, style = MaterialTheme.typography.bodySmall, color = c.fgMuted)
         }

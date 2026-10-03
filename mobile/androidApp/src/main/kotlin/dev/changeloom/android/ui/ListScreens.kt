@@ -41,10 +41,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.changeloom.android.R
 import dev.changeloom.android.ui.components.BannerTone
 import dev.changeloom.android.ui.components.ChangeloomTextField
 import dev.changeloom.android.ui.components.EmptyState
@@ -115,9 +118,9 @@ internal fun SearchContent(
         // Side insets are applied per child: listPadding() already includes them for the results.
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))) {
             Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = Spacing.gutter).padding(top = 16.dp)) {
-                Eyebrow("Search", Modifier.enter(delayMillis = 0), color = c.primaryText)
+                Eyebrow(stringResource(R.string.tab_search), Modifier.enter(delayMillis = 0), color = c.primaryText)
                 Spacer(Modifier.height(8.dp))
-                Text("Find any change", Modifier.enter(delayMillis = 80), style = MaterialTheme.typography.headlineMedium, color = c.fg)
+                Text(stringResource(R.string.search_title), Modifier.enter(delayMillis = 80), style = MaterialTheme.typography.headlineMedium, color = c.fg)
                 Spacer(Modifier.height(16.dp))
                 SearchField(query, onQueryChange, search, Modifier.enter(delayMillis = 160))
                 StatusBanner(
@@ -125,7 +128,7 @@ internal fun SearchContent(
                     Icons.Rounded.ErrorOutline,
                     Modifier.padding(top = 12.dp),
                     tone = BannerTone.Error,
-                    actionLabel = "Dismiss",
+                    actionLabel = stringResource(R.string.dismiss),
                     onAction = onDismissError,
                 )
             }
@@ -135,8 +138,8 @@ internal fun SearchContent(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) { repeat(LIST_SKELETON_CARDS) { SkeletonStoryCard() } }
                 state.items.isEmpty() && state.loaded -> EmptyState(
-                    title = "No stories match",
-                    message = "Try a library name, a version number or a broader keyword.",
+                    title = stringResource(R.string.search_empty_title),
+                    message = stringResource(R.string.search_empty_body),
                     art = { IconTile(Icons.Rounded.SearchOff) },
                 )
                 state.items.isEmpty() -> Column(
@@ -146,7 +149,7 @@ internal fun SearchContent(
                         .padding(top = 24.dp)
                         .enter(delayMillis = 240),
                 ) {
-                    Eyebrow("Try searching for")
+                    Eyebrow(stringResource(R.string.search_suggestions))
                     Spacer(Modifier.height(12.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         suggestions.forEach { TopicChip(it, onClick = { keyboard?.hide(); onSuggestion(it) }) }
@@ -180,16 +183,16 @@ private fun SearchField(query: String, onChange: (String) -> Unit, onSearch: () 
         value = query,
         onValueChange = onChange,
         modifier = modifier.fillMaxWidth(),
-        placeholder = "Search releases, CVEs, deprecations…",
+        placeholder = stringResource(R.string.search_placeholder),
         leadingIcon = Icons.Rounded.Search,
         trailing = if (query.isEmpty()) {
             null
         } else {
             {
                 Row {
-                    IconButton(onClick = { onChange("") }) { Icon(Icons.Rounded.Close, contentDescription = "Clear search") }
+                    IconButton(onClick = { onChange("") }) { Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.clear_search)) }
                     IconButton(onClick = onSearch, enabled = query.isNotBlank()) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = "Search", tint = c.primaryText)
+                        Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = stringResource(R.string.tab_search), tint = c.primaryText)
                     }
                 }
             }
@@ -241,13 +244,13 @@ internal fun SavedContent(
         ) {
             item(key = "header") {
                 Column(Modifier.padding(top = 8.dp, bottom = 4.dp)) {
-                    Eyebrow("Saved", Modifier.enter(delayMillis = 0), color = c.primaryText)
+                    Eyebrow(stringResource(R.string.tab_saved), Modifier.enter(delayMillis = 0), color = c.primaryText)
                     Spacer(Modifier.height(8.dp))
-                    Text("Your reading list", Modifier.enter(delayMillis = 80), style = MaterialTheme.typography.headlineMedium, color = c.fg)
+                    Text(stringResource(R.string.saved_title), Modifier.enter(delayMillis = 80), style = MaterialTheme.typography.headlineMedium, color = c.fg)
                     if (state.items.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            (if (state.items.size == 1) "1 story" else "${state.items.size} stories") + " · swipe left to remove",
+                            pluralStringResource(R.plurals.saved_count, state.items.size, state.items.size),
                             Modifier.enter(delayMillis = 160),
                             style = MaterialTheme.typography.bodyMedium,
                             color = c.fgMuted,
@@ -258,7 +261,7 @@ internal fun SavedContent(
                         Icons.Rounded.ErrorOutline,
                         Modifier.padding(top = 12.dp),
                         tone = BannerTone.Error,
-                        actionLabel = "Dismiss",
+                        actionLabel = stringResource(R.string.dismiss),
                         onAction = onDismissError,
                     )
                 }
@@ -267,17 +270,17 @@ internal fun SavedContent(
                 state.items.isEmpty() && (state.loading || !state.loaded) -> items(LIST_SKELETON_CARDS) { SkeletonStoryCard() }
                 state.items.isEmpty() -> item(key = "empty") {
                     EmptyState(
-                        title = "Nothing saved yet",
-                        message = "Tap the bookmark on any story to keep it here for later.",
+                        title = stringResource(R.string.saved_empty_title),
+                        message = stringResource(R.string.saved_empty_body),
                         art = { IconTile(Icons.Rounded.BookmarkBorder) },
-                        action = { SecondaryButton("Browse your feed", onBrowse) },
+                        action = { SecondaryButton(stringResource(R.string.browse_feed), onBrowse) },
                     )
                 }
                 else -> {
                     items(state.items, key = { it.id }) { story ->
                         SwipeActions(
                             startToEnd = null,
-                            endToStart = SwipeAction("Remove", Icons.Rounded.BookmarkRemove, c.rose, onSwipe = { onRemove(story.id) }),
+                            endToStart = SwipeAction(stringResource(R.string.remove), Icons.Rounded.BookmarkRemove, c.rose, onSwipe = { onRemove(story.id) }),
                             resetAfterSwipe = false,
                             modifier = Modifier.animateItem(),
                         ) {

@@ -1,5 +1,205 @@
 <resources>
     <string name="app_name">Changeloom</string>
-    <string name="security_channel_id" translatable="false">security_alerts</string>
-    <string name="security_channel_name">Security alerts</string>
+    <!-- The brand as shown in the app; app_name is the launcher label (staging overrides it). -->
+    <string name="app_brand" translatable="false">Changeloom</string>
+    <string name="app_version">Changeloom v%1$s</string>
+    <string name="tagline">Every release that matters, woven into one feed.</string>
+
+    <!-- Common actions -->
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="not_now">Not now</string>
+
+    <!-- Sign in -->
+    <string name="sign_in">Sign in</string>
+    <string name="create_account">Create account</string>
+    <string name="sign_in_title">Welcome back</string>
+    <string name="register_title">Create your account</string>
+    <string name="sign_in_subtitle">Pick up your feed where you left off.</string>
+    <string name="register_subtitle">It takes a few seconds. You\'ll pick your topics next.</string>
+    <string name="sign_in_switch_prompt">New here?</string>
+    <string name="register_switch_prompt">Have an account?</string>
+    <string name="continue_with_google">Continue with Google</string>
+    <string name="or_with_email">or with email</string>
+    <string name="email">Email</string>
+    <string name="email_placeholder">you@example.com</string>
+    <string name="password">Password</string>
+    <string name="password_hint">At least %1$d characters</string>
+    <string name="show_password">Show password</string>
+    <string name="hide_password">Hide password</string>
+
+    <!-- What failed; ErrorText adds what the user can do about it -->
+    <string name="google_sign_in_failed">Google sign-in failed</string>
+    <string name="sign_in_failed">Sign-in failed</string>
+    <string name="topics_load_failed">Couldn\'t load topics</string>
+    <string name="topics_save_failed">Couldn\'t save your topics</string>
+    <string name="story_load_failed">Couldn\'t load this story</string>
+    <string name="stats_load_failed">Couldn\'t load your stats</string>
+    <string name="request_send_failed">Couldn\'t send your request</string>
+    <string name="reauth_failed">Couldn\'t confirm it\'s you</string>
+    <string name="delete_failed">Couldn\'t delete your account</string>
+
+    <!-- Errors (ErrorText) -->
+    <string name="error_weak_password">Choose a stronger password (at least 6 characters).</string>
+    <string name="error_invalid_email">Enter a valid email address.</string>
+    <string name="error_wrong_credentials">Wrong email or password.</string>
+    <string name="error_no_account">That account doesn\'t exist or has been disabled.</string>
+    <string name="error_email_taken">An account already uses this email. Sign in instead.</string>
+    <string name="error_too_many_attempts">Too many attempts. Wait a few minutes and try again.</string>
+    <string name="error_offline">%1$s. Check your connection and try again.</string>
+    <string name="error_no_google_account">No Google account is available on this device.</string>
+    <string name="error_google_unavailable">%1$s. Google sign-in isn\'t available right now.</string>
+
+    <!-- Topic requests -->
+    <string name="request_length">Use %1$d to %2$d characters.</string>
+    <string name="request_duplicate">You already asked for that.</string>
+    <string name="request_too_many">You have too many pending requests. Wait for some to be reviewed.</string>
+
+    <!-- Account deletion -->
+    <string name="delete_account">Delete account</string>
+    <string name="delete_title">Delete your account?</string>
+    <string name="delete_body">This deletes your account, your topics, saved and read stories, and topic requests, on every device. It can\'t be undone.</string>
+    <string name="reauth_title">Confirm it\'s you</string>
+    <string name="reauth_password_body">Enter your password to delete your account.</string>
+    <string name="reauth_google_body">Sign in with Google again to delete your account.</string>
+    <string name="deleting">Deleting your account…</string>
+
+    <!-- Notifications -->
+    <string name="story_alerts_channel_id" translatable="false">story_alerts</string>
+    <string name="story_alerts_channel_name">Story alerts</string>
+    <string name="story_alerts_channel_description">Urgent changes in topics you follow, like security fixes.</string>
+    <string name="story_updates_channel_id" translatable="false">story_updates</string>
+    <string name="story_updates_channel_name">Story updates</string>
+    <string name="story_updates_channel_description">Other new stories in topics you follow.</string>
+    <string name="notifications_rationale_title">Get story alerts?</string>
+    <string name="notifications_rationale_body">Changeloom can tell you when something urgent lands in a topic you follow, like a security fix. You can turn this off at any time in Settings.</string>
+    <string name="notifications_allow">Allow</string>
+
+    <!-- In-app update -->
+    <string name="update_ready">A new version of Changeloom is ready.</string>
+    <string name="update_restart">Restart</string>
+
+    <!-- Ads and privacy -->
+    <string name="ad_badge">Sponsored</string>
+    <string name="privacy_options">Privacy options</string>
+
+    <!-- Tabs and shared labels -->
+    <string name="tab_feed">Feed</string>
+    <string name="tab_search">Search</string>
+    <string name="tab_saved">Saved</string>
+    <string name="tab_profile">Profile</string>
+    <string name="back">Back</string>
+    <string name="retry">Retry</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="refresh">Refresh</string>
+    <string name="remove">Remove</string>
+    <string name="clear">Clear</string>
+    <string name="save">Save</string>
+    <string name="saved">Saved</string>
+    <string name="unsave">Unsave</string>
+    <string name="remove_from_saved">Remove from saved</string>
+    <string name="read">Read</string>
+    <string name="unread">Unread</string>
+    <string name="mark_read">Mark read</string>
+    <string name="mark_unread">Mark unread</string>
+    <string name="share">Share</string>
+    <string name="topics">Topics</string>
+    <string name="following">Following</string>
+    <string name="edit_topics">Edit topics</string>
+    <string name="sign_out">Sign out</string>
+    <string name="clear_search">Clear search</string>
+    <string name="check_connection">Check your connection and try again.</string>
+    <string name="severity_label">%1$s severity</string>
+    <string name="importance_label">Importance %1$d of %2$d</string>
+
+    <!-- Feed -->
+    <string name="offline_banner">Offline — showing saved stories</string>
+    <string name="feed_empty_title">No stories yet</string>
+    <string name="feed_empty_body">New releases and changes for your topics land here. Pull down to check again.</string>
+    <string name="section_new">New for you</string>
+    <string name="section_earlier">Earlier</string>
+    <string name="suggested">Suggested</string>
+    <string name="open_profile">Open profile</string>
+    <string name="greeting_morning">Good morning</string>
+    <string name="greeting_afternoon">Good afternoon</string>
+    <string name="greeting_evening">Good evening</string>
+    <!-- The greeting when the name follows on the next line, e.g. "Good morning," -->
+    <string name="greeting_before_name">%1$s,</string>
+    <string name="greeting_fallback_name">your changelog</string>
+    <string name="feed_caught_up">You\'re all caught up.</string>
+    <plurals name="feed_new_updates">
+        <item quantity="one">%d new update across your topics.</item>
+        <item quantity="other">%d new updates across your topics.</item>
+    </plurals>
+    <string name="time_just_now">just now</string>
+    <string name="time_minutes_ago">%1$dm ago</string>
+    <string name="time_hours_ago">%1$dh ago</string>
+    <string name="time_days_ago">%1$dd ago</string>
+
+    <!-- Story -->
+    <string name="sources_count">Sources · %1$d</string>
+    <string name="open_source">Open %1$s</string>
+    <string name="cannot_open_link">No app on this device can open that link.</string>
+
+    <!-- Search and saved -->
+    <string name="search_title">Find any change</string>
+    <string name="search_placeholder">Search releases, CVEs, deprecations…</string>
+    <string name="search_suggestions">Try searching for</string>
+    <string name="search_empty_title">No stories match</string>
+    <string name="search_empty_body">Try a library name, a version number or a broader keyword.</string>
+    <string name="saved_title">Your reading list</string>
+    <plurals name="saved_count">
+        <item quantity="one">%d story · swipe left to remove</item>
+        <item quantity="other">%d stories · swipe left to remove</item>
+    </plurals>
+    <string name="saved_empty_title">Nothing saved yet</string>
+    <string name="saved_empty_body">Tap the bookmark on any story to keep it here for later.</string>
+    <string name="browse_feed">Browse your feed</string>
+
+    <!-- Topics -->
+    <string name="topics_onboarding_eyebrow">Personalise your feed</string>
+    <string name="topics_edit_eyebrow">Followed topics</string>
+    <string name="topics_onboarding_title_1">What do you</string>
+    <string name="topics_onboarding_title_2">build with?</string>
+    <string name="topics_onboarding_body">Follow a whole area or pick specific tools. You can change this any time.</string>
+    <string name="topics_edit_body">Your feed updates as soon as you save.</string>
+    <string name="search_topics">Search topics</string>
+    <string name="topics_empty_title">No topics match</string>
+    <string name="topics_empty_body">Try a broader term like \"web\" or \"cloud\".</string>
+    <string name="single_topic">Single topic</string>
+    <string name="all_topics">All %1$d topics</string>
+    <string name="topics_selected">%1$d of %2$d selected</string>
+    <plurals name="topic_count">
+        <item quantity="one">%d topic</item>
+        <item quantity="other">%d topics</item>
+    </plurals>
+    <string name="follow_topic">Follow %1$s</string>
+    <string name="expand_topic">Expand %1$s</string>
+    <string name="collapse_topic">Collapse %1$s</string>
+    <string name="select_all">Select all</string>
+    <string name="continue_count">Continue · %1$d</string>
+    <string name="save_count">Save · %1$d</string>
+
+    <!-- Topic requests -->
+    <string name="request_title">Request a topic</string>
+    <string name="request_body">Can\'t find what you want to follow? Tell us and we\'ll add it.</string>
+    <string name="request_placeholder">e.g. Rust, Kubernetes, Figma</string>
+    <string name="request_send">Send request</string>
+    <string name="request_list_title">Your requests</string>
+    <string name="request_added">Added</string>
+    <string name="request_covered">Already covered</string>
+    <string name="request_declined">Declined</string>
+    <string name="request_pending">Pending</string>
+    <string name="request_topic">Topic: %1$s</string>
+
+    <!-- Profile -->
+    <string name="profile_activity">Your activity</string>
+    <string name="following_none">You\'re not following any topics yet.</string>
+    <string name="appearance">Appearance</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="sign_out_title">Sign out?</string>
+    <string name="sign_out_body">This device stops getting notifications until you sign back in.</string>
+    <string name="reader_fallback_name">Reader</string>
 </resources>

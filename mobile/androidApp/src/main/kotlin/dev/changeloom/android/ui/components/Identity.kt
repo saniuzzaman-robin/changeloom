@@ -31,9 +31,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.changeloom.android.R
 import dev.changeloom.android.ui.theme.ChangeloomTheme
 import dev.changeloom.android.ui.theme.Durations
 import dev.changeloom.android.ui.theme.expoTween
@@ -99,7 +101,7 @@ fun SaveToggle(saved: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifi
         Crossfade(saved, label = "saveIcon") { on ->
             Icon(
                 if (on) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder,
-                contentDescription = if (on) "Remove from saved" else "Save",
+                contentDescription = stringResource(if (on) R.string.remove_from_saved else R.string.save),
                 tint = tint,
                 modifier = Modifier.graphicsLayer { scaleX = scale.value; scaleY = scale.value },
             )

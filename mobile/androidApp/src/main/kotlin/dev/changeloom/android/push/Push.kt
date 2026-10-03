@@ -5,18 +5,19 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.util.Log
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import dev.changeloom.android.MainActivity
 import dev.changeloom.android.R
+import dev.changeloom.android.telemetry.AppLog
 import dev.changeloom.shared.auth.AuthRepository
 import dev.changeloom.shared.data.ChangeloomApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
@@ -38,7 +39,7 @@ class DeviceRegistrar(private val api: ChangeloomApi) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Could not register device for push", e)
+            AppLog.w(TAG, "Could not register device for push", e)
         }
     }
 
@@ -47,22 +48,40 @@ class DeviceRegistrar(private val api: ChangeloomApi) {
         try {
             withTimeoutOrNull(UNREGISTER_TIMEOUT_MS) {
                 api.unregisterDevice(FirebaseMessaging.getInstance().token.await())
-            } ?: Log.w(TAG, "Timed out unregistering device for push")
+            } ?: AppLog.w(TAG, "Timed out unregistering device for push")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Could not unregister device for push", e)
+            AppLog.w(TAG, "Could not unregister device for push", e)
         }
     }
 }
 
-fun createNotificationChannel(context: Context) {
-    val channel = NotificationChannel(
-        context.getString(R.string.security_channel_id),
-        context.getString(R.string.security_channel_name),
-        NotificationManager.IMPORTANCE_HIGH,
+/** The channel early builds used for every push; [createNotificationChannels] replaces it. */
+private const val LEGACY_CHANNEL_ID = "security_alerts"
+
+/**
+ * Two channels, so users can silence the routine ones and keep the urgent ones: story alerts (high importance,
+ * pops up; the api sends high-severity security stories here) and story updates (default importance; the
+ * fallback for any message without a channel).
+ */
+fun createNotificationChannels(context: Context) {
+    val manager = context.getSystemService(NotificationManager::class.java)
+    manager.deleteNotificationChannel(LEGACY_CHANNEL_ID)
+    manager.createNotificationChannels(
+        listOf(
+            NotificationChannel(
+                context.getString(R.string.story_alerts_channel_id),
+                context.getString(R.string.story_alerts_channel_name),
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply { description = context.getString(R.string.story_alerts_channel_description) },
+            NotificationChannel(
+                context.getString(R.string.story_updates_channel_id),
+                context.getString(R.string.story_updates_channel_name),
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply { description = context.getString(R.string.story_updates_channel_description) },
+        ),
     )
-    context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
 }
 
 class ChangeloomMessagingService : FirebaseMessagingService() {
@@ -75,6 +94,11 @@ class ChangeloomMessagingService : FirebaseMessagingService() {
         scope.launch { registrar.register(token) }
     }
 
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
+    }
+
     /** Only called while the app is in the foreground; in the background FCM shows the notification itself. */
     override fun onMessageReceived(message: RemoteMessage) {
         val storyId = message.data[EXTRA_STORY_ID]
@@ -84,7 +108,8 @@ class ChangeloomMessagingService : FirebaseMessagingService() {
         val pending = PendingIntent.getActivity(
             this, storyId.hashCode(), open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val notification = android.app.Notification.Builder(this, getString(R.string.security_channel_id))
+        val channel = message.notification?.channelId ?: getString(R.string.story_updates_channel_id)
+        val notification = android.app.Notification.Builder(this, channel)
             .setSmallIcon(R.drawable.ic_stat_changeloom)
             .setContentTitle(message.notification?.title)
             .setContentText(message.notification?.body)

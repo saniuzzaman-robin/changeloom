@@ -41,11 +41,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.changeloom.android.R
 import dev.changeloom.android.ui.theme.ChangeloomTheme
 import dev.changeloom.android.ui.theme.Durations
 import dev.changeloom.android.ui.theme.Radius
@@ -91,24 +93,29 @@ fun SeverityDot(severity: String?, modifier: Modifier = Modifier, dotSize: Dp = 
     } else {
         null
     }
-    Canvas(modifier.size(dotSize * 2.4f).semantics { contentDescription = "$severity severity" }) {
+    val description = stringResource(R.string.severity_label, severity)
+    Canvas(modifier.size(dotSize * 2.4f).semantics { contentDescription = description }) {
         val r = dotSize.toPx() / 2
         if (pulse != null) drawCircle(color.copy(alpha = 0.6f * (1 - pulse)), radius = r * (1 + 1.4f * pulse))
         drawCircle(color, radius = r)
     }
 }
 
+/** The top of the api's 1–5 importance scale. */
+const val MAX_IMPORTANCE = 5
+
 /** Five rising bars; the first [importance] are lit with the brand gradient. */
 @Composable
 fun ImportanceMeter(importance: Int, modifier: Modifier = Modifier) {
     val c = ChangeloomTheme.colors
     val brand = ChangeloomTheme.gradients.brandHorizontal
+    val description = stringResource(R.string.importance_label, importance, MAX_IMPORTANCE)
     Row(
-        modifier.semantics { contentDescription = "Importance $importance of 5" },
+        modifier.semantics { contentDescription = description },
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
-        for (i in 1..5) {
+        for (i in 1..MAX_IMPORTANCE) {
             Box(
                 Modifier
                     .width(3.dp)

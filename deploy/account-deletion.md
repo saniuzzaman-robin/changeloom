@@ -3,8 +3,8 @@
 <!--
 Text for the public account-deletion page that Google Play requires (Play Console > App content >
 Data safety > Data deletion). Host it at a stable URL and enter that URL in the Play Console.
-Replace every <placeholder> before publishing. The in-app option ships with H9; until then, keep
-only the email option.
+Replace every <placeholder> before publishing. The in-app option needs an app version with
+Profile → Delete account (H9); until that version is live on Play, keep only the email option.
 -->
 
 Changeloom is published by <developer name, as shown on Google Play>. You can delete your account
@@ -13,7 +13,7 @@ and the data linked to it at any time.
 ## Delete in the app
 
 1. Open Changeloom and sign in.
-2. Go to **<menu path to Delete account, from H9>**.
+2. Go to **Profile**, scroll to the bottom and tap **Delete account**.
 3. Confirm. You may be asked to sign in again.
 
 Your data is deleted right away, and you are signed out.

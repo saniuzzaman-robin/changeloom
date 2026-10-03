@@ -39,7 +39,7 @@ class StoryPagerTest {
         fail = true
         pager.refresh()
         assertEquals(listOf(1L), pager.state.value.items.map { it.id })
-        assertEquals("boom", pager.state.value.error)
+        assertEquals("Couldn't load stories. Try again.", pager.state.value.error)
         assertFalse(pager.state.value.loading)
     }
 

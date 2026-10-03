@@ -1,5 +1,7 @@
 package dev.changeloom.android.ui
 
+import androidx.activity.compose.LocalActivity
+import androidx.annotation.StringRes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
@@ -31,19 +33,25 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.PrivacyTip
 import androidx.compose.material.icons.rounded.SettingsBrightness
 import androidx.compose.material.icons.rounded.Tag
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,6 +59,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -61,16 +70,27 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
+import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.changeloom.android.BuildConfig
+import dev.changeloom.android.R
+import dev.changeloom.android.ads.ConsentManager
+import dev.changeloom.android.auth.requestGoogleIdToken
 import dev.changeloom.android.ui.components.BannerTone
+import dev.changeloom.android.ui.components.ChangeloomTextField
 import dev.changeloom.android.ui.components.Eyebrow
 import dev.changeloom.android.ui.components.GlassCard
 import dev.changeloom.android.ui.components.GradientAvatar
@@ -89,7 +109,10 @@ import dev.changeloom.android.ui.theme.Spacing
 import dev.changeloom.android.ui.theme.ThemeMode
 import dev.changeloom.android.ui.theme.expoTween
 import dev.changeloom.shared.data.MeStats
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 import kotlin.math.roundToLong
 
 @Composable
@@ -98,8 +121,13 @@ internal fun ProfileScreen(
     contentPadding: PaddingValues,
     vm: ProfileViewModel = koinViewModel(),
     picker: TopicPickerViewModel = koinViewModel(),
+    consent: ConsentManager = koinInject(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val privacyOptions by consent.privacyOptionsRequired.collectAsStateWithLifecycle()
+    val activity = LocalActivity.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val mode by vm.themeMode.collectAsStateWithLifecycle()
     val followed = picker.state.collectAsStateWithLifecycle().value.followed
     val photo = vm.photo.collectAsStateWithLifecycle().value
@@ -120,8 +148,37 @@ internal fun ProfileScreen(
         onRequestText = vm::setRequestText,
         onSubmitRequest = vm::submitRequest,
         onSignOut = vm::signOut,
+        onPrivacyOptions = activity?.takeIf { privacyOptions }?.let { { consent.showPrivacyOptions(it) } },
+        deleteActions = DeleteActions(
+            start = vm::startDelete,
+            cancel = vm::cancelDelete,
+            confirm = vm::confirmDelete,
+            withPassword = vm::deleteWithPassword,
+            withGoogle = {
+                scope.launch {
+                    try {
+                        vm.deleteWithGoogle(requestGoogleIdToken(context, webClientId(context)))
+                    } catch (e: GetCredentialCancellationException) {
+                        // Dismissed the account picker: the dialog stays up.
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        vm.googleReauthFailed(e)
+                    }
+                }
+            },
+        ),
     )
 }
+
+/** What the account-deletion dialogs call back into. */
+internal class DeleteActions(
+    val start: () -> Unit = {},
+    val cancel: () -> Unit = {},
+    val confirm: () -> Unit = {},
+    val withPassword: (String) -> Unit = {},
+    val withGoogle: () -> Unit = {},
+)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -140,6 +197,8 @@ internal fun ProfileContent(
     onRequestText: (String) -> Unit,
     onSubmitRequest: () -> Unit,
     onSignOut: () -> Unit,
+    onPrivacyOptions: (() -> Unit)? = null,
+    deleteActions: DeleteActions = DeleteActions(),
 ) {
     val c = ChangeloomTheme.colors
     val topicName = LocalTopicName.current
@@ -159,25 +218,25 @@ internal fun ProfileContent(
                 verticalArrangement = Arrangement.spacedBy(28.dp),
             ) {
                 Column(Modifier.enter(160)) {
-                    Eyebrow("Your activity")
+                    Eyebrow(stringResource(R.string.profile_activity))
                     Spacer(Modifier.height(12.dp))
-                    StatusBanner(state.error, Icons.Rounded.ErrorOutline, tone = BannerTone.Error, actionLabel = "Retry", onAction = onRetry)
+                    StatusBanner(state.error, Icons.Rounded.ErrorOutline, tone = BannerTone.Error, actionLabel = stringResource(R.string.retry), onAction = onRetry)
                     if (state.error != null) Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        StatTile("Saved", state.stats?.saved, Icons.Rounded.Bookmark, c.primaryText, Modifier.weight(1f))
-                        StatTile("Read", state.stats?.read, Icons.Rounded.DoneAll, c.success, Modifier.weight(1f))
-                        StatTile("Topics", followed.size.toLong(), Icons.Rounded.Tag, c.accent, Modifier.weight(1f))
+                        StatTile(stringResource(R.string.saved), state.stats?.saved, Icons.Rounded.Bookmark, c.primaryText, Modifier.weight(1f))
+                        StatTile(stringResource(R.string.read), state.stats?.read, Icons.Rounded.DoneAll, c.success, Modifier.weight(1f))
+                        StatTile(stringResource(R.string.topics), followed.size.toLong(), Icons.Rounded.Tag, c.accent, Modifier.weight(1f))
                     }
                 }
 
                 Column(Modifier.enter(240)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Eyebrow("Following", Modifier.weight(1f))
-                        TextAction("Edit topics", onEditTopics, icon = Icons.Rounded.Edit)
+                        Eyebrow(stringResource(R.string.following), Modifier.weight(1f))
+                        TextAction(stringResource(R.string.edit_topics), onEditTopics, icon = Icons.Rounded.Edit)
                     }
                     Spacer(Modifier.height(4.dp))
                     if (followed.isEmpty()) {
-                        Text("You're not following any topics yet.", style = MaterialTheme.typography.bodyMedium, color = c.fgMuted)
+                        Text(stringResource(R.string.following_none), style = MaterialTheme.typography.bodyMedium, color = c.fgMuted)
                     } else {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             followed.forEach { TopicChip(topicName(it)) }
@@ -190,21 +249,33 @@ internal fun ProfileContent(
                 }
 
                 Column(Modifier.enter(320)) {
-                    Eyebrow("Appearance")
+                    Eyebrow(stringResource(R.string.appearance))
                     Spacer(Modifier.height(12.dp))
                     ThemeSwitch(themeMode, onThemeMode)
                 }
 
                 Column(Modifier.enter(400), horizontalAlignment = Alignment.CenterHorizontally) {
+                    // Only where the consent rules let users change their ad choices (EEA, UK, ...).
+                    if (onPrivacyOptions != null) {
+                        SecondaryButton(
+                            stringResource(R.string.privacy_options),
+                            onClick = onPrivacyOptions,
+                            modifier = Modifier.fillMaxWidth(),
+                            icon = Icons.Rounded.PrivacyTip,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
                     SecondaryButton(
-                        "Sign out",
+                        stringResource(R.string.sign_out),
                         onClick = { confirmSignOut = true },
                         modifier = Modifier.fillMaxWidth(),
                         icon = Icons.AutoMirrored.Rounded.Logout,
                         contentColor = c.rose,
                     )
+                    Spacer(Modifier.height(8.dp))
+                    TextAction(stringResource(R.string.delete_account), deleteActions.start, icon = Icons.Rounded.DeleteForever, color = c.red)
                     Spacer(Modifier.height(16.dp))
-                    Eyebrow("Changeloom v$version")
+                    Eyebrow(stringResource(R.string.app_version, version))
                 }
             }
         }
@@ -215,26 +286,88 @@ internal fun ProfileContent(
         AlertDialog(
             onDismissRequest = { confirmSignOut = false },
             confirmButton = {
-                TextAction("Sign out", onClick = {
+                TextAction(stringResource(R.string.sign_out), onClick = {
                     confirmSignOut = false
                     onSignOut()
                 }, color = c.rose)
             },
-            dismissButton = { TextAction("Cancel", onClick = { confirmSignOut = false }, color = c.fgMuted) },
-            title = { Text("Sign out?") },
-            text = { Text("This device stops getting notifications until you sign back in.") },
+            dismissButton = { TextAction(stringResource(R.string.cancel), onClick = { confirmSignOut = false }, color = c.fgMuted) },
+            title = { Text(stringResource(R.string.sign_out_title)) },
+            text = { Text(stringResource(R.string.sign_out_body)) },
             shape = Radius.xxl,
             containerColor = c.elevated,
             titleContentColor = c.fg,
             textContentColor = c.fgMuted,
         )
     }
+    state.delete?.let { DeleteAccountDialog(it, deleteActions) }
+}
+
+@Composable
+private fun DeleteAccountDialog(delete: DeleteState, actions: DeleteActions) {
+    val c = ChangeloomTheme.colors
+    var password by remember(delete.step) { mutableStateOf("") }
+    val deleting = delete.step == DeleteStep.Deleting
+    AlertDialog(
+        onDismissRequest = actions.cancel,
+        properties = DialogProperties(dismissOnBackPress = !deleting, dismissOnClickOutside = !deleting),
+        confirmButton = {
+            when (delete.step) {
+                DeleteStep.Confirm -> TextAction(stringResource(R.string.delete), actions.confirm, color = c.red)
+                DeleteStep.Password -> TextAction(
+                    stringResource(R.string.delete),
+                    onClick = { actions.withPassword(password) },
+                    enabled = password.isNotEmpty(),
+                    color = c.red,
+                )
+                DeleteStep.Google -> TextAction(stringResource(R.string.continue_with_google), actions.withGoogle, color = c.red)
+                DeleteStep.Deleting -> Unit
+            }
+        },
+        dismissButton = {
+            if (!deleting) TextAction(stringResource(R.string.cancel), onClick = actions.cancel, color = c.fgMuted)
+        },
+        title = {
+            Text(stringResource(if (delete.step == DeleteStep.Confirm || deleting) R.string.delete_title else R.string.reauth_title))
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    stringResource(
+                        when (delete.step) {
+                            DeleteStep.Confirm -> R.string.delete_body
+                            DeleteStep.Password -> R.string.reauth_password_body
+                            DeleteStep.Google -> R.string.reauth_google_body
+                            DeleteStep.Deleting -> R.string.deleting
+                        },
+                    ),
+                )
+                if (delete.step == DeleteStep.Password) {
+                    ChangeloomTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = stringResource(R.string.password),
+                        leadingIcon = Icons.Rounded.Lock,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { if (password.isNotEmpty()) actions.withPassword(password) }),
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                }
+                if (deleting) LinearProgressIndicator(Modifier.fillMaxWidth(), color = c.red, trackColor = c.surface2)
+                StatusBanner(delete.error, Icons.Rounded.ErrorOutline, tone = BannerTone.Error)
+            }
+        },
+        shape = Radius.xxl,
+        containerColor = c.elevated,
+        titleContentColor = c.fg,
+        textContentColor = c.fgMuted,
+    )
 }
 
 @Composable
 private fun ProfileBanner(displayName: String?, email: String?, photo: ImageBitmap?) {
     val c = ChangeloomTheme.colors
-    val name = displayName ?: email?.let(::firstNameOf) ?: "Reader"
+    val name = displayName ?: email?.let(::firstNameOf) ?: stringResource(R.string.reader_fallback_name)
     val status = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Box(Modifier.fillMaxWidth()) {
         SpotlightGlow(Modifier.matchParentSize(), center = Offset(0.5f, 0f), radius = 320.dp)
@@ -334,11 +467,18 @@ private fun ThemeSwitch(mode: ThemeMode, onChange: (ThemeMode) -> Unit) {
                 ) {
                     Icon(option.icon(), contentDescription = null, Modifier.size(18.dp), tint = fg)
                     Spacer(Modifier.width(8.dp))
-                    Text(option.name, style = MaterialTheme.typography.labelLarge, color = fg)
+                    Text(stringResource(option.label()), style = MaterialTheme.typography.labelLarge, color = fg)
                 }
             }
         }
     }
+}
+
+@StringRes
+private fun ThemeMode.label(): Int = when (this) {
+    ThemeMode.System -> R.string.theme_system
+    ThemeMode.Light -> R.string.theme_light
+    ThemeMode.Dark -> R.string.theme_dark
 }
 
 private fun ThemeMode.icon(): ImageVector = when (this) {

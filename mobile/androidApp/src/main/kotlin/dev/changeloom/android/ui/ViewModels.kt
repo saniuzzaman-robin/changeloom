@@ -1,20 +1,27 @@
 package dev.changeloom.android.ui
 
 import android.graphics.Bitmap
-import android.util.Log
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.changeloom.android.R
+import dev.changeloom.android.auth.SessionManager
+import dev.changeloom.android.play.ReviewPrompter
 import dev.changeloom.android.data.fetchAvatar
-import dev.changeloom.android.push.DeviceRegistrar
+import dev.changeloom.android.telemetry.Analytics
+import dev.changeloom.android.telemetry.AppLog
 import dev.changeloom.android.ui.theme.ThemeMode
 import dev.changeloom.android.ui.theme.ThemePreferences
 import dev.changeloom.shared.auth.AuthRepository
+import dev.changeloom.shared.auth.ReauthRequiredException
+import dev.changeloom.shared.auth.SignInMethod
 import dev.changeloom.shared.data.ApiException
 import dev.changeloom.shared.data.ChangeloomApi
 import dev.changeloom.shared.data.CheckState
 import dev.changeloom.shared.data.MeStats
 import dev.changeloom.shared.data.PagerState
 import dev.changeloom.shared.data.Story
+import dev.changeloom.shared.data.StoryCache
 import dev.changeloom.shared.data.StoryPager
 import dev.changeloom.shared.data.TimelineRepository
 import dev.changeloom.shared.data.TimelineState
@@ -24,6 +31,8 @@ import dev.changeloom.shared.data.TopicTree
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,20 +46,80 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.IOException
 
-private const val TAG = "Profile"
+private const val TAG_SIGN_IN = "SignIn"
+private const val TAG_TOPICS = "Topics"
+private const val TAG_STORY = "Story"
+private const val TAG_PROFILE = "Profile"
 internal const val REQUEST_MIN_LENGTH = 2
 internal const val REQUEST_MAX_LENGTH = 100
 
+private const val KEY_AUTH_MODE = "auth_mode"
+private const val KEY_EMAIL = "email"
+private const val KEY_QUERY = "query"
+private const val KEY_SEARCHED = "searched"
+
 data class SignInState(val busy: Boolean = false, val error: String? = null)
 
-class SignInViewModel(private val auth: AuthRepository) : ViewModel() {
+enum class AuthMode {
+    SignIn,
+    Register,
+    ;
+
+    val other: AuthMode get() = if (this == SignIn) Register else SignIn
+}
+
+/** The form's mode and email survive process death; the password is kept in memory only, never in saved state. */
+class SignInViewModel(
+    private val auth: AuthRepository,
+    private val analytics: Analytics,
+    private val strings: Strings,
+    private val saved: SavedStateHandle,
+) : ViewModel() {
     private val _state = MutableStateFlow(SignInState())
     val state: StateFlow<SignInState> = _state.asStateFlow()
 
-    fun signIn(email: String, password: String) = run { auth.signInWithEmail(email.trim(), password) }
-    fun register(email: String, password: String) = run { auth.registerWithEmail(email.trim(), password) }
-    fun googleToken(token: String) = run { auth.signInWithGoogleIdToken(token) }
-    fun fail(message: String) = _state.update { it.copy(error = message) }
+    val mode: StateFlow<AuthMode> = saved.getStateFlow(KEY_AUTH_MODE, AuthMode.SignIn)
+    val email: StateFlow<String> = saved.getStateFlow(KEY_EMAIL, "")
+    private val _password = MutableStateFlow("")
+    val password: StateFlow<String> = _password.asStateFlow()
+
+    fun setMode(mode: AuthMode) {
+        saved[KEY_AUTH_MODE] = mode
+    }
+
+    fun setEmail(text: String) {
+        saved[KEY_EMAIL] = text
+    }
+
+    fun setPassword(text: String) {
+        _password.value = text
+    }
+
+    fun submit() {
+        val email = email.value.trim()
+        val password = _password.value
+        if (mode.value == AuthMode.SignIn) {
+            run {
+                auth.signInWithEmail(email, password)
+                analytics.login(Analytics.METHOD_PASSWORD)
+            }
+        } else {
+            run {
+                auth.registerWithEmail(email, password)
+                analytics.signUp(Analytics.METHOD_PASSWORD)
+            }
+        }
+    }
+
+    fun googleToken(token: String) = run {
+        if (auth.signInWithGoogleIdToken(token)) analytics.signUp(Analytics.METHOD_GOOGLE) else analytics.login(Analytics.METHOD_GOOGLE)
+    }
+
+    /** The Google account picker failed before there was a token to sign in with. */
+    fun googleFailed(error: Exception) {
+        AppLog.w(TAG_SIGN_IN, "Google sign-in failed", error)
+        _state.update { it.copy(error = strings.errorText(error, R.string.google_sign_in_failed)) }
+    }
 
     private fun run(block: suspend () -> Unit) {
         _state.value = SignInState(busy = true)
@@ -61,7 +130,8 @@ class SignInViewModel(private val auth: AuthRepository) : ViewModel() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                SignInState(error = e.message ?: "Sign-in failed")
+                AppLog.w(TAG_SIGN_IN, "Sign-in failed", e)
+                SignInState(error = strings.errorText(e, R.string.sign_in_failed))
             }
         }
     }
@@ -93,11 +163,16 @@ data class TopicPickerState(
 /**
  * Followed topics for both onboarding (it also gates the main UI on [TopicPickerState.followed]) and
  * editing. Scoped to the signed-in account (see [SessionViewModels]), so it loads once per sign-in.
+ * The cached topics open the main UI at once, so a cold or offline start never waits on (or falls back to)
+ * onboarding; the server copy replaces them when it arrives.
  */
 class TopicPickerViewModel(
     private val api: ChangeloomApi,
     private val catalog: TopicCatalog,
     private val repo: TimelineRepository,
+    private val cache: StoryCache,
+    private val analytics: Analytics,
+    private val strings: Strings,
 ) : ViewModel() {
     private val _state = MutableStateFlow(TopicPickerState())
     val state: StateFlow<TopicPickerState> = _state.asStateFlow()
@@ -111,17 +186,28 @@ class TopicPickerViewModel(
         loadJob?.cancel()
         _state.update { it.copy(loading = true, error = null) }
         loadJob = viewModelScope.launch {
+            if (_state.value.followed.isEmpty()) {
+                val cached = cache.loadFollowed()
+                _state.update { if (it.followed.isEmpty()) it.copy(followed = cached) else it }
+            }
             try {
-                val tree = catalog.tree()
-                val selection = TopicSelection.fromFollowed(tree, api.me().topics)
+                val (tree, me) = coroutineScope {
+                    val tree = async { catalog.tree() }
+                    val me = async { api.me() }
+                    tree.await() to me.await()
+                }
+                val selection = TopicSelection.fromFollowed(tree, me.topics)
                 val partial = tree.roots.map { it.slug }.filter { selection.stateOf(it) == CheckState.Partial }
+                val followed = selection.toFollowed()
+                cache.saveFollowed(followed)
                 _state.update {
-                    it.copy(loading = false, selection = selection, followed = selection.toFollowed(), expanded = partial.toSet())
+                    it.copy(loading = false, selection = selection, followed = followed, expanded = partial.toSet())
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(loading = false, error = e.message ?: "Could not load topics") }
+                AppLog.failure(TAG_TOPICS, "Couldn't load topics", e)
+                _state.update { it.copy(loading = false, error = strings.errorText(e, R.string.topics_load_failed)) }
             }
         }
     }
@@ -151,13 +237,16 @@ class TopicPickerViewModel(
         viewModelScope.launch {
             try {
                 api.putMyTopics(slugs)
+                cache.saveFollowed(slugs)
+                analytics.topicsUpdate(slugs.size, onboarding)
                 // A new timeline view model refreshes on its own after onboarding; an edit must refresh the existing one.
                 if (!onboarding) viewModelScope.launch { repo.refresh() }
                 _state.update { it.copy(saving = false, followed = slugs, query = "", saved = !onboarding) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(saving = false, error = e.message ?: "Could not save topics") }
+                AppLog.failure(TAG_TOPICS, "Couldn't save topics", e)
+                _state.update { it.copy(saving = false, error = strings.errorText(e, R.string.topics_save_failed)) }
             }
         }
     }
@@ -167,7 +256,7 @@ class TopicPickerViewModel(
     }
 }
 
-class TimelineViewModel(private val repo: TimelineRepository) : ViewModel() {
+class TimelineViewModel(private val repo: TimelineRepository, private val analytics: Analytics) : ViewModel() {
     val state: StateFlow<TimelineState> = repo.state
 
     init {
@@ -187,6 +276,7 @@ class TimelineViewModel(private val repo: TimelineRepository) : ViewModel() {
     }
 
     fun setBookmarked(id: Long, on: Boolean) {
+        if (on) analytics.bookmarkAdd(id)
         viewModelScope.launch { repo.setBookmarked(id, on) }
     }
 
@@ -195,7 +285,13 @@ class TimelineViewModel(private val repo: TimelineRepository) : ViewModel() {
 
 data class StoryDetailState(val loading: Boolean = true, val story: Story? = null, val error: String? = null)
 
-class StoryDetailViewModel(private val id: Long, private val repo: TimelineRepository) : ViewModel() {
+class StoryDetailViewModel(
+    private val id: Long,
+    private val repo: TimelineRepository,
+    private val analytics: Analytics,
+    private val strings: Strings,
+    private val review: ReviewPrompter,
+) : ViewModel() {
     private val _state = MutableStateFlow(StoryDetailState())
     val state: StateFlow<StoryDetailState> = _state.asStateFlow()
 
@@ -209,11 +305,14 @@ class StoryDetailViewModel(private val id: Long, private val repo: TimelineRepos
             try {
                 val story = repo.story(id)
                 _state.value = StoryDetailState(loading = false, story = story)
+                analytics.storyOpen(id)
+                review.storyRead()
                 repo.setRead(id, true) // opening a story marks it read
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.value = StoryDetailState(loading = false, error = e.message ?: "Could not load story")
+                AppLog.failure(TAG_STORY, "Couldn't load a story", e)
+                _state.value = StoryDetailState(loading = false, error = strings.errorText(e, R.string.story_load_failed))
             }
         }
     }
@@ -224,15 +323,22 @@ class StoryDetailViewModel(private val id: Long, private val repo: TimelineRepos
 
     fun setBookmarked(on: Boolean) {
         if (_state.value.story == null) return
+        if (on) analytics.bookmarkAdd(id)
         _state.update { s -> s.copy(story = s.story?.copy(isBookmarked = on)) }
         viewModelScope.launch {
             if (!repo.setBookmarked(id, on)) _state.update { s -> s.copy(story = s.story?.copy(isBookmarked = !on)) }
         }
     }
+
+    fun shared() = analytics.share(id)
 }
 
 /** Bookmarked stories. Reloaded each time the screen opens so changes made elsewhere show up. */
-class BookmarksViewModel(api: ChangeloomApi, private val repo: TimelineRepository) : ViewModel() {
+class BookmarksViewModel(
+    api: ChangeloomApi,
+    private val repo: TimelineRepository,
+    private val analytics: Analytics,
+) : ViewModel() {
     private val pager = StoryPager { cursor -> api.bookmarks(cursor) }
     val state: StateFlow<PagerState> = pager.state
 
@@ -245,6 +351,7 @@ class BookmarksViewModel(api: ChangeloomApi, private val repo: TimelineRepositor
     }
 
     fun setBookmarked(id: Long, on: Boolean) {
+        if (on) analytics.bookmarkAdd(id)
         pager.setBookmarked(id, on)
         viewModelScope.launch { if (!repo.setBookmarked(id, on)) pager.setBookmarked(id, !on) }
     }
@@ -258,9 +365,14 @@ class BookmarksViewModel(api: ChangeloomApi, private val repo: TimelineRepositor
     fun dismissError() = pager.clearError()
 }
 
-class SearchViewModel(private val api: ChangeloomApi, private val repo: TimelineRepository) : ViewModel() {
-    private val _query = MutableStateFlow("")
-    val query: StateFlow<String> = _query.asStateFlow()
+/** The query, and the last search run, survive process death; the search runs again on restore. */
+class SearchViewModel(
+    private val api: ChangeloomApi,
+    private val repo: TimelineRepository,
+    private val analytics: Analytics,
+    private val saved: SavedStateHandle,
+) : ViewModel() {
+    val query: StateFlow<String> = saved.getStateFlow(KEY_QUERY, "")
 
     private val pager = MutableStateFlow<StoryPager?>(null)
 
@@ -269,16 +381,26 @@ class SearchViewModel(private val api: ChangeloomApi, private val repo: Timeline
         .flatMapLatest { it?.state ?: flowOf(PagerState()) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, PagerState())
 
+    init {
+        saved.get<String>(KEY_SEARCHED)?.let(::startSearch)
+    }
+
     fun setQuery(text: String) {
-        _query.value = text
+        saved[KEY_QUERY] = text
     }
 
     fun search() {
-        val text = _query.value.trim()
+        val text = query.value.trim()
+        saved[KEY_SEARCHED] = text.ifEmpty { null }
         if (text.isEmpty()) {
             pager.value = null
             return
         }
+        analytics.search()
+        startSearch(text)
+    }
+
+    private fun startSearch(text: String) {
         val next = StoryPager { cursor -> api.search(text, cursor) }
         pager.value = next
         viewModelScope.launch { next.refresh() }
@@ -291,6 +413,7 @@ class SearchViewModel(private val api: ChangeloomApi, private val repo: Timeline
 
     fun setBookmarked(id: Long, on: Boolean) {
         val current = pager.value ?: return
+        if (on) analytics.bookmarkAdd(id)
         current.setBookmarked(id, on)
         viewModelScope.launch { if (!repo.setBookmarked(id, on)) current.setBookmarked(id, !on) }
     }
@@ -299,6 +422,11 @@ class SearchViewModel(private val api: ChangeloomApi, private val repo: Timeline
         pager.value?.clearError()
     }
 }
+
+enum class DeleteStep { Confirm, Password, Google, Deleting }
+
+/** Account deletion in progress; [step] is what the dialog asks for, [error] why the last attempt failed. */
+data class DeleteState(val step: DeleteStep, val error: String? = null)
 
 data class ProfileState(
     /** Null until the first `/v1/me` load succeeds. */
@@ -309,14 +437,17 @@ data class ProfileState(
     val requestText: String = "",
     val submittingRequest: Boolean = false,
     val requestError: String? = null,
+    /** Null unless the user is deleting their account. */
+    val delete: DeleteState? = null,
 )
 
 class ProfileViewModel(
     private val api: ChangeloomApi,
-    private val repo: TimelineRepository,
     private val auth: AuthRepository,
-    private val registrar: DeviceRegistrar,
+    private val session: SessionManager,
     private val theme: ThemePreferences,
+    private val analytics: Analytics,
+    private val strings: Strings,
 ) : ViewModel() {
     val email: String? = auth.currentUser.value?.email
     val displayName: String? = auth.currentUser.value?.displayName
@@ -335,7 +466,7 @@ class ProfileViewModel(
                 try {
                     _photo.value = fetchAvatar(url)
                 } catch (e: IOException) {
-                    Log.w(TAG, "Couldn't load the profile photo; showing initials", e)
+                    AppLog.w(TAG_PROFILE, "Couldn't load the profile photo; showing initials", e)
                 }
             }
         }
@@ -350,7 +481,8 @@ class ProfileViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(error = e.message ?: "Couldn't load your stats") }
+                AppLog.failure(TAG_PROFILE, "Couldn't load stats", e)
+                _state.update { it.copy(error = strings.errorText(e, R.string.stats_load_failed)) }
             }
             try {
                 val requests = api.topicRequests()
@@ -358,7 +490,7 @@ class ProfileViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "Couldn't load topic requests", e)
+                AppLog.failure(TAG_PROFILE, "Couldn't load topic requests", e)
             }
         }
     }
@@ -372,15 +504,19 @@ class ProfileViewModel(
         viewModelScope.launch {
             try {
                 val created = api.requestTopic(text)
+                analytics.topicRequest()
                 _state.update { it.copy(submittingRequest = false, requestText = "", requests = listOf(created) + it.requests.orEmpty()) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 val message = when ((e as? ApiException)?.status) {
-                    400 -> "Use $REQUEST_MIN_LENGTH to $REQUEST_MAX_LENGTH characters."
-                    409 -> "You already asked for that."
-                    429 -> "You have too many pending requests. Wait for some to be reviewed."
-                    else -> e.message ?: "Couldn't send your request"
+                    400 -> strings.get(R.string.request_length, REQUEST_MIN_LENGTH, REQUEST_MAX_LENGTH)
+                    409 -> strings.get(R.string.request_duplicate)
+                    429 -> strings.get(R.string.request_too_many)
+                    else -> {
+                        AppLog.failure(TAG_PROFILE, "Couldn't send a topic request", e)
+                        strings.errorText(e, R.string.request_send_failed)
+                    }
                 }
                 _state.update { it.copy(submittingRequest = false, requestError = message) }
             }
@@ -389,12 +525,53 @@ class ProfileViewModel(
 
     fun setThemeMode(mode: ThemeMode) = theme.setMode(mode)
 
-    /** Stops pushes for this device and clears the local cache first, so a different account never sees this user's data. */
-    fun signOut() {
+    fun signOut() = session.signOut()
+
+    fun startDelete() = _state.update { it.copy(delete = DeleteState(DeleteStep.Confirm)) }
+
+    fun cancelDelete() = _state.update { if (it.delete?.step == DeleteStep.Deleting) it else it.copy(delete = null) }
+
+    /** Deletes right away when the sign-in is recent enough; otherwise asks the user to confirm it's them first. */
+    fun confirmDelete() = if (auth.needsReauth()) askToReauth() else delete {}
+
+    fun deleteWithPassword(password: String) = delete { auth.reauthenticateWithPassword(password) }
+
+    fun deleteWithGoogle(token: String) = delete { auth.reauthenticateWithGoogleIdToken(token) }
+
+    /** The Google account picker failed before there was a token. */
+    fun googleReauthFailed(error: Exception) {
+        AppLog.w(TAG_PROFILE, "Google re-authentication failed", error)
+        askToReauth(strings.errorText(error, R.string.reauth_failed))
+    }
+
+    private fun askToReauth(error: String? = null) {
+        val step = if (auth.currentUser.value?.signInMethod == SignInMethod.Google) DeleteStep.Google else DeleteStep.Password
+        _state.update { it.copy(delete = DeleteState(step, error)) }
+    }
+
+    /** Re-authenticates with [reauth], then deletes everything; success signs out, which clears this view model. */
+    private fun delete(reauth: suspend () -> Unit) {
+        _state.update { it.copy(delete = DeleteState(DeleteStep.Deleting)) }
         viewModelScope.launch {
-            registrar.unregister()
-            repo.clear()
-            auth.signOut()
+            try {
+                reauth()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLog.w(TAG_PROFILE, "Re-authentication failed", e)
+                askToReauth(strings.errorText(e, R.string.reauth_failed))
+                return@launch
+            }
+            try {
+                session.deleteAccount()
+            } catch (e: ReauthRequiredException) {
+                askToReauth()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLog.failure(TAG_PROFILE, "Couldn't delete the account", e)
+                _state.update { it.copy(delete = DeleteState(DeleteStep.Confirm, strings.errorText(e, R.string.delete_failed))) }
+            }
         }
     }
 }

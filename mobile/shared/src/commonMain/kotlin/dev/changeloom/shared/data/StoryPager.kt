@@ -30,7 +30,7 @@ class StoryPager(private val fetch: suspend (cursor: String?) -> TimelinePage) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            _state.update { it.copy(loading = false, loaded = true, error = e.message ?: "Could not load stories") }
+            _state.update { it.copy(loading = false, loaded = true, error = userMessage(e, "Couldn't load stories")) }
         }
     }
 
@@ -47,7 +47,7 @@ class StoryPager(private val fetch: suspend (cursor: String?) -> TimelinePage) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            _state.update { it.copy(loadingMore = false, error = e.message ?: "Could not load more") }
+            _state.update { it.copy(loadingMore = false, error = userMessage(e, "Couldn't load more stories")) }
         }
     }
 

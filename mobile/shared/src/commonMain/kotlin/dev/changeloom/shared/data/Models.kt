@@ -14,6 +14,10 @@ data class Topic(
 @Serializable
 data class TopicList(val items: List<Topic>)
 
+/** The api's error body (`Error` in api/openapi.yaml). */
+@Serializable
+internal data class ApiError(val code: String, val message: String)
+
 @Serializable
 data class Me(
     val id: Long,

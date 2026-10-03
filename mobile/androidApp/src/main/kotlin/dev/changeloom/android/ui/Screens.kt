@@ -1,30 +1,58 @@
 package dev.changeloom.android.ui
 
+import android.os.Bundle
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.HasDefaultViewModelProviderFactory
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.SAVED_STATE_REGISTRY_OWNER_KEY
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.SavedStateViewModelFactory
+import androidx.lifecycle.VIEW_MODEL_STORE_OWNER_KEY
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.enableSavedStateHandles
+import androidx.lifecycle.viewmodel.CreationExtras
+import androidx.lifecycle.viewmodel.MutableCreationExtras
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.changeloom.android.telemetry.TrackScreen
 import dev.changeloom.android.ui.components.LoomMark
 import org.koin.androidx.compose.koinViewModel
 
-/** [userId] is the signed-in account, or null when signed out. */
+/**
+ * [userId] is the signed-in account, or null when signed out. [onContentReady] is called once a real screen (not the
+ * loading mark) is showing, so the launch splash can go.
+ */
 @Composable
-fun AppRoot(userId: String?, onSignOut: () -> Unit, openStoryId: Long? = null, onOpenStoryHandled: () -> Unit = {}) {
+fun AppRoot(
+    userId: String?,
+    onSignOut: () -> Unit,
+    openStoryId: Long? = null,
+    onOpenStoryHandled: () -> Unit = {},
+    onContentReady: () -> Unit = {},
+) {
     val sessions: SessionViewModels = viewModel()
     val session = remember(userId) { sessions.ownerFor(userId) }
     if (userId == null) {
+        SideEffect(onContentReady)
+        TrackScreen("sign_in")
         SignInScreen()
         return
     }
@@ -32,9 +60,16 @@ fun AppRoot(userId: String?, onSignOut: () -> Unit, openStoryId: Long? = null, o
         val vm: TopicPickerViewModel = koinViewModel()
         val state by vm.state.collectAsStateWithLifecycle()
         when {
-            state.followed.isNotEmpty() -> MainScreen(openStoryId, onOpenStoryHandled)
+            state.followed.isNotEmpty() -> {
+                SideEffect(onContentReady)
+                MainScreen(openStoryId, onOpenStoryHandled)
+            }
             state.loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { LoomMark(Modifier.size(64.dp)) }
-            else -> TopicPickerScreen(TopicPickerMode.Onboarding, onExit = onSignOut, vm = vm)
+            else -> {
+                SideEffect(onContentReady)
+                TrackScreen("onboarding")
+                TopicPickerScreen(TopicPickerMode.Onboarding, onExit = onSignOut, vm = vm)
+            }
         }
     }
 }
@@ -42,23 +77,57 @@ fun AppRoot(userId: String?, onSignOut: () -> Unit, openStoryId: Long? = null, o
 /**
  * Holds the ViewModels of the signed-in account. It lives in the activity's store, so they survive configuration
  * changes, and it starts a fresh store whenever the account changes or signs out, so each sign-in gets new
- * ViewModels (which load on creation) and none of the previous account's state.
+ * ViewModels (which load on creation) and none of the previous account's state. Their SavedStateHandles are
+ * saved with the activity and come back after process death, for the same account only.
  */
-class SessionViewModels : ViewModel() {
-    private var userId: String? = null
-    private var store = ViewModelStore()
+class SessionViewModels(private val saved: SavedStateHandle) : ViewModel() {
+    private var session: SessionOwner? = null
 
     fun ownerFor(userId: String?): ViewModelStoreOwner {
-        if (userId != this.userId) {
-            store.clear()
-            store = ViewModelStore()
-            this.userId = userId
-        }
-        val current = store
-        return object : ViewModelStoreOwner {
-            override val viewModelStore = current
+        session?.takeIf { it.userId == userId }?.let { return it }
+        session?.viewModelStore?.clear()
+        val restored = saved.get<Bundle>(KEY_SESSION_STATE)?.takeIf { saved.get<String>(KEY_SESSION_USER) == userId }
+        return SessionOwner(userId, restored).also { owner ->
+            session = owner
+            saved[KEY_SESSION_USER] = userId
+            saved.setSavedStateProvider(KEY_SESSION_STATE) { owner.save() }
         }
     }
 
-    override fun onCleared() = store.clear()
+    override fun onCleared() {
+        session?.viewModelStore?.clear()
+    }
+}
+
+private const val KEY_SESSION_USER = "session_user"
+private const val KEY_SESSION_STATE = "session_state"
+
+/**
+ * One account's ViewModel store with its own saved state, restored from [restored]. Koin reads the creation extras,
+ * so `SavedStateHandle` constructor params resolve against this owner rather than the activity.
+ */
+private class SessionOwner(val userId: String?, restored: Bundle?) :
+    ViewModelStoreOwner, SavedStateRegistryOwner, HasDefaultViewModelProviderFactory {
+    private val lifecycleRegistry = LifecycleRegistry(this)
+    private val savedState = SavedStateRegistryController.create(this)
+
+    override val viewModelStore = ViewModelStore()
+    override val lifecycle: Lifecycle get() = lifecycleRegistry
+    override val savedStateRegistry: SavedStateRegistry get() = savedState.savedStateRegistry
+    override val defaultViewModelProviderFactory: ViewModelProvider.Factory = SavedStateViewModelFactory()
+    override val defaultViewModelCreationExtras: CreationExtras
+        get() = MutableCreationExtras().apply {
+            this[SAVED_STATE_REGISTRY_OWNER_KEY] = this@SessionOwner
+            this[VIEW_MODEL_STORE_OWNER_KEY] = this@SessionOwner
+        }
+
+    init {
+        savedState.performAttach()
+        savedState.performRestore(restored)
+        enableSavedStateHandles()
+        // CREATED hands the restored state to the SavedStateHandles; the store never needs to be STARTED.
+        lifecycleRegistry.currentState = Lifecycle.State.CREATED
+    }
+
+    fun save(): Bundle = Bundle().also(savedState::performSave)
 }

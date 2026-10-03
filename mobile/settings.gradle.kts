@@ -14,4 +14,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "changeloom"
-include(":shared", ":androidApp")
+include(":shared", ":androidApp", ":baselineprofile")

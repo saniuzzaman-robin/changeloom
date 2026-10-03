@@ -2,27 +2,23 @@ package dev.changeloom.android.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.googlefonts.Font
-import androidx.compose.ui.text.googlefonts.GoogleFont
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import dev.changeloom.android.R
 
-// Downloadable fonts via Play Services; without it Compose falls back to the system font.
-private val provider = GoogleFont.Provider(
-    providerAuthority = "com.google.android.gms.fonts",
-    providerPackage = "com.google.android.gms",
-    certificates = R.array.com_google_android_gms_fonts_certs,
+// Bundled variable fonts (SIL OFL, from github.com/google/fonts), one instance per weight: they render on the first
+// frame, offline and without Play Services, unlike downloadable fonts.
+private fun bundledFamily(font: Int, vararg weights: FontWeight) = FontFamily(
+    weights.map { Font(font, it, variationSettings = FontVariation.Settings(FontVariation.weight(it.weight))) },
 )
 
-private fun googleFamily(name: String, vararg weights: FontWeight) =
-    FontFamily(weights.map { Font(googleFont = GoogleFont(name), fontProvider = provider, weight = it) })
-
-val HeadingFamily = googleFamily("Plus Jakarta Sans", FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold, FontWeight.ExtraBold)
-val BodyFamily = googleFamily("Inter", FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold)
-val MonoFamily = googleFamily("JetBrains Mono", FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold)
+val HeadingFamily = bundledFamily(R.font.plus_jakarta_sans, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold, FontWeight.ExtraBold)
+val BodyFamily = bundledFamily(R.font.inter, FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold)
+val MonoFamily = bundledFamily(R.font.jetbrains_mono, FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold)
 
 private val tight = (-0.025).em
 

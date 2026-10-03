@@ -6,5 +6,8 @@ interface StoryCache {
     suspend fun saveTimeline(items: List<StorySummary>)
     suspend fun loadStory(id: Long): Story?
     suspend fun saveStory(story: Story)
+    /** The followed topic slugs, so the main UI opens before (or without) the server copy. */
+    suspend fun loadFollowed(): List<String>
+    suspend fun saveFollowed(slugs: List<String>)
     suspend fun clear()
 }

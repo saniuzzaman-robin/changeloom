@@ -25,20 +25,27 @@ import kotlin.test.assertTrue
 
 private object TokenAuth : AuthRepository {
     override val currentUser: StateFlow<AuthUser?> = MutableStateFlow(null)
-    override suspend fun idToken() = "tok"
+    override suspend fun idToken(forceRefresh: Boolean) = "tok"
     override suspend fun signInWithEmail(email: String, password: String) = Unit
     override suspend fun registerWithEmail(email: String, password: String) = Unit
-    override suspend fun signInWithGoogleIdToken(googleIdToken: String) = Unit
+    override suspend fun signInWithGoogleIdToken(googleIdToken: String) = false
     override fun signOut() = Unit
+    override fun needsReauth() = false
+    override suspend fun reauthenticateWithPassword(password: String) = Unit
+    override suspend fun reauthenticateWithGoogleIdToken(googleIdToken: String) = Unit
+    override suspend fun deleteUser() = Unit
 }
 
 private class MemoryCache(var timeline: List<StorySummary> = emptyList()) : StoryCache {
     val stories = mutableMapOf<Long, Story>()
+    var followed = emptyList<String>()
     override suspend fun loadTimeline() = timeline
     override suspend fun saveTimeline(items: List<StorySummary>) { timeline = items }
     override suspend fun loadStory(id: Long) = stories[id]
     override suspend fun saveStory(story: Story) { stories[story.id] = story }
-    override suspend fun clear() { timeline = emptyList(); stories.clear() }
+    override suspend fun loadFollowed() = followed
+    override suspend fun saveFollowed(slugs: List<String>) { followed = slugs }
+    override suspend fun clear() { timeline = emptyList(); stories.clear(); followed = emptyList() }
 }
 
 private val json = headersOf(HttpHeaders.ContentType, "application/json")

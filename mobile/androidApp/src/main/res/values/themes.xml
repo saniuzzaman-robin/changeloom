@@ -6,10 +6,12 @@
         <item name="android:colorBackground">@color/changeloom_bg</item>
     </style>
 
-    <!-- Launch theme for MainActivity, which switches to Theme.Changeloom in onCreate. Before API 31 the window
-         background is the splash; from 31 the platform splash in values-v31 takes over. -->
-    <style name="Theme.Changeloom.Splash">
-        <item name="android:windowBackground">@drawable/splash_window</item>
+    <!-- Launch theme for MainActivity (core-splashscreen), which switches to Theme.Changeloom in installSplashScreen.
+         Before API 31 the icon is static: the animated one (values-v31) starts undrawn. -->
+    <style name="Theme.Changeloom.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/changeloom_bg</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.Changeloom</item>
     </style>
 
     <color name="changeloom_bg">#FF070709</color>

@@ -65,6 +65,8 @@ jobs:
         env:
           API_BASE_URL: ${{ vars.ANDROID_API_BASE_URL }}
           VERSION_CODE_OFFSET: ${{ vars.ANDROID_VERSION_CODE_OFFSET }}
+          ADMOB_APP_ID: ${{ vars.ANDROID_ADMOB_APP_ID }}
+          ADMOB_NATIVE_AD_UNIT_ID: ${{ vars.ANDROID_ADMOB_NATIVE_AD_UNIT_ID }}
         run: |
           [[ $API_BASE_URL == https://* ]] || { echo "Set ANDROID_API_BASE_URL (the env's Cloud Run https URL) on the environment."; exit 1; }
           [[ ${VERSION_CODE_OFFSET:-0} =~ ^[0-9]+$ ]] || { echo "ANDROID_VERSION_CODE_OFFSET must be a whole number"; exit 1; }
@@ -75,6 +77,8 @@ jobs:
           if [[ $FLAVOR == prod ]]; then
             [[ $GITHUB_REF_NAME =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]] || { echo "release tags look like v1.2.3, got $GITHUB_REF_NAME"; exit 1; }
             props+=("-Pchangeloom.versionName=${BASH_REMATCH[1]}")
+            [[ -n $ADMOB_APP_ID && -n $ADMOB_NATIVE_AD_UNIT_ID ]] || { echo "Set ANDROID_ADMOB_APP_ID and ANDROID_ADMOB_NATIVE_AD_UNIT_ID on the production environment."; exit 1; }
+            props+=("-Pchangeloom.prod.admobAppId=$ADMOB_APP_ID" "-Pchangeloom.prod.admobNativeAdUnitId=$ADMOB_NATIVE_AD_UNIT_ID")
             ./gradlew "${props[@]}" :androidApp:bundleProdRelease
           else
             ./gradlew "${props[@]}" :androidApp:assembleStagingRelease

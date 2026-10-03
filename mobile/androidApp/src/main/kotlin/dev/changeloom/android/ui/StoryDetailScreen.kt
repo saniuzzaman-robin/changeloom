@@ -1,7 +1,9 @@
 package dev.changeloom.android.ui
 
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
@@ -75,11 +77,16 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.changeloom.android.R
+import dev.changeloom.android.telemetry.AppLog
 import dev.changeloom.android.ui.components.BannerTone
 import dev.changeloom.android.ui.components.EmptyState
 import dev.changeloom.android.ui.components.Eyebrow
@@ -87,6 +94,7 @@ import dev.changeloom.android.ui.components.GlassCard
 import dev.changeloom.android.ui.components.GridBackground
 import dev.changeloom.android.ui.components.ImportanceMeter
 import dev.changeloom.android.ui.components.KindPill
+import dev.changeloom.android.ui.components.MAX_IMPORTANCE
 import dev.changeloom.android.ui.components.NavigationBarScrim
 import dev.changeloom.android.ui.components.PrimaryButton
 import dev.changeloom.android.ui.components.SeverityDot
@@ -130,7 +138,10 @@ internal fun StoryDetailScreen(id: Long, onBack: () -> Unit) {
         onRetry = vm::load,
         onToggleSave = { state.story?.let { vm.setBookmarked(!it.isBookmarked) } },
         onToggleRead = { cached?.let { vm.setRead(!it.isRead) } },
-        onShare = { context.shareStory(it) },
+        onShare = {
+            context.shareStory(it)
+            vm.shared()
+        },
     )
 }
 
@@ -150,33 +161,34 @@ internal fun StoryDetailContent(
     val hero = story?.asSummary() ?: placeholder
     val scroll = rememberScrollState()
     val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     Box(Modifier.fillMaxSize().background(c.bg)) {
         if (hero == null && !state.loading) {
             EmptyState(
-                title = "Couldn't load this story",
-                message = state.error ?: "Check your connection and try again.",
+                title = stringResource(R.string.story_load_failed),
+                message = state.error ?: stringResource(R.string.check_connection),
                 modifier = Modifier.align(Alignment.Center),
-                action = { PrimaryButton("Retry", onRetry, icon = Icons.Rounded.Refresh) },
+                action = { PrimaryButton(stringResource(R.string.retry), onRetry, icon = Icons.Rounded.Refresh) },
             )
         } else {
-            Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+            Column(Modifier.fillMaxSize().testTag("story_detail").verticalScroll(scroll)) {
                 if (hero != null) DetailHero(hero) else HeroSkeleton()
                 Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = Spacing.gutter)) {
                     when {
                         story != null -> {
                             MarkdownText(story.bodyMd, Modifier.enter(BODY_ENTER_DELAY))
                             if (story.sources.isNotEmpty()) {
-                                SourceList(story.sources, onOpen = uriHandler::openUri, Modifier.padding(top = 32.dp).enter(SOURCES_ENTER_DELAY))
+                                SourceList(story.sources, onOpen = { uriHandler.openOrToast(it, context) }, Modifier.padding(top = 32.dp).enter(SOURCES_ENTER_DELAY))
                             }
                         }
                         state.loading -> BodySkeleton()
                         else -> StatusBanner(
-                            state.error ?: "Could not load story",
+                            state.error ?: stringResource(R.string.story_load_failed),
                             Icons.Rounded.ErrorOutline,
                             tone = BannerTone.Error,
-                            actionLabel = "Retry",
+                            actionLabel = stringResource(R.string.retry),
                             onAction = onRetry,
                         )
                     }
@@ -245,7 +257,7 @@ private fun DetailHero(story: StorySummary) {
             Row(Modifier.enter(META_ENTER_DELAY), verticalAlignment = Alignment.CenterVertically) {
                 ImportanceMeter(story.importance)
                 Spacer(Modifier.width(8.dp))
-                Eyebrow("Importance ${story.importance}/5")
+                Eyebrow(stringResource(R.string.importance_label, story.importance, MAX_IMPORTANCE))
             }
             if (story.topics.isNotEmpty()) {
                 Spacer(Modifier.height(14.dp))
@@ -322,10 +334,10 @@ private fun DetailTopBar(title: String?, scroll: ScrollState, onBack: () -> Unit
                     .clip(CircleShape)
                     .background(c.navGlass)
                     .border(1.dp, c.line, CircleShape)
-                    .clickable(role = Role.Button, onClickLabel = "Back", onClick = onBack),
+                    .clickable(role = Role.Button, onClickLabel = stringResource(R.string.back), onClick = onBack),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = c.fg, modifier = Modifier.size(20.dp))
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.back), tint = c.fg, modifier = Modifier.size(20.dp))
             }
             AnimatedVisibility(
                 collapsed && title != null,
@@ -360,7 +372,7 @@ private fun DetailTopBar(title: String?, scroll: ScrollState, onBack: () -> Unit
 private fun SourceList(sources: List<StorySource>, onOpen: (String) -> Unit, modifier: Modifier = Modifier) {
     val c = ChangeloomTheme.colors
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Eyebrow("Sources · ${sources.size}")
+        Eyebrow(stringResource(R.string.sources_count, sources.size))
         sources.forEachIndexed { i, source ->
             GlassCard(
                 Modifier.fillMaxWidth(),
@@ -377,7 +389,7 @@ private fun SourceList(sources: List<StorySource>, onOpen: (String) -> Unit, mod
                         Text(source.name, style = MaterialTheme.typography.titleSmall, color = c.fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(hostOf(source.url), style = MaterialTheme.typography.bodySmall, color = c.fgSubtle, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = "Open ${source.name}", tint = c.fgSubtle, modifier = Modifier.size(18.dp))
+                    Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = stringResource(R.string.open_source, source.name), tint = c.fgSubtle, modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -401,8 +413,8 @@ private fun DetailActionBar(saved: Boolean, read: Boolean?, onToggleSave: () -> 
     ) {
         ActionItem(
             if (saved) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder,
-            if (saved) "Saved" else "Save",
-            actionLabel = if (saved) "Remove from saved" else "Save",
+            stringResource(if (saved) R.string.saved else R.string.save),
+            actionLabel = stringResource(if (saved) R.string.remove_from_saved else R.string.save),
             active = saved,
             toggle = true,
             onClick = onToggleSave,
@@ -410,14 +422,14 @@ private fun DetailActionBar(saved: Boolean, read: Boolean?, onToggleSave: () -> 
         if (read != null) {
             ActionItem(
                 if (read) Icons.Rounded.DoneAll else Icons.Rounded.MarkEmailUnread,
-                if (read) "Read" else "Unread",
-                actionLabel = if (read) "Mark unread" else "Mark read",
+                stringResource(if (read) R.string.read else R.string.unread),
+                actionLabel = stringResource(if (read) R.string.mark_unread else R.string.mark_read),
                 active = read,
                 toggle = true,
                 onClick = onToggleRead,
             )
         }
-        ActionItem(Icons.Rounded.Share, "Share", actionLabel = "Share", active = false, toggle = false, onClick = onShare)
+        ActionItem(Icons.Rounded.Share, stringResource(R.string.share), actionLabel = stringResource(R.string.share), active = false, toggle = false, onClick = onShare)
     }
 }
 
@@ -452,6 +464,23 @@ private fun hostOf(url: String): String = try {
     URI(url).host?.removePrefix("www.") ?: url
 } catch (e: URISyntaxException) {
     url
+}
+
+/** Opens [url] in another app; with no app for it (or a malformed link) shows a toast instead of crashing. */
+private fun UriHandler.openOrToast(url: String, context: Context) {
+    try {
+        openUri(url)
+    } catch (e: ActivityNotFoundException) {
+        cannotOpen(context, e)
+    } catch (e: IllegalArgumentException) {
+        // Compose's handler rethrows ActivityNotFoundException as this.
+        cannotOpen(context, e)
+    }
+}
+
+private fun cannotOpen(context: Context, error: Exception) {
+    AppLog.w("StoryDetail", "No app could open a source link", error)
+    Toast.makeText(context, R.string.cannot_open_link, Toast.LENGTH_SHORT).show()
 }
 
 private fun Context.shareStory(story: Story) {
