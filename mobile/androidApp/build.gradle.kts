@@ -10,10 +10,13 @@ plugins {
 // Hosted environments, one product flavor each (see deploy/README.md).
 val envs = listOf("staging", "prod")
 
-// Firebase config comes from each env's Firebase project and is never committed:
-// src/<env>/google-services.json. Debug builds work without it (sign-in then fails at runtime);
-// release builds require it (see verifyConfig below).
-val googleServicesFiles = envs.associateWith { file("src/$it/google-services.json") }
+// Firebase config, never committed: src/<env>/google-services.json from each env's Firebase project,
+// else google-services.json next to this file (its Firebase project must list that env's app id).
+// Without config a variant still builds, but the app crashes at launch (Firebase is not
+// initialized); release builds require it (see verify<Env>ReleaseConfig below).
+val googleServicesFiles = envs.associateWith { env ->
+    file("src/$env/google-services.json").takeIf { it.exists() } ?: file("google-services.json")
+}
 if (googleServicesFiles.values.any { it.exists() }) {
     apply(plugin = libs.plugins.google.services.get().pluginId)
     configure<GoogleServicesPluginConfig> {
