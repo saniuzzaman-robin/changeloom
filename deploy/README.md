@@ -7,7 +7,7 @@ Cloud Run service and Android app.
 | | dev (local) | staging | prod |
 |---|---|---|---|
 | api `ENV` | `dev` (dev auth: `Bearer dev:<name>`) | `staging` (Firebase auth) | `prod` (Firebase auth) |
-| api settings | root `.env` | `deploy/staging.env` | `deploy/prod.env` |
+| api settings | root `.env` | `deploy/staging.env` (CI: GitHub variable) | `deploy/prod.env` (CI: GitHub variable) |
 | Database | dev Postgres (`make db-up`) | Neon, staging | Neon, prod |
 | Android flavor | `staging`/`prod` debug, local api by default | `staging`: `dev.changeloom.android` (same id as prod, so one replaces the other on a device), "Changeloom Staging" | `prod`: `dev.changeloom.android` |
 | Curator target | local DB | `--env staging` | `--env prod` |
@@ -56,13 +56,19 @@ These commands create cloud resources and may cost money. Read them, then run th
    With `FCM_ENABLED=true`, the service account also needs permission to send FCM messages, e.g.
    `roles/firebasecloudmessaging.admin` on the project. Verifying Firebase ID tokens needs no IAM role.
 5. **Deploy settings.** `cp deploy/<env>.env.example deploy/<env>.env` and fill it in
-   (`GCP_PROJECT`, `SERVICE_ACCOUNT=$SA`, `FIREBASE_PROJECT_ID`, ...).
+   (`GCP_PROJECT`, `SERVICE_ACCOUNT=$SA`, `FIREBASE_PROJECT_ID`, ...). Secrets are pinned to a
+   version: after `gcloud secrets versions add`, bump the matching `*_VERSION` and redeploy.
 6. **Curator.** In `curator/.env`, set `REMOTE_DATABASE_URL_<ENV>`, `NOTIFY_SECRET_<ENV>`, and after
    the first deploy `API_BASE_URL_<ENV>` (the Cloud Run URL).
 
 ## Backend (api on Cloud Run)
 
-Release to staging, check it, then release the same commit to prod:
+Normally the deploy workflow releases the api (see Continuous deployment): every push to `main` that
+passes CI goes to staging, and you promote the same image to prod by hand. The first deploy of each
+env must be manual, because it creates the service and makes it public; the workflow only adds
+revisions to an existing service.
+
+By hand, release to staging, check it, then release the same commit to prod:
 
 ```sh
 make migrate-remote                      # staging DB: pending backend migrations
@@ -74,7 +80,10 @@ make deploy-api DEPLOY_ENV=prod          # committed code only; asks you to type
 ```
 
 - `deploy/deploy-api.sh` prints the full `gcloud run deploy` command before running it and labels the
-  revision with `env` and `commit` (`<sha>-dirty` for uncommitted staging deploys).
+  revision with `env` and `commit` (`<sha>-dirty` for uncommitted staging deploys). Instance size,
+  concurrency, timeout, probes (`/health`) and secret versions all come from `deploy/<env>.env`.
+- With `--image <image@sha256:...>` it deploys that image with no traffic under the tag `candidate`;
+  `deploy/promote-api.sh <env>` then checks `/ready` on it and sends it all traffic.
 - The first `--source` deploy in a project asks to create an Artifact Registry repository; accept it.
 - Migrations are forward-only and run before the new code, so keep them compatible with the code that
   is still serving (add columns first, drop them in a later release).
@@ -192,18 +201,120 @@ keyPassword=...
 | Prod release AAB | `make android-bundle DEPLOY_ENV=prod` | `bundle/prodRelease/androidApp-prod-release.aab` |
 
 Add `GRADLE=gradle` to the make targets to use the system Gradle instead of the wrapper.
-Before each release, bump `versionCode` (and `versionName`) in `mobile/androidApp/build.gradle.kts`;
-Play rejects a `versionCode` it has seen before.
+Local builds use `versionCode` 1 and `versionName` 0.1.0 unless you pass
+`-Pchangeloom.versionCode=<n>` and `-Pchangeloom.versionName=<x.y.z>`. The release workflow sets
+them (see Continuous deployment). Play rejects a `versionCode` it has seen before.
 
-**Distribution.**
+**Distribution.** The release workflow does this for you; by hand:
 - Staging: upload the APK to Firebase App Distribution in the staging Firebase project (console, or
   `firebase appdistribution:distribute <apk> --app <staging Firebase Android app id> --groups <group>`).
 - Prod: upload the AAB in Play Console, to the internal testing track first, then promote it to production.
   Play also needs a public account-deletion URL (App content → Data safety). Host the text in
   `deploy/account-deletion.md` after filling in its placeholders.
 
+## Continuous deployment (GitHub Actions)
+
+- `.github/workflows/deploy-api.yml`
+  - **Staging:** runs after CI passes on a push to `main`. It builds the image once, pushes it to
+    staging's Artifact Registry, runs the backend migrations with the image's `goose` (same
+    `goose_db_version` table as `curator migrate --remote`), deploys with no traffic, checks `/ready`,
+    then shifts traffic. The run summary prints the image (`...api@sha256:...`).
+  - **Prod:** Actions → Deploy api → Run workflow, with that image. After the `production`
+    environment's reviewers approve, it copies the same digest to prod's registry (crane), checks out
+    the commit the image was built from, then migrates, deploys, checks and promotes the same way.
+- `.github/workflows/android-release.yml`
+  - **Staging:** pushes to `main` that touch `mobile/` build the signed staging APK and send it to
+    Firebase App Distribution.
+  - **Prod:** a `v1.2.3` tag (after approval) builds the signed prod AAB with `versionName` 1.2.3 and
+    uploads it to Play's internal track. Promote it in Play Console.
+  - `versionCode` is the workflow's run number plus the optional repo variable
+    `ANDROID_VERSION_CODE_OFFSET`. Set the offset above any `versionCode` you uploaded by hand.
+
+The workflows reach GCP through Workload Identity Federation, so there are no service account keys.
+**One-time setup, per env.** These commands change IAM and create resources; read them, then run them
+yourself. `P`, `R` and `SA` are as above, `REPO=saniuzzaman-robin/changeloom`, and `GH_ENV` is the
+GitHub environment: `staging`, or `production` for prod.
+
+1. **APIs and the image repository.**
+   ```sh
+   gcloud services enable iamcredentials.googleapis.com sts.googleapis.com --project "$P"
+   gcloud artifacts repositories create changeloom --project "$P" --location "$R" --repository-format docker
+   ```
+   Staging also needs `firebaseappdistribution.googleapis.com`; prod needs `androidpublisher.googleapis.com`.
+2. **Workload Identity pool.** It accepts tokens from this repository only, and each binding below
+   is limited to jobs running in `GH_ENV`.
+   ```sh
+   gcloud iam workload-identity-pools create github --project "$P" --location global \
+     --display-name "GitHub Actions"
+   gcloud iam workload-identity-pools providers create-oidc github --project "$P" --location global \
+     --workload-identity-pool github --issuer-uri https://token.actions.githubusercontent.com \
+     --attribute-mapping google.subject=assertion.sub,attribute.repository=assertion.repository \
+     --attribute-condition "assertion.repository == '$REPO'"
+   NUM=$(gcloud projects describe "$P" --format 'value(projectNumber)')
+   WIF_PROVIDER="projects/$NUM/locations/global/workloadIdentityPools/github/providers/github"
+   PRINCIPAL="principal://iam.googleapis.com/projects/$NUM/locations/global/workloadIdentityPools/github/subject/repo:$REPO:environment:$GH_ENV"
+   ```
+3. **Deployer service account. IAM:** it can deploy Cloud Run revisions as `$SA`, push images and
+   read the migration URL. It can't change the service's IAM policy.
+   ```sh
+   gcloud iam service-accounts create changeloom-deployer --project "$P"
+   DEPLOYER="changeloom-deployer@$P.iam.gserviceaccount.com"
+   gcloud iam service-accounts add-iam-policy-binding "$DEPLOYER" --project "$P" \
+     --role roles/iam.workloadIdentityUser --member "$PRINCIPAL"
+   gcloud projects add-iam-policy-binding "$P" --member "serviceAccount:$DEPLOYER" --role roles/run.developer
+   gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$P" \
+     --member "serviceAccount:$DEPLOYER" --role roles/iam.serviceAccountUser
+   gcloud artifacts repositories add-iam-policy-binding changeloom --project "$P" --location "$R" \
+     --member "serviceAccount:$DEPLOYER" --role roles/artifactregistry.writer
+
+   # The direct (non-pooled) Neon URL, the same one as REMOTE_DATABASE_URL_<ENV> in curator/.env.
+   printf '%s' "<direct Neon URL>" | gcloud secrets create changeloom-migrate-database-url --project "$P" --data-file=-
+   gcloud secrets add-iam-policy-binding changeloom-migrate-database-url --project "$P" \
+     --member "serviceAccount:$DEPLOYER" --role roles/secretmanager.secretAccessor
+   ```
+   Prod only: the prod deployer copies images out of staging's repository, so it can read it.
+   This is a **cross-project IAM grant**.
+   ```sh
+   gcloud artifacts repositories add-iam-policy-binding changeloom --project <staging project> \
+     --location <staging region> --role roles/artifactregistry.reader \
+     --member "serviceAccount:changeloom-deployer@<prod project>.iam.gserviceaccount.com"
+   ```
+4. **Android release service account.**
+   ```sh
+   gcloud iam service-accounts create changeloom-android-release --project "$P"
+   ANDROID_SA="changeloom-android-release@$P.iam.gserviceaccount.com"
+   gcloud iam service-accounts add-iam-policy-binding "$ANDROID_SA" --project "$P" \
+     --role roles/iam.workloadIdentityUser --member "$PRINCIPAL"
+   ```
+   - Staging, **IAM:** `gcloud projects add-iam-policy-binding "$P" --member "serviceAccount:$ANDROID_SA" --role roles/firebaseappdistro.admin`.
+   - Prod: in Play Console → Users and permissions, invite `$ANDROID_SA` with release permissions
+     for this app only. Play's API can upload only after you have uploaded the first AAB by hand.
+     While the app is still a draft in Play Console, set `PLAY_RELEASE_STATUS=draft`.
+5. **GitHub environments.** In the repository's Settings → Environments, create `staging` and
+   `production`. On `production`, add yourself as a required reviewer and limit deployments to `main`
+   and tags matching `v*`. Then set these on each environment:
+
+   | Name | Kind | Value |
+   |---|---|---|
+   | `WIF_PROVIDER` | variable | `$WIF_PROVIDER` |
+   | `DEPLOYER_SA` | variable | `$DEPLOYER` |
+   | `DEPLOY_ENV_FILE` | variable | the whole of `deploy/<env>.env` (no secret values in it) |
+   | `ANDROID_RELEASE_SA` | variable | `$ANDROID_SA` |
+   | `ANDROID_API_BASE_URL` | variable | the env's Cloud Run URL |
+   | `FIREBASE_ANDROID_APP_ID` | variable, staging | the Firebase Android app id (`1:...:android:...`) |
+   | `APP_DISTRIBUTION_GROUPS` | variable, staging | tester group aliases, comma-separated |
+   | `PLAY_RELEASE_STATUS` | variable, prod, optional | `draft` until the app is out of draft; default `completed` |
+   | `GOOGLE_SERVICES_JSON` | secret | the env's `google-services.json` |
+   | `ANDROID_KEYSTORE_BASE64` | secret | `base64 -i ~/keys/changeloom-upload.jks` |
+   | `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | secrets | as in `mobile/keystore.properties` |
+
+   With the GitHub CLI: `gh variable set DEPLOY_ENV_FILE --env staging < deploy/staging.env`.
+   **Whenever `deploy/<env>.env` changes, update `DEPLOY_ENV_FILE` too.**
+6. **First deploy** of the env by hand (Backend above). After that, the workflows take over.
+
 ## Release order
 
-1. Staging: `make migrate-remote`, `make deploy-api`, the curator's `sync --env staging` (once
-   Phase 6 lands), `make android-apk`, test.
-2. Prod: the same commit with `DEPLOY_ENV=prod`, then `make android-bundle DEPLOY_ENV=prod` and Play Console.
+1. Staging: merge to `main`. The workflows deploy the api and send the app to testers. Run the
+   curator's `sync --env staging` and test.
+2. Prod: run Deploy api with the staging image, then push a `v<x.y.z>` tag for the app, and promote
+   the internal release in Play Console.

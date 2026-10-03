@@ -1,0 +1,145 @@
+name: Deploy api
+
+# Staging: after CI passes on main, build the image once, migrate, deploy it with no traffic,
+# smoke-test /ready, then shift traffic.
+# Prod: run this workflow by hand with the staging image (printed in the staging run's summary).
+# The production environment's reviewers approve it; it copies that exact digest to the prod
+# registry, then migrates, deploys, smoke-tests and promotes the same way.
+# Setup (WIF, service accounts, GitHub environments): deploy/README.md, Continuous deployment.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Staging image to promote to prod (<region>-docker.pkg.dev/<project>/<repo>/api@sha256:...)
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  # Copies images between registries without changing their digest.
+  CRANE: github.com/google/go-containerregistry/cmd/crane@v0.22.1
+
+# Third-party actions are pinned by commit SHA (Dependabot keeps them current).
+jobs:
+  staging:
+    # Only pushes to this repo's main; never a PR's CI run.
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    concurrency:
+      group: deploy-api-staging
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Load deploy settings
+        env:
+          DEPLOY_ENV_FILE: ${{ vars.DEPLOY_ENV_FILE }}
+        run: |
+          [[ -n $DEPLOY_ENV_FILE ]] || { echo "Set the DEPLOY_ENV_FILE variable on the staging environment (deploy/README.md)."; exit 1; }
+          printf '%s\n' "$DEPLOY_ENV_FILE" > deploy/staging.env
+          set -a; source deploy/staging.env; set +a
+          for key in GCP_PROJECT GCP_REGION ARTIFACT_REPO MIGRATE_DATABASE_URL_SECRET MIGRATE_DATABASE_URL_SECRET_VERSION; do
+            [[ -n ${!key:-} ]] || { echo "Set $key in DEPLOY_ENV_FILE."; exit 1; }
+            echo "$key=${!key}" >> "$GITHUB_ENV"
+          done
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - name: Build and push the image
+        run: |
+          gcloud auth configure-docker "$GCP_REGION-docker.pkg.dev" --quiet
+          image="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT/$ARTIFACT_REPO/api"
+          docker build --label "org.opencontainers.image.revision=$GITHUB_SHA_HEAD" -t "$image:$GITHUB_SHA_HEAD" backend
+          docker push "$image:$GITHUB_SHA_HEAD"
+          ref="$(docker inspect --format '{{index .RepoDigests 0}}' "$image:$GITHUB_SHA_HEAD")"
+          echo "IMAGE=$ref" >> "$GITHUB_ENV"
+        env:
+          GITHUB_SHA_HEAD: ${{ github.event.workflow_run.head_sha }}
+      - name: Migrate the database
+        run: |
+          url="$(gcloud secrets versions access "$MIGRATE_DATABASE_URL_SECRET_VERSION" --secret "$MIGRATE_DATABASE_URL_SECRET" --project "$GCP_PROJECT")"
+          echo "::add-mask::$url"
+          GOOSE_DRIVER=postgres GOOSE_DBSTRING="$url" docker run --rm -e GOOSE_DRIVER -e GOOSE_DBSTRING \
+            "$IMAGE" /app/goose -dir /app/migrations up
+      - run: deploy/deploy-api.sh staging --image "$IMAGE"
+      - run: deploy/promote-api.sh staging
+      - name: Summary
+        run: |
+          {
+            echo "Deployed to staging: \`$IMAGE\`"
+            echo
+            echo "To release it to prod, run this workflow with that image."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  prod:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    concurrency:
+      group: deploy-api-prod
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+      - name: Load deploy settings
+        env:
+          DEPLOY_ENV_FILE: ${{ vars.DEPLOY_ENV_FILE }}
+          SOURCE_IMAGE: ${{ inputs.image }}
+        run: |
+          [[ $SOURCE_IMAGE =~ ^[a-z0-9-]+-docker\.pkg\.dev/[^@[:space:]]+/api@sha256:[0-9a-f]{64}$ ]] \
+            || { echo "image must be an Artifact Registry api image pinned by digest, got: $SOURCE_IMAGE"; exit 1; }
+          [[ -n $DEPLOY_ENV_FILE ]] || { echo "Set the DEPLOY_ENV_FILE variable on the production environment (deploy/README.md)."; exit 1; }
+          printf '%s\n' "$DEPLOY_ENV_FILE" > deploy/prod.env
+          set -a; source deploy/prod.env; set +a
+          for key in GCP_PROJECT GCP_REGION ARTIFACT_REPO MIGRATE_DATABASE_URL_SECRET MIGRATE_DATABASE_URL_SECRET_VERSION; do
+            [[ -n ${!key:-} ]] || { echo "Set $key in DEPLOY_ENV_FILE."; exit 1; }
+            echo "$key=${!key}" >> "$GITHUB_ENV"
+          done
+          echo "SOURCE_IMAGE=$SOURCE_IMAGE" >> "$GITHUB_ENV"
+          echo "IMAGE=$GCP_REGION-docker.pkg.dev/$GCP_PROJECT/$ARTIFACT_REPO/api@${SOURCE_IMAGE#*@}" >> "$GITHUB_ENV"
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - name: Copy the image to the prod registry
+        run: |
+          gcloud auth configure-docker "${SOURCE_IMAGE%%/*},$GCP_REGION-docker.pkg.dev" --quiet
+          commit="$(go run "$CRANE" config "$SOURCE_IMAGE" | jq -r '.config.Labels["org.opencontainers.image.revision"] // empty')"
+          [[ -n $commit ]] || { echo "$SOURCE_IMAGE has no revision label: was it built by this workflow?"; exit 1; }
+          go run "$CRANE" copy "$SOURCE_IMAGE" "${IMAGE%@*}:$commit"
+          copied="$(go run "$CRANE" digest "${IMAGE%@*}:$commit")"
+          [[ $copied == "${SOURCE_IMAGE#*@}" ]] || { echo "the copy's digest $copied differs from the source"; exit 1; }
+          echo "COMMIT=$commit" >> "$GITHUB_ENV"
+      # Deploy with the scripts and commit label of the commit the image was built from.
+      - run: git checkout --detach "$COMMIT"
+      - name: Migrate the database
+        run: |
+          url="$(gcloud secrets versions access "$MIGRATE_DATABASE_URL_SECRET_VERSION" --secret "$MIGRATE_DATABASE_URL_SECRET" --project "$GCP_PROJECT")"
+          echo "::add-mask::$url"
+          GOOSE_DRIVER=postgres GOOSE_DBSTRING="$url" docker run --rm -e GOOSE_DRIVER -e GOOSE_DBSTRING \
+            "$IMAGE" /app/goose -dir /app/migrations up
+      - run: deploy/deploy-api.sh prod --image "$IMAGE"
+      - run: deploy/promote-api.sh prod
+      - run: echo "Deployed to prod from \`$SOURCE_IMAGE\`" >> "$GITHUB_STEP_SUMMARY"

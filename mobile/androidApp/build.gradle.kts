@@ -51,8 +51,12 @@ android {
         applicationId = "dev.changeloom.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI sets both from the release workflow (-Pchangeloom.versionCode, -Pchangeloom.versionName).
+        versionCode = providers.gradleProperty("changeloom.versionCode").orNull?.let {
+            it.toIntOrNull()?.takeIf { code -> code > 0 }
+                ?: throw GradleException("changeloom.versionCode must be a positive integer, got \"$it\"")
+        } ?: 1
+        versionName = providers.gradleProperty("changeloom.versionName").orNull ?: "0.1.0"
     }
 
     flavorDimensions += "env"
