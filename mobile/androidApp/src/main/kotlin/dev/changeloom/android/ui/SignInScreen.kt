@@ -125,20 +125,28 @@ fun SignInScreen(vm: SignInViewModel = koinViewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // A second credential request while the account picker is up makes the system cancel the first one
+    // ("Cancelled by Changeloom"), so the form stays busy until the picker returns.
+    var picking by remember { mutableStateOf(false) }
     SignInContent(
-        state = state,
+        state = if (picking) state.copy(busy = true) else state,
         onSignIn = vm::signIn,
         onRegister = vm::register,
         onGoogle = {
-            scope.launch {
-                try {
-                    vm.googleToken(requestGoogleIdToken(context, webClientId(context)))
-                } catch (e: GetCredentialCancellationException) {
-                    // User dismissed the account picker.
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    vm.fail(e.message ?: "Google sign-in failed")
+            if (!picking) {
+                picking = true
+                scope.launch {
+                    try {
+                        vm.googleToken(requestGoogleIdToken(context, webClientId(context)))
+                    } catch (e: GetCredentialCancellationException) {
+                        // User dismissed the account picker.
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        vm.fail(e.message ?: "Google sign-in failed")
+                    } finally {
+                        picking = false
+                    }
                 }
             }
         },
