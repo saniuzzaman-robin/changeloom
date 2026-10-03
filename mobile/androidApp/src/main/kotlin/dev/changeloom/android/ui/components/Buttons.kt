@@ -44,6 +44,7 @@ import dev.changeloom.android.ui.theme.Radius
 import dev.changeloom.android.ui.theme.expoTween
 
 private val BUTTON_HEIGHT = 56.dp
+private val DENSE_BUTTON_HEIGHT = 48.dp
 private val PRIMARY_GLOW = 14.dp
 
 /** Scale-down on press, shared by buttons and tappable cards. */
@@ -67,6 +68,8 @@ fun PrimaryButton(
     loading: Boolean = false,
     icon: ImageVector? = null,
     trailingIcon: ImageVector? = null,
+    /** 48dp tall instead of 56dp, for screens that must fit without scrolling (still a full touch target). */
+    dense: Boolean = false,
 ) {
     val c = ChangeloomTheme.colors
     val interaction = remember { MutableInteractionSource() }
@@ -87,8 +90,8 @@ fun PrimaryButton(
                 drawLine(Color.White.copy(alpha = 0.18f * fill), Offset(0f, 0.5f), Offset(size.width, 0.5f), 1.dp.toPx())
             }
             .clickable(interaction, indication = null, enabled = active, role = Role.Button, onClick = onClick)
-            .defaultMinSize(minHeight = BUTTON_HEIGHT)
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+            .defaultMinSize(minHeight = if (dense) DENSE_BUTTON_HEIGHT else BUTTON_HEIGHT)
+            .padding(horizontal = 24.dp, vertical = if (dense) 12.dp else 16.dp),
         contentAlignment = Alignment.Center,
     ) {
         AnimatedContent(loading, transitionSpec = { fadeIn(expoTween()) togetherWith fadeOut(expoTween()) }, label = "primaryButton") { busy ->
@@ -113,6 +116,8 @@ fun SecondaryButton(
     contentColor: Color = ChangeloomTheme.colors.fg,
     /** Custom leading mark (e.g. a brand logo) for when an [icon] tint won't do. */
     leading: (@Composable () -> Unit)? = null,
+    /** 48dp tall instead of 56dp, for screens that must fit without scrolling (still a full touch target). */
+    dense: Boolean = false,
 ) {
     val c = ChangeloomTheme.colors
     val interaction = remember { MutableInteractionSource() }
@@ -126,8 +131,8 @@ fun SecondaryButton(
             .background(bg)
             .border(1.dp, c.lineStrong, Radius.pill)
             .clickable(interaction, indication = null, enabled = enabled && !loading, role = Role.Button, onClick = onClick)
-            .defaultMinSize(minHeight = BUTTON_HEIGHT)
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+            .defaultMinSize(minHeight = if (dense) DENSE_BUTTON_HEIGHT else BUTTON_HEIGHT)
+            .padding(horizontal = 24.dp, vertical = if (dense) 12.dp else 16.dp),
         contentAlignment = Alignment.Center,
     ) {
         if (loading) {

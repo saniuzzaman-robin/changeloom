@@ -3,7 +3,7 @@
     <!-- The brand as shown in the app; app_name is the launcher label (staging overrides it). -->
     <string name="app_brand" translatable="false">Changeloom</string>
     <string name="app_version">Changeloom v%1$s</string>
-    <string name="tagline">Every release that matters, woven into one feed.</string>
+    <string name="tagline">The updates you care about, all in one place.</string>
 
     <!-- Common actions -->
     <string name="cancel">Cancel</string>
@@ -22,7 +22,6 @@
     <string name="continue_with_google">Continue with Google</string>
     <string name="or_with_email">or with email</string>
     <string name="email">Email</string>
-    <string name="email_placeholder">you@example.com</string>
     <string name="password">Password</string>
     <string name="password_hint">At least %1$d characters</string>
     <string name="show_password">Show password</string>
@@ -120,6 +119,9 @@
     <string name="section_earlier">Earlier</string>
     <string name="suggested">Suggested</string>
     <string name="open_profile">Open profile</string>
+    <string name="back_to_top">Back to top</string>
+    <string name="feed_end_title">You\'ve reached the end</string>
+    <string name="feed_end_body">That\'s every story for your topics so far. New ones appear at the top as they\'re published.</string>
     <string name="greeting_morning">Good morning</string>
     <string name="greeting_afternoon">Good afternoon</string>
     <string name="greeting_evening">Good evening</string>

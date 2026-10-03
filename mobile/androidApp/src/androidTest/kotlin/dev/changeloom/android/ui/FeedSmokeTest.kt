@@ -10,6 +10,12 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.changeloom.android.R
@@ -69,6 +75,37 @@ class FeedSmokeTest {
         compose.waitForIdle()
         assertEquals(1, readToggles.size)
         assertEquals(true, readToggles.single().second)
+    }
+
+    @Test
+    fun backToTopAppearsAfterScrollingAndReturnsToTheTop() {
+        val base = previewStories()
+        val stories = (0 until 30).map { i -> base[i % base.size].copy(id = i + 1L, title = "Story ${i + 1}") }
+        showFeed(TimelineState(items = stories))
+        val backToTop = strings.getString(R.string.back_to_top)
+        compose.onAllNodesWithContentDescription(backToTop).assertCountEquals(0)
+
+        compose.onNodeWithTag("feed").performScrollToIndex(20)
+        compose.onNodeWithContentDescription(backToTop).assertIsDisplayed().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Story 1").assertIsDisplayed()
+        compose.onAllNodesWithContentDescription(backToTop).assertCountEquals(0)
+    }
+
+    @Test
+    fun theEndShowsOnlyWhenThereAreNoMorePages() {
+        val stories = previewStories()
+        showFeed(TimelineState(items = stories, nextCursor = "more"))
+        compose.onNodeWithTag("feed").performScrollToIndex(stories.size + 2)
+        compose.onAllNodesWithTag("feed_end").assertCountEquals(0)
+    }
+
+    @Test
+    fun theEndShowsAfterTheLastPage() {
+        val stories = previewStories()
+        showFeed(TimelineState(items = stories, nextCursor = null))
+        compose.onNodeWithTag("feed").performScrollToNode(hasTestTag("feed_end"))
+        compose.onNodeWithText(strings.getString(R.string.feed_end_title)).assertIsDisplayed()
     }
 
     @Test

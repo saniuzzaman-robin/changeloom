@@ -36,9 +36,13 @@ fun GradientText(
     Text(text, modifier, style = style.merge(TextStyle(brush = brush)), textAlign = textAlign)
 }
 
-/** Fades and lifts content in after [delayMillis]; already settled in previews. */
+/**
+ * Fades and lifts content in after [delayMillis]; already settled in previews. Pass [enabled] false for content in a
+ * lazy list once it has scrolled: the list composes items again when they come back into view, which would replay it.
+ */
 @Composable
-fun Modifier.enter(delayMillis: Int): Modifier {
+fun Modifier.enter(delayMillis: Int, enabled: Boolean = true): Modifier {
+    if (!enabled) return this
     val inspection = LocalInspectionMode.current
     val progress = remember { Animatable(if (inspection) 1f else 0f) }
     LaunchedEffect(Unit) { progress.animateTo(1f, expoTween(Durations.SLOW + 300, delayMillis)) }

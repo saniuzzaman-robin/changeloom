@@ -44,6 +44,9 @@ import org.koin.android.ext.android.inject
 private const val SPLASH_EXIT_MS = 500L
 private const val SPLASH_EXIT_SCALE = 1.15f
 
+/** The weave's length (windowSplashScreenAnimationDuration); the exit never waits longer than this for it. */
+private const val SPLASH_ICON_MAX_WAIT_MS = 900L
+
 /** Longest the splash waits for the first screen; after that the in-app loading mark shows instead. */
 private const val SPLASH_MAX_MS = 1_500L
 
@@ -123,11 +126,14 @@ class MainActivity : ComponentActivity() {
     /** Lets the splash mark finish weaving (API 31+), then lifts it away: a slight zoom while the splash fades out. */
     private fun animateSplashExit(splash: SplashScreen) {
         splash.setOnExitAnimationListener { provider ->
-            // Both are 0 when the icon doesn't animate (before API 31).
+            // Both are 0 when the icon doesn't animate (before API 31). Capped, so an odd start time never holds the
+            // splash over a ready app.
             val end = provider.iconAnimationStartMillis + provider.iconAnimationDurationMillis
-            val delay = (end - System.currentTimeMillis()).coerceAtLeast(0L)
+            val delay = (end - System.currentTimeMillis()).coerceIn(0L, SPLASH_ICON_MAX_WAIT_MS)
             val easing = AnimationUtils.loadInterpolator(this, R.interpolator.ease_out_expo)
-            provider.iconView.animate().scaleX(SPLASH_EXIT_SCALE).scaleY(SPLASH_EXIT_SCALE)
+            // The icon fades itself: on API 31+ it is drawn in its own surface, which the splash view's fade doesn't
+            // reach, so it would otherwise stay on top of the app until the splash is removed.
+            provider.iconView.animate().alpha(0f).scaleX(SPLASH_EXIT_SCALE).scaleY(SPLASH_EXIT_SCALE)
                 .setStartDelay(delay).setDuration(SPLASH_EXIT_MS).setInterpolator(easing).start()
             provider.view.animate().alpha(0f).setStartDelay(delay).setDuration(SPLASH_EXIT_MS).setInterpolator(easing)
                 .withEndAction(provider::remove).start()

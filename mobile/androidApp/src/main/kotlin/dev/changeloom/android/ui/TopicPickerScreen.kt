@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.triStateToggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -167,6 +168,8 @@ internal fun TopicPickerContent(
     val selection = state.selection
     val query = state.query.trim()
     val rows = remember(selection?.tree, query) { selection?.tree?.let { topicRows(it, query) }.orEmpty() }
+    val listState = rememberLazyListState()
+    val staggered = rememberStaggered(listState)
 
     Box(Modifier.fillMaxSize().background(c.bg)) {
         GridBackground(Modifier.fillMaxWidth().height(360.dp))
@@ -189,6 +192,7 @@ internal fun TopicPickerContent(
             )
             LazyColumn(
                 Modifier.weight(1f).fillMaxWidth(),
+                state = listState,
                 contentPadding = PaddingValues(horizontal = Spacing.gutter, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -208,7 +212,8 @@ internal fun TopicPickerContent(
                             expanded = row.root.slug in state.expanded || row.matchedChildren,
                             onToggle = onToggle,
                             onExpand = { onExpand(row.root.slug) },
-                            modifier = Modifier.enter(delayMillis = if (index < STAGGERED_CARDS) 300 + index * 50 else 0),
+                            // Only the first cards, on first show: cards scrolled into view appear at once.
+                            modifier = if (staggered && index < STAGGERED_CARDS) Modifier.enter(delayMillis = 300 + index * 50) else Modifier,
                         )
                     }
                 }

@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -61,15 +60,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -91,15 +84,13 @@ import dev.changeloom.android.ui.components.BannerTone
 import dev.changeloom.android.ui.components.EmptyState
 import dev.changeloom.android.ui.components.Eyebrow
 import dev.changeloom.android.ui.components.GlassCard
-import dev.changeloom.android.ui.components.GridBackground
 import dev.changeloom.android.ui.components.ImportanceMeter
 import dev.changeloom.android.ui.components.KindPill
 import dev.changeloom.android.ui.components.MAX_IMPORTANCE
-import dev.changeloom.android.ui.components.NavigationBarScrim
 import dev.changeloom.android.ui.components.PrimaryButton
 import dev.changeloom.android.ui.components.SeverityDot
+import dev.changeloom.android.ui.components.ScreenBackdrop
 import dev.changeloom.android.ui.components.SkeletonBlock
-import dev.changeloom.android.ui.components.SpotlightGlow
 import dev.changeloom.android.ui.components.StatusBanner
 import dev.changeloom.android.ui.components.TopicChip
 import dev.changeloom.android.ui.components.enter
@@ -162,9 +153,9 @@ internal fun StoryDetailContent(
     val scroll = rememberScrollState()
     val uriHandler = LocalUriHandler.current
     val context = LocalContext.current
-    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-
     Box(Modifier.fillMaxSize().background(c.bg)) {
+        // Fixed behind the page and the bars, tinted by the story's kind; the grid stays near the top for clean reading.
+        ScreenBackdrop(Modifier.matchParentSize(), glow = hero?.let { kindColor(it.kind) } ?: c.primary, gridFade = DETAIL_GRID_FADE)
         if (hero == null && !state.loading) {
             EmptyState(
                 title = stringResource(R.string.story_load_failed),
@@ -173,7 +164,14 @@ internal fun StoryDetailContent(
                 action = { PrimaryButton(stringResource(R.string.retry), onRetry, icon = Icons.Rounded.Refresh) },
             )
         } else {
-            Column(Modifier.fillMaxSize().testTag("story_detail").verticalScroll(scroll)) {
+            // App rule: the page scrolls between the status bar and the navigation bar, never under them.
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Bottom))
+                    .testTag("story_detail")
+                    .verticalScroll(scroll),
+            ) {
                 if (hero != null) DetailHero(hero) else HeroSkeleton()
                 Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = Spacing.gutter)) {
                     when {
@@ -193,10 +191,9 @@ internal fun StoryDetailContent(
                         )
                     }
                 }
-                Spacer(Modifier.height(ACTION_BAR_SPACE + navBottom))
+                Spacer(Modifier.height(ACTION_BAR_SPACE))
             }
         }
-        NavigationBarScrim(Modifier.align(Alignment.BottomCenter))
         DetailTopBar(hero?.title, scroll, onBack, Modifier.align(Alignment.TopCenter))
         AnimatedVisibility(
             story != null,
@@ -217,29 +214,13 @@ internal fun StoryDetailContent(
     }
 }
 
-/** Kind-tinted spotlight over the grid, then meta, the shared title, the summary as a lede, importance and topics. */
+/** Meta, the shared title, the summary as a lede, importance and topics; the backdrop behind it is the screen's. */
 @Composable
 private fun DetailHero(story: StorySummary) {
     val c = ChangeloomTheme.colors
     val topicName = LocalTopicName.current
-    val tint = kindColor(story.kind)
     Box(Modifier.fillMaxWidth()) {
-        SpotlightGlow(Modifier.matchParentSize(), color = tint.copy(alpha = if (c.isDark) 0.24f else 0.14f), center = Offset(0.15f, 0f))
-        val padding = heroPadding()
-        // Only behind the top bar and the head of the hero, fading out before the lede so the reading text stays clean.
-        GridBackground(
-            Modifier
-                .fillMaxWidth()
-                .height(padding.calculateTopPadding() + GRID_FADE_DEPTH)
-                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                .drawWithContent {
-                    drawContent()
-                    drawRect(Brush.verticalGradient(listOf(Color.Black, Color.Transparent)), blendMode = BlendMode.DstIn)
-                },
-            fadeCenter = Offset(0.3f, 0f),
-            fadeRadius = 0.85f,
-        )
-        Column(Modifier.padding(padding)) {
+        Column(Modifier.padding(heroPadding())) {
             Row(Modifier.enter(0), verticalAlignment = Alignment.CenterVertically) {
                 KindPill(story.kind)
                 if (story.severity != null) {
@@ -271,7 +252,7 @@ private fun DetailHero(story: StorySummary) {
     }
 }
 
-/** Room for the status bar and the floating top bar above the hero, and for side insets in landscape. */
+/** Room for the floating top bar above the hero (the page already starts below the status bar), and side insets. */
 @Composable
 private fun heroPadding(): PaddingValues {
     val safe = WindowInsets.safeDrawing.asPaddingValues()
@@ -279,7 +260,7 @@ private fun heroPadding(): PaddingValues {
     return PaddingValues(
         start = safe.calculateStartPadding(direction) + Spacing.gutter,
         end = safe.calculateEndPadding(direction) + Spacing.gutter,
-        top = safe.calculateTopPadding() + TOP_BAR_HEIGHT + 8.dp,
+        top = TOP_BAR_HEIGHT + 8.dp,
         bottom = 28.dp,
     )
 }
@@ -531,9 +512,12 @@ private fun DetailErrorLight() = ChangeloomTheme(ThemeMode.Light) {
 private val TOP_BAR_HEIGHT = 56.dp
 private val ACTION_BAR_SPACE = 104.dp
 private val TITLE_COLLAPSE_OFFSET = 180.dp
-private val GRID_FADE_DEPTH = 112.dp
-private const val LEDE_ENTER_DELAY = 80
-private const val META_ENTER_DELAY = 160
-private const val BODY_ENTER_DELAY = 220
-private const val SOURCES_ENTER_DELAY = 300
+/** The detail backdrop's grid only reaches past the top bar, so it never sits behind the reading text. */
+private const val DETAIL_GRID_FADE = 0.3f
+// After the shared title has mostly landed (its expo tween covers most of the distance in ~250ms), so the lede
+// doesn't fade in under a title that is still moving.
+private const val LEDE_ENTER_DELAY = 260
+private const val META_ENTER_DELAY = 340
+private const val BODY_ENTER_DELAY = 400
+private const val SOURCES_ENTER_DELAY = 480
 private const val BODY_SKELETON_LINES = 7

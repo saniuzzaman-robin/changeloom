@@ -54,9 +54,7 @@ import dev.changeloom.android.ui.components.EmptyState
 import dev.changeloom.android.ui.components.Eyebrow
 import dev.changeloom.android.ui.components.IconTile
 import dev.changeloom.android.ui.components.SecondaryButton
-import dev.changeloom.android.ui.components.SpotlightGlow
 import dev.changeloom.android.ui.components.StatusBanner
-import dev.changeloom.android.ui.components.StatusBarScrim
 import dev.changeloom.android.ui.components.TopicChip
 import dev.changeloom.android.ui.components.enter
 import dev.changeloom.android.ui.theme.ChangeloomTheme
@@ -113,10 +111,9 @@ internal fun SearchContent(
     val listState = rememberLazyListState()
     LoadMoreEffect(listState, onLoadMore)
 
-    Box(Modifier.fillMaxSize()) {
-        SpotlightGlow(Modifier.fillMaxWidth().height(360.dp))
+    Box(Modifier.fillMaxSize().tabContentBounds(contentPadding)) {
         // Side insets are applied per child: listPadding() already includes them for the results.
-        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))) {
+        Column(Modifier.fillMaxSize()) {
             Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = Spacing.gutter).padding(top = 16.dp)) {
                 Eyebrow(stringResource(R.string.tab_search), Modifier.enter(delayMillis = 0), color = c.primaryText)
                 Spacer(Modifier.height(8.dp))
@@ -134,7 +131,7 @@ internal fun SearchContent(
             }
             when {
                 state.loading && state.items.isEmpty() -> Column(
-                    Modifier.padding(listPadding(contentPadding, top = false)),
+                    Modifier.padding(listPadding()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) { repeat(LIST_SKELETON_CARDS) { SkeletonStoryCard() } }
                 state.items.isEmpty() && state.loaded -> EmptyState(
@@ -158,7 +155,7 @@ internal fun SearchContent(
                 else -> LazyColumn(
                     Modifier.fillMaxSize(),
                     state = listState,
-                    contentPadding = listPadding(contentPadding, top = false),
+                    contentPadding = listPadding(),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(state.items, key = { it.id }) { story ->
@@ -232,26 +229,26 @@ internal fun SavedContent(
 ) {
     val c = ChangeloomTheme.colors
     val listState = rememberLazyListState()
+    val animateIn = rememberStaggered(listState)
     LoadMoreEffect(listState, onLoadMore)
 
-    Box(Modifier.fillMaxSize()) {
-        SpotlightGlow(Modifier.fillMaxWidth().height(360.dp))
+    Box(Modifier.fillMaxSize().tabContentBounds(contentPadding)) {
         LazyColumn(
             Modifier.fillMaxSize(),
             state = listState,
-            contentPadding = listPadding(contentPadding),
+            contentPadding = listPadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item(key = "header") {
                 Column(Modifier.padding(top = 8.dp, bottom = 4.dp)) {
-                    Eyebrow(stringResource(R.string.tab_saved), Modifier.enter(delayMillis = 0), color = c.primaryText)
+                    Eyebrow(stringResource(R.string.tab_saved), Modifier.enter(delayMillis = 0, enabled = animateIn), color = c.primaryText)
                     Spacer(Modifier.height(8.dp))
-                    Text(stringResource(R.string.saved_title), Modifier.enter(delayMillis = 80), style = MaterialTheme.typography.headlineMedium, color = c.fg)
+                    Text(stringResource(R.string.saved_title), Modifier.enter(delayMillis = 80, enabled = animateIn), style = MaterialTheme.typography.headlineMedium, color = c.fg)
                     if (state.items.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
                         Text(
                             pluralStringResource(R.plurals.saved_count, state.items.size, state.items.size),
-                            Modifier.enter(delayMillis = 160),
+                            Modifier.enter(delayMillis = 160, enabled = animateIn),
                             style = MaterialTheme.typography.bodyMedium,
                             color = c.fgMuted,
                         )
@@ -267,7 +264,9 @@ internal fun SavedContent(
                 }
             }
             when {
-                state.items.isEmpty() && (state.loading || !state.loaded) -> items(LIST_SKELETON_CARDS) { SkeletonStoryCard() }
+                // Only until the first load finishes: the list reloads on every visit, and an empty list that is
+                // already known keeps showing its empty state instead of flashing the skeleton.
+                state.items.isEmpty() && !state.loaded -> items(LIST_SKELETON_CARDS) { SkeletonStoryCard() }
                 state.items.isEmpty() -> item(key = "empty") {
                     EmptyState(
                         title = stringResource(R.string.saved_empty_title),
@@ -291,7 +290,6 @@ internal fun SavedContent(
                 }
             }
         }
-        StatusBarScrim(listState.canScrollBackward)
     }
 }
 

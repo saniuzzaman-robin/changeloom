@@ -20,21 +20,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
@@ -115,6 +113,9 @@ private const val MIN_PASSWORD_LENGTH = 6
 private const val ORB_PERIOD_MS = 24_000
 private val SHEET_MAX_WIDTH = 520.dp
 
+/** Height (inside the system bars) from which the large hero and the sheet's subtitle still fit without scrolling. */
+private val ROOMY_HEIGHT = 720.dp
+
 private val AuthMode.action: Int get() = if (this == AuthMode.SignIn) R.string.sign_in else R.string.create_account
 private val AuthMode.title: Int get() = if (this == AuthMode.SignIn) R.string.sign_in_title else R.string.register_title
 private val AuthMode.subtitle: Int get() = if (this == AuthMode.SignIn) R.string.sign_in_subtitle else R.string.register_subtitle
@@ -177,18 +178,30 @@ private fun SignInContent(
     Box(Modifier.fillMaxSize().background(c.bg)) {
         DriftingOrbs(Modifier.matchParentSize())
         GridBackground(Modifier.fillMaxWidth().fillMaxHeight(0.6f), fadeCenter = Offset(0.5f, 0.3f), fadeRadius = 0.6f)
-        BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
+        // The sheet's colour continues behind the navigation bar, so the sheet reads as running to the screen edge.
+        Spacer(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .widthIn(max = SHEET_MAX_WIDTH)
+                .fillMaxWidth()
+                .windowInsetsBottomHeight(WindowInsets.navigationBars)
+                .background(c.surface),
+        )
+        // App rule: content stays between the status bar and the navigation bar (and above the keyboard).
+        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+            // Everything fits without scrolling: the full hero where there's room, a compact one on shorter
+            // screens. Scrolling remains only for the keyboard or very large font scales.
+            val roomy = maxHeight >= ROOMY_HEIGHT
             Column(
                 Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .heightIn(min = maxHeight)
-                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
+                    .heightIn(min = maxHeight),
                 verticalArrangement = HeroAboveSheet,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Hero()
-                AuthSheet(state, form, onGoogle)
+                Hero(roomy)
+                AuthSheet(state, form, onGoogle, showSubtitle = roomy)
             }
         }
     }
@@ -203,21 +216,30 @@ private object HeroAboveSheet : Arrangement.Vertical {
     }
 }
 
+/** The mark, name and tagline: stacked and large when [roomy], else the mark beside the name in one row. */
 @Composable
-private fun Hero() {
-    val status = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+private fun Hero(roomy: Boolean) {
+    val animate = !LocalInspectionMode.current
     Column(
-        Modifier.padding(start = 24.dp, end = 24.dp, top = status + 32.dp, bottom = 32.dp),
+        Modifier.padding(horizontal = 24.dp, vertical = if (roomy) 28.dp else 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        LoomMark(Modifier.size(72.dp), animate = !LocalInspectionMode.current)
-        Spacer(Modifier.height(20.dp))
-        GradientText(stringResource(R.string.app_brand), Modifier.enter(delayMillis = 350), style = MaterialTheme.typography.displayMedium)
-        Spacer(Modifier.height(10.dp))
+        if (roomy) {
+            LoomMark(Modifier.size(64.dp), animate = animate)
+            Spacer(Modifier.height(16.dp))
+            GradientText(stringResource(R.string.app_brand), Modifier.enter(delayMillis = 350), style = MaterialTheme.typography.displaySmall)
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LoomMark(Modifier.size(40.dp), animate = animate)
+                Spacer(Modifier.width(12.dp))
+                GradientText(stringResource(R.string.app_brand), Modifier.enter(delayMillis = 350), style = MaterialTheme.typography.headlineMedium)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
         WordRiseText(
             stringResource(R.string.tagline),
             Modifier.widthIn(max = 320.dp),
-            style = MaterialTheme.typography.titleMedium,
+            style = if (roomy) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
             color = ChangeloomTheme.colors.fgMuted,
             startDelayMillis = 600,
             horizontalArrangement = Arrangement.Center,
@@ -230,6 +252,7 @@ private fun AuthSheet(
     state: SignInState,
     form: AuthForm,
     onGoogle: () -> Unit,
+    showSubtitle: Boolean,
 ) {
     val c = ChangeloomTheme.colors
     val focus = LocalFocusManager.current
@@ -259,25 +282,27 @@ private fun AuthSheet(
             .clip(Radius.sheet)
             .background(c.surface)
             .border(1.dp, c.lineStrong, Radius.sheet)
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(start = 20.dp, end = 20.dp, top = 28.dp, bottom = 16.dp),
+            .padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 8.dp),
     ) {
         AnimatedContent(mode, transitionSpec = { fadeIn(expoTween()) togetherWith fadeOut(expoTween()) }, label = "authTitle") { m ->
             Column {
                 Text(stringResource(m.title), style = MaterialTheme.typography.headlineSmall, color = c.fg)
-                Spacer(Modifier.height(4.dp))
-                Text(stringResource(m.subtitle), style = MaterialTheme.typography.bodyMedium, color = c.fgMuted)
+                if (showSubtitle) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(stringResource(m.subtitle), style = MaterialTheme.typography.bodyMedium, color = c.fgMuted)
+                }
             }
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(18.dp))
         SecondaryButton(
             text = stringResource(R.string.continue_with_google),
             onClick = onGoogle,
             modifier = Modifier.fillMaxWidth(),
             enabled = !state.busy,
             leading = { GoogleMark(Modifier.size(18.dp)) },
+            dense = true,
         )
-        Row(Modifier.padding(vertical = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             HorizontalDivider(Modifier.weight(1f), color = c.line)
             Eyebrow(stringResource(R.string.or_with_email), Modifier.padding(horizontal = 12.dp))
             HorizontalDivider(Modifier.weight(1f), color = c.line)
@@ -286,17 +311,18 @@ private fun AuthSheet(
             ChangeloomTextField(
                 value = form.email,
                 onValueChange = form.onEmail,
-                label = stringResource(R.string.email),
-                placeholder = stringResource(R.string.email_placeholder),
+                // The field names itself (also its accessibility label), instead of a label row above it.
+                placeholder = stringResource(R.string.email),
                 leadingIcon = Icons.Rounded.AlternateEmail,
                 enabled = !state.busy,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+                dense = true,
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(10.dp))
             ChangeloomTextField(
                 value = form.password,
                 onValueChange = form.onPassword,
-                label = stringResource(R.string.password),
+                placeholder = stringResource(R.string.password),
                 leadingIcon = Icons.Rounded.Lock,
                 enabled = !state.busy,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
@@ -311,14 +337,15 @@ private fun AuthSheet(
                         )
                     }
                 },
+                dense = true,
             )
             StatusBanner(
                 state.error,
                 Icons.Rounded.ErrorOutline,
-                Modifier.padding(top = 16.dp),
+                Modifier.padding(top = 10.dp),
                 tone = BannerTone.Error,
             )
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(14.dp))
             PrimaryButton(
                 text = stringResource(mode.action),
                 onClick = submit,
@@ -326,10 +353,11 @@ private fun AuthSheet(
                 enabled = filled,
                 loading = state.busy,
                 trailingIcon = Icons.AutoMirrored.Rounded.ArrowForward,
+                dense = true,
             )
         }
         Row(
-            Modifier.fillMaxWidth().padding(top = 8.dp),
+            Modifier.fillMaxWidth().padding(top = 2.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {

@@ -1,17 +1,9 @@
 package dev.changeloom.android.ui.components
 
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
@@ -24,7 +16,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.changeloom.android.ui.theme.ChangeloomTheme
-import dev.changeloom.android.ui.theme.expoTween
 
 /**
  * The site's hairline grid (`linear-gradient(to right, var(--line) 1px, transparent 1px)` both ways),
@@ -87,45 +78,50 @@ fun SpotlightGlow(
     )
 }
 
-/** How far a system-bar scrim fades into the content beyond the bar itself. */
-private val SCRIM_FADE = 16.dp
-
 /**
- * Backs the status bar once content has scrolled under it ([visible]), so text never runs into the clock
- * and icons: solid behind the bar, then a short fade. Place it at the top of a full-bleed scrolling screen.
+ * The tab screens' backdrop, fixed behind them: the brand spotlight and the grid span the whole screen and fade out
+ * gradually, and a faint accent wash rises from the bottom corner. Each screen used to draw its own in a strip at
+ * the top, which cut the glow off partway down and left the rest of the screen flat.
  */
 @Composable
-fun StatusBarScrim(visible: Boolean, modifier: Modifier = Modifier) {
-    val color = ChangeloomTheme.colors.navGlass
-    val alpha by animateFloatAsState(if (visible) 1f else 0f, expoTween(), label = "statusBarScrim")
-    val bar = WindowInsets.safeDrawing.only(WindowInsetsSides.Top).asPaddingValues().calculateTopPadding()
-    Spacer(
-        modifier
-            .fillMaxWidth()
-            .height(bar + SCRIM_FADE)
-            .graphicsLayer { this.alpha = alpha }
-            .drawBehind {
-                val solid = bar.toPx() / size.height
-                drawRect(Brush.verticalGradient(0f to color, solid to color, 1f to Color.Transparent))
+fun ScreenBackdrop(
+    modifier: Modifier = Modifier,
+    glow: Color = ChangeloomTheme.colors.primary,
+    /** How far down the grid reaches, as a fraction of the screen's longer side; reading screens keep it short. */
+    gridFade: Float = BACKDROP_GRID_FADE,
+) {
+    val c = ChangeloomTheme.colors
+    val accentAlpha = if (c.isDark) BACKDROP_ACCENT_ALPHA_DARK else BACKDROP_ACCENT_ALPHA_LIGHT
+    Box(modifier) {
+        GridBackground(Modifier.matchParentSize(), fadeCenter = Offset(0.5f, 0f), fadeRadius = gridFade)
+        Spacer(
+            Modifier.matchParentSize().drawBehind {
+                // Down to the bottom edge, so there is no line where the wash stops.
+                drawRect(
+                    Brush.radialGradient(
+                        0f to glow.copy(alpha = BACKDROP_GLOW_ALPHA),
+                        BACKDROP_GLOW_MID_STOP to glow.copy(alpha = BACKDROP_GLOW_ALPHA * BACKDROP_GLOW_MID_FACTOR),
+                        1f to Color.Transparent,
+                        center = Offset(size.width / 2, 0f),
+                        radius = size.height,
+                    ),
+                )
+                drawRect(
+                    Brush.radialGradient(
+                        listOf(c.accent.copy(alpha = accentAlpha), Color.Transparent),
+                        center = Offset(size.width, size.height),
+                        radius = size.maxDimension * BACKDROP_ACCENT_RADIUS,
+                    ),
+                )
             },
-    )
+        )
+    }
 }
 
-/**
- * Backs the navigation bar for screens without a bottom bar, so content scrolling underneath doesn't collide
- * with the 3-button bar or the gesture handle. Sized from the insets, so it fits both navigation modes.
- */
-@Composable
-fun NavigationBarScrim(modifier: Modifier = Modifier) {
-    val color = ChangeloomTheme.colors.navGlass
-    val bar = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    Spacer(
-        modifier
-            .fillMaxWidth()
-            .height(bar + SCRIM_FADE)
-            .drawBehind {
-                val solid = 1f - bar.toPx() / size.height
-                drawRect(Brush.verticalGradient(0f to Color.Transparent, solid to color, 1f to color))
-            },
-    )
-}
+private const val BACKDROP_GLOW_ALPHA = 0.18f
+private const val BACKDROP_GLOW_MID_STOP = 0.55f
+private const val BACKDROP_GLOW_MID_FACTOR = 0.4f
+private const val BACKDROP_GRID_FADE = 0.85f
+private const val BACKDROP_ACCENT_ALPHA_DARK = 0.08f
+private const val BACKDROP_ACCENT_ALPHA_LIGHT = 0.06f
+private const val BACKDROP_ACCENT_RADIUS = 0.75f

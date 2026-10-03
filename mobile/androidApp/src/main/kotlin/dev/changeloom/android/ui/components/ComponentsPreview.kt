@@ -37,7 +37,7 @@ private fun Gallery() {
                 LoomMark(Modifier.size(56.dp))
                 GradientText("Changeloom", style = MaterialTheme.typography.displaySmall)
             }
-            WordRiseText("Every release that matters, woven into one feed.", style = MaterialTheme.typography.titleMedium, color = c.fgMuted)
+            WordRiseText("The updates you care about, all in one place.", style = MaterialTheme.typography.titleMedium, color = c.fgMuted)
             PrimaryButton("Continue", onClick = {}, modifier = Modifier.fillMaxWidth(), trailingIcon = Icons.AutoMirrored.Rounded.ArrowForward)
             PrimaryButton("Save", onClick = {}, modifier = Modifier.fillMaxWidth(), enabled = false)
             SecondaryButton("Create account", onClick = {}, modifier = Modifier.fillMaxWidth())

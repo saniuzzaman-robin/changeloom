@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.SharedTransitionLayout
@@ -20,6 +21,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,12 +61,14 @@ import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.MarkEmailUnread
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PersonOutline
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -78,6 +82,7 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -92,10 +97,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
@@ -106,6 +114,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -123,16 +132,15 @@ import dev.changeloom.android.ui.components.Eyebrow
 import dev.changeloom.android.ui.components.GlassCard
 import dev.changeloom.android.ui.components.GradientAvatar
 import dev.changeloom.android.ui.components.GradientText
-import dev.changeloom.android.ui.components.GridBackground
 import dev.changeloom.android.ui.components.ImportanceMeter
 import dev.changeloom.android.ui.components.KindPill
+import dev.changeloom.android.ui.components.LoomMark
 import dev.changeloom.android.ui.components.SaveToggle
+import dev.changeloom.android.ui.components.ScreenBackdrop
 import dev.changeloom.android.ui.components.SecondaryButton
 import dev.changeloom.android.ui.components.SeverityDot
 import dev.changeloom.android.ui.components.SkeletonBlock
-import dev.changeloom.android.ui.components.SpotlightGlow
 import dev.changeloom.android.ui.components.StatusBanner
-import dev.changeloom.android.ui.components.StatusBarScrim
 import dev.changeloom.android.ui.components.TopicChip
 import dev.changeloom.android.ui.components.enter
 import dev.changeloom.android.ui.theme.ChangeloomTheme
@@ -179,13 +187,19 @@ internal val LocalTopicName = staticCompositionLocalOf<(String) -> String> { { i
 internal val LocalSharedTransitionScope = staticCompositionLocalOf<SharedTransitionScope?> { null }
 internal val LocalOverlayScope = staticCompositionLocalOf<AnimatedVisibilityScope?> { null }
 
-/** Marks a story title as the shared element between its card and the detail screen. */
+/**
+ * Marks a story title as the shared element between its card and the detail screen. A shared element draws only the
+ * destination's title, moving it into place; shared bounds would cross-fade both, and since the two titles differ in
+ * size and line breaks, the outgoing one showed as ghost text over the new one.
+ */
 @Composable
 internal fun Modifier.sharedStoryTitle(id: Long): Modifier {
     val shared = LocalSharedTransitionScope.current ?: return this
     val scope = LocalOverlayScope.current ?: return this
     return with(shared) {
-        sharedBounds(rememberSharedContentState("story-title-$id"), scope, boundsTransform = { _, _ -> expoTween(Durations.SLOW) })
+        // Laid out at its final size while it moves, so the text doesn't reflow or clip inside the growing bounds.
+        sharedElement(rememberSharedContentState("story-title-$id"), scope, boundsTransform = { _, _ -> expoTween(Durations.SLOW) })
+            .skipToLookaheadSize()
     }
 }
 
@@ -253,19 +267,40 @@ private fun Shell(tab: Tab, onTab: (Tab) -> Unit, onOpen: (Long) -> Unit, onEdit
     val tabs = rememberSaveableStateHolder()
     val timeline: TimelineViewModel = koinViewModel()
     val profile: ProfileViewModel = koinViewModel()
+    // The same photo the Profile tab shows; ProfileViewModel loads it once per sign-in.
+    val photo = profile.photo.collectAsStateWithLifecycle().value
+    val photoImage = remember(photo) { photo?.asImageBitmap() }
     val hasUnread = timeline.state.collectAsStateWithLifecycle().value.items.any { !it.isRead }
-    Scaffold(
-        containerColor = Color.Transparent,
-        contentWindowInsets = WindowInsets(0),
-        bottomBar = { TabBar(tab, onTab, hasUnread) },
-    ) { padding ->
-        AnimatedContent(tab, transitionSpec = { tabTransition() }, label = "tabs") { current ->
-            tabs.SaveableStateProvider(current.name) {
-                when (current) {
-                    Tab.Feed -> FeedScreen(onOpen, onProfile = { onTab(Tab.Profile) }, displayName = profile.displayName, userEmail = profile.email, contentPadding = padding)
-                    Tab.Search -> SearchScreen(onOpen, contentPadding = padding)
-                    Tab.Saved -> SavedScreen(onOpen, onBrowse = { onTab(Tab.Feed) }, contentPadding = padding)
-                    Tab.Profile -> ProfileScreen(onEditTopics, contentPadding = padding)
+    // Only the feed keeps its scroll position across tab switches: leaving another tab drops its saved UI state, so
+    // it opens at the top next time. Opening a story isn't a switch, so lists keep their place behind it.
+    var shownTab by remember { mutableStateOf(tab) }
+    LaunchedEffect(tab) {
+        if (shownTab != tab && shownTab != Tab.Feed) tabs.removeState(shownTab.name)
+        shownTab = tab
+    }
+    // One backdrop behind every tab, so it spans the whole screen and stays put while tabs slide.
+    Box(Modifier.fillMaxSize()) {
+        ScreenBackdrop(Modifier.matchParentSize())
+        Scaffold(
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets(0),
+            bottomBar = { TabBar(tab, onTab, hasUnread) },
+        ) { padding ->
+            AnimatedContent(tab, transitionSpec = { tabTransition() }, label = "tabs") { current ->
+                tabs.SaveableStateProvider(current.name) {
+                    when (current) {
+                        Tab.Feed -> FeedScreen(
+                            onOpen,
+                            onProfile = { onTab(Tab.Profile) },
+                            displayName = profile.displayName,
+                            userEmail = profile.email,
+                            photo = photoImage,
+                            contentPadding = padding,
+                        )
+                        Tab.Search -> SearchScreen(onOpen, contentPadding = padding)
+                        Tab.Saved -> SavedScreen(onOpen, onBrowse = { onTab(Tab.Feed) }, contentPadding = padding)
+                        Tab.Profile -> ProfileScreen(onEditTopics, contentPadding = padding)
+                    }
                 }
             }
         }
@@ -322,6 +357,7 @@ private fun FeedScreen(
     onProfile: () -> Unit,
     displayName: String?,
     userEmail: String?,
+    photo: ImageBitmap?,
     contentPadding: PaddingValues,
     vm: TimelineViewModel = koinViewModel(),
     adRepository: NativeAdRepository = koinInject(),
@@ -333,6 +369,7 @@ private fun FeedScreen(
         state = state,
         displayName = displayName,
         userEmail = userEmail,
+        photo = photo,
         contentPadding = contentPadding,
         ads = ads,
         onOpen = onOpen,
@@ -363,6 +400,7 @@ internal fun FeedContent(
     onSetSaved: (Long, Boolean) -> Unit,
     onDismissError: () -> Unit,
     ads: FeedAds? = null,
+    photo: ImageBitmap? = null,
 ) {
     val c = ChangeloomTheme.colors
     val listState = rememberLazyListState()
@@ -371,9 +409,7 @@ internal fun FeedContent(
     val staggered = rememberStaggered(listState)
     LoadMoreEffect(listState, onLoadMore)
 
-    Box(Modifier.fillMaxSize()) {
-        GridBackground(Modifier.fillMaxWidth().height(320.dp))
-        SpotlightGlow(Modifier.fillMaxWidth().height(380.dp))
+    Box(Modifier.fillMaxSize().tabContentBounds(contentPadding)) {
         PullToRefreshBox(
             isRefreshing = state.refreshing && state.items.isNotEmpty(),
             onRefresh = onRefresh,
@@ -383,7 +419,7 @@ internal fun FeedContent(
                 PullToRefreshDefaults.Indicator(
                     state = pullState,
                     isRefreshing = state.refreshing && state.items.isNotEmpty(),
-                    modifier = Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars),
+                    modifier = Modifier.align(Alignment.TopCenter),
                     containerColor = c.elevated,
                     color = c.primaryText,
                 )
@@ -392,10 +428,10 @@ internal fun FeedContent(
             LazyColumn(
                 Modifier.fillMaxSize().testTag("feed"),
                 state = listState,
-                contentPadding = listPadding(contentPadding),
+                contentPadding = listPadding(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item(key = "header") { FeedHeader(displayName, userEmail, fresh.size, onProfile) }
+                item(key = "header") { FeedHeader(displayName, userEmail, photo, fresh.size, onProfile, animateIn = staggered) }
                 item(key = "banners") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         StatusBanner(if (state.offline) stringResource(R.string.offline_banner) else null, Icons.Rounded.CloudOff, tone = BannerTone.Warning)
@@ -429,11 +465,80 @@ internal fun FeedContent(
                             }
                         }
                         if (state.loadingMore) item(key = "more") { SkeletonStoryCard() }
+                        if (state.reachedEnd) item(key = "end", contentType = END_CONTENT) { FeedEnd(Modifier.animateItem()) }
                     }
                 }
             }
         }
-        StatusBarScrim(listState.canScrollBackward)
+        BackToTopButton(listState, Modifier.align(Alignment.BottomEnd))
+    }
+}
+
+/**
+ * True only when the server has said there are no more pages: not while refreshing or loading more, and not for
+ * cached stories shown offline, where more may exist.
+ */
+private val TimelineState.reachedEnd: Boolean
+    get() = items.isNotEmpty() && nextCursor == null && !refreshing && !loadingMore && !offline
+
+/** The bottom of the feed: the loom mark between two hairlines, then what to expect next. */
+@Composable
+private fun FeedEnd(modifier: Modifier = Modifier) {
+    val c = ChangeloomTheme.colors
+    Column(
+        modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp).testTag("feed_end"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            HorizontalDivider(Modifier.weight(1f), color = c.line)
+            LoomMark(Modifier.padding(horizontal = 14.dp).size(28.dp))
+            HorizontalDivider(Modifier.weight(1f), color = c.line)
+        }
+        Spacer(Modifier.height(14.dp))
+        Text(stringResource(R.string.feed_end_title), style = MaterialTheme.typography.titleSmall, color = c.fg, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            stringResource(R.string.feed_end_body),
+            Modifier.padding(horizontal = 24.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = c.fgMuted,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/** A floating arrow that appears once a few cards are scrolled away and takes the list back to the top. */
+@Composable
+private fun BackToTopButton(listState: LazyListState, modifier: Modifier = Modifier) {
+    val c = ChangeloomTheme.colors
+    val scope = rememberCoroutineScope()
+    val visible by remember { derivedStateOf { listState.firstVisibleItemIndex >= BACK_TO_TOP_AFTER_ITEMS } }
+    AnimatedVisibility(
+        visible,
+        modifier
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+            .padding(end = Spacing.gutter, bottom = 16.dp),
+        enter = fadeIn(expoTween()) + scaleIn(expoTween(), initialScale = 0.8f),
+        exit = fadeOut(expoTween(Durations.FAST)) + scaleOut(expoTween(Durations.FAST), targetScale = 0.8f),
+    ) {
+        Box(
+            Modifier
+                .size(48.dp)
+                .shadow(12.dp, CircleShape, ambientColor = Color.Black.copy(alpha = 0.25f), spotColor = Color.Black.copy(alpha = 0.35f))
+                .clip(CircleShape)
+                .background(c.elevated)
+                .border(1.dp, c.lineStrong, CircleShape)
+                .clickable(role = Role.Button, onClickLabel = stringResource(R.string.back_to_top)) {
+                    scope.launch {
+                        // A long jump first, so the animated part stays short however far down the list is.
+                        if (listState.firstVisibleItemIndex > BACK_TO_TOP_JUMP_ITEMS) listState.scrollToItem(BACK_TO_TOP_JUMP_ITEMS)
+                        listState.animateScrollToItem(0)
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = stringResource(R.string.back_to_top), tint = c.fg, modifier = Modifier.size(26.dp))
+        }
     }
 }
 
@@ -476,16 +581,23 @@ private fun LazyItemScope.FeedCard(
 }
 
 @Composable
-private fun FeedHeader(displayName: String?, userEmail: String?, freshCount: Int, onProfile: () -> Unit) {
+private fun FeedHeader(
+    displayName: String?,
+    userEmail: String?,
+    photo: ImageBitmap?,
+    freshCount: Int,
+    onProfile: () -> Unit,
+    animateIn: Boolean,
+) {
     val c = ChangeloomTheme.colors
     val name = greetingName(displayName, userEmail)
     val today = remember { LocalDate.now().format(localizedPattern("EEEEMMMd")) }
     Column(Modifier.padding(top = 8.dp, bottom = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Eyebrow(today, Modifier.enter(delayMillis = 0), color = c.primaryText)
+                Eyebrow(today, Modifier.enter(delayMillis = 0, enabled = animateIn), color = c.primaryText)
                 Spacer(Modifier.height(8.dp))
-                Column(Modifier.enter(delayMillis = 80)) {
+                Column(Modifier.enter(delayMillis = 80, enabled = animateIn)) {
                     val greeting = stringResource(greeting(LocalTime.now()))
                     Text(
                         if (name != null) stringResource(R.string.greeting_before_name, greeting) else greeting,
@@ -497,8 +609,9 @@ private fun FeedHeader(displayName: String?, userEmail: String?, freshCount: Int
             }
             GradientAvatar(
                 displayName ?: userEmail ?: "?",
-                Modifier.clip(CircleShape).clickable(onClickLabel = stringResource(R.string.open_profile), onClick = onProfile).enter(delayMillis = 120),
+                Modifier.clip(CircleShape).clickable(onClickLabel = stringResource(R.string.open_profile), onClick = onProfile).enter(delayMillis = 120, enabled = animateIn),
                 size = 48.dp,
+                photo = photo,
             )
         }
         Spacer(Modifier.height(8.dp))
@@ -508,7 +621,7 @@ private fun FeedHeader(displayName: String?, userEmail: String?, freshCount: Int
             } else {
                 pluralStringResource(R.plurals.feed_new_updates, freshCount, freshCount)
             },
-            Modifier.enter(delayMillis = 160),
+            Modifier.enter(delayMillis = 160, enabled = animateIn),
             style = MaterialTheme.typography.bodyMedium,
             color = c.fgMuted,
         )
@@ -687,7 +800,7 @@ internal fun SwipeActions(
 
 /** First-load entrance for the cards; off once the user scrolls, so cards recycled into view don't re-animate. */
 @Composable
-private fun rememberStaggered(listState: LazyListState): Boolean {
+internal fun rememberStaggered(listState: LazyListState): Boolean {
     var staggered by rememberSaveable { mutableStateOf(true) }
     LaunchedEffect(listState) {
         snapshotFlow { listState.isScrollInProgress }.first { it }
@@ -713,18 +826,25 @@ internal fun LoadMoreEffect(listState: LazyListState, onLoadMore: () -> Unit) {
 }
 
 /**
- * List padding for a tab: clear of the status bar (when [top]), the tab bar ([shellPadding]) and any side
- * insets (a 3-button nav bar or display cutout in landscape), so backgrounds stay full-bleed but content doesn't.
+ * App rule: content never scrolls under the status bar or the navigation bar. A tab screen's container stops below
+ * the status bar and above the tab bar ([shellPadding], which itself sits above the navigation bar); only
+ * backgrounds draw behind the bars.
  */
 @Composable
-internal fun listPadding(shellPadding: PaddingValues, top: Boolean = true): PaddingValues {
+internal fun Modifier.tabContentBounds(shellPadding: PaddingValues): Modifier =
+    windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+        .padding(bottom = shellPadding.calculateBottomPadding())
+
+/** List padding inside [tabContentBounds]: the gutter plus any side insets (a 3-button nav bar or cutout in landscape). */
+@Composable
+internal fun listPadding(): PaddingValues {
     val safe = WindowInsets.safeDrawing.asPaddingValues()
     val direction = LocalLayoutDirection.current
     return PaddingValues(
         start = safe.calculateStartPadding(direction) + Spacing.gutter,
         end = safe.calculateEndPadding(direction) + Spacing.gutter,
-        top = if (top) safe.calculateTopPadding() + 8.dp else 8.dp,
-        bottom = shellPadding.calculateBottomPadding() + 16.dp,
+        top = 8.dp,
+        bottom = 16.dp,
     )
 }
 
@@ -830,4 +950,9 @@ private const val TITLE_LINES = 3
 private const val SUMMARY_LINES = 3
 private const val MAX_CARD_TOPICS = 2
 private const val STORY_CONTENT = "story"
+private const val END_CONTENT = "end"
+
+/** The back-to-top button shows once the list is scrolled past this item, and jumps to [BACK_TO_TOP_JUMP_ITEMS] before animating. */
+private const val BACK_TO_TOP_AFTER_ITEMS = 4
+private const val BACK_TO_TOP_JUMP_ITEMS = 8
 private const val AD_CONTENT = "ad"

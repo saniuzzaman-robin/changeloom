@@ -48,6 +48,7 @@ import dev.changeloom.android.ui.theme.Radius
 import dev.changeloom.android.ui.theme.expoTween
 
 private val FIELD_HEIGHT = 56.dp
+private val DENSE_FIELD_HEIGHT = 48.dp
 
 /** Matches [Radius.xl], which clips the field; the focus ring and halo are drawn with it. */
 private val FIELD_CORNER = 16.dp
@@ -76,6 +77,8 @@ fun ChangeloomTextField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     visualTransformation: VisualTransformation = VisualTransformation.None,
+    /** 48dp tall instead of 56dp, for screens that must fit without scrolling. */
+    dense: Boolean = false,
 ) {
     val c = ChangeloomTheme.colors
     val brand = ChangeloomTheme.gradients.brandHorizontal
@@ -120,7 +123,7 @@ fun ChangeloomTextField(
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .heightIn(min = FIELD_HEIGHT)
+                        .heightIn(min = if (dense) DENSE_FIELD_HEIGHT else FIELD_HEIGHT)
                         .graphicsLayer { alpha = if (enabled) 1f else 0.6f }
                         .clip(Radius.xl)
                         .background(c.surface2)
@@ -145,7 +148,7 @@ fun ChangeloomTextField(
                         Icon(leadingIcon, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(12.dp))
                     }
-                    Box(Modifier.weight(1f).padding(vertical = 16.dp)) {
+                    Box(Modifier.weight(1f).padding(vertical = if (dense) 12.dp else 16.dp)) {
                         if (value.isEmpty() && placeholder != null) {
                             Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = c.fgSubtle, maxLines = 1)
                         }

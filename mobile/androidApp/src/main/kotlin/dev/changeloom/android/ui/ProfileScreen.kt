@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,7 +26,6 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -65,7 +63,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -94,11 +91,8 @@ import dev.changeloom.android.ui.components.ChangeloomTextField
 import dev.changeloom.android.ui.components.Eyebrow
 import dev.changeloom.android.ui.components.GlassCard
 import dev.changeloom.android.ui.components.GradientAvatar
-import dev.changeloom.android.ui.components.GridBackground
 import dev.changeloom.android.ui.components.SecondaryButton
-import dev.changeloom.android.ui.components.SpotlightGlow
 import dev.changeloom.android.ui.components.StatusBanner
-import dev.changeloom.android.ui.components.StatusBarScrim
 import dev.changeloom.android.ui.components.TextAction
 import dev.changeloom.android.ui.components.TopicChip
 import dev.changeloom.android.ui.components.enter
@@ -205,12 +199,12 @@ internal fun ProfileContent(
     var confirmSignOut by rememberSaveable { mutableStateOf(false) }
     val scroll = rememberScrollState()
 
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().tabContentBounds(contentPadding)) {
         Column(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(scroll)
-                .padding(bottom = contentPadding.calculateBottomPadding() + 24.dp),
+                .padding(bottom = 24.dp),
         ) {
             ProfileBanner(displayName, email, photo)
             Column(
@@ -279,7 +273,6 @@ internal fun ProfileContent(
                 }
             }
         }
-        StatusBarScrim(scroll.canScrollBackward)
     }
 
     if (confirmSignOut) {
@@ -368,15 +361,12 @@ private fun DeleteAccountDialog(delete: DeleteState, actions: DeleteActions) {
 private fun ProfileBanner(displayName: String?, email: String?, photo: ImageBitmap?) {
     val c = ChangeloomTheme.colors
     val name = displayName ?: email?.let(::firstNameOf) ?: stringResource(R.string.reader_fallback_name)
-    val status = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Box(Modifier.fillMaxWidth()) {
-        SpotlightGlow(Modifier.matchParentSize(), center = Offset(0.5f, 0f), radius = 320.dp)
-        GridBackground(Modifier.matchParentSize(), fadeCenter = Offset(0.5f, 0f), fadeRadius = 0.8f)
         Column(
             Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                .padding(start = Spacing.gutter, end = Spacing.gutter, top = status + 32.dp, bottom = 32.dp),
+                .padding(start = Spacing.gutter, end = Spacing.gutter, top = 32.dp, bottom = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             GradientAvatar(displayName ?: email ?: name, Modifier.enter(0), size = 88.dp, photo = photo)
