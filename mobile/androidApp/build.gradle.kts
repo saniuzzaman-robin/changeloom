@@ -39,6 +39,9 @@ fun apiBaseUrl(env: String): String =
         .orElse(localApiBaseUrl)
         .get()
 
+// Host that serves /.well-known/assetlinks.json and the /s/{id} story links: -Pchangeloom.linkHost.
+val linkHost = providers.gradleProperty("changeloom.linkHost").orElse("changeloom.saniuzzaman.dev").get()
+
 // AdMob: Google's sample ids for every build but prod release, so real ads are never served to debug or
 // staging builds (invalid traffic). Prod release needs -Pchangeloom.prod.admobAppId and
 // -Pchangeloom.prod.admobNativeAdUnitId from the AdMob console (see deploy/README.md).
@@ -109,6 +112,7 @@ android {
     }
     productFlavors.configureEach {
         buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl(name)}\"")
+        manifestPlaceholders["linkHost"] = linkHost
     }
 
     buildFeatures {
