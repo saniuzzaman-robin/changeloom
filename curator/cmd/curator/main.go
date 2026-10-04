@@ -18,8 +18,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/saniuzzaman-robin/changeloom/curator/internal/ai"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/catalog"
-	"github.com/saniuzzaman-robin/changeloom/curator/internal/claude"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/config"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/fetch"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/migrate"
@@ -277,7 +277,11 @@ func pullRequests(ctx context.Context, cfg config.Config, local *pgxpool.Pool, e
 }
 
 func runGroup(ctx context.Context, cfg config.Config, local *pgxpool.Pool, dryRun bool) error {
-	res, err := requests.New(local, claude.New(cfg.Claude), cfg).Run(ctx, dryRun)
+	runner, err := ai.New(cfg)
+	if err != nil {
+		return err
+	}
+	res, err := requests.New(local, runner, cfg).Run(ctx, dryRun)
 	if res.Pending > 0 {
 		slog.InfoContext(ctx, "requests grouped", "requests", res.Pending, "new_topics", len(res.Plan.NewTopics),
 			"decisions", len(res.Plan.Decisions), "applied", res.Applied, "cost_usd", res.CostUSD, "account", res.Account)
@@ -302,7 +306,11 @@ func runFetch(ctx context.Context, cfg config.Config, all bool) error {
 	}
 	defer pool.Close()
 
-	f := fetch.New(pool, claude.New(cfg.Claude), cfg)
+	runner, err := ai.New(cfg)
+	if err != nil {
+		return err
+	}
+	f := fetch.New(pool, runner, cfg)
 	var errs []error
 	for pass := 1; ; pass++ {
 		sum, err := f.Run(ctx)
@@ -325,7 +333,11 @@ func runBackfill(ctx context.Context, cfg config.Config, maxCalls int, all bool)
 	}
 	defer pool.Close()
 
-	f := fetch.New(pool, claude.New(cfg.Claude), cfg)
+	runner, err := ai.New(cfg)
+	if err != nil {
+		return err
+	}
+	f := fetch.New(pool, runner, cfg)
 	var errs []error
 	for pass := 1; ; pass++ {
 		sum, err := f.Backfill(ctx, maxCalls)

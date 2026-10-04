@@ -49,7 +49,7 @@ CHROME ?= /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 BRANDING := $(MOBILE)/branding
 
 .PHONY: db-up db-down migrate migrate-down migrate-status migrate-remote generate run-api build test lint fmt \
-	curator-db curator-migrate curator-seed curator-backfill curator-full curator-sync curator-generate curator-build curator-test curator-lint curator-fmt \
+	searxng-up searxng-down curator-local curator-db curator-migrate curator-seed curator-backfill curator-full curator-sync curator-generate curator-build curator-test curator-lint curator-fmt \
 	deploy-api android-apk android-bundle brand-assets release
 
 db-up: ## Start the dev Postgres (docker), or check the installed one is reachable (local)
@@ -100,6 +100,12 @@ fmt: ## Format backend code
 
 CURATOR_RUN := cd $(CURATOR) && go run ./cmd/curator
 
+searxng-up: ## Start SearXNG (web search for CURATOR_AI_PROVIDER=ollama) on 127.0.0.1:SEARXNG_PORT (default 8080)
+	docker compose --profile curator up -d searxng
+
+searxng-down: ## Stop SearXNG
+	docker compose --profile curator stop searxng
+
 curator-db: ## Create the curator's local database on the dev Postgres (needs `make db-up`)
 	@$(PSQL) -tAc "SELECT 1 FROM pg_database WHERE datname = '$(CURATOR_DB)'" | grep -q 1 \
 		|| $(PSQL) -c 'CREATE DATABASE "$(CURATOR_DB)"'
@@ -115,6 +121,9 @@ curator-backfill: ## Fill thin topics with real `claude -p` calls (optional MAX_
 
 curator-full: ## One shot: pull, group, fetch and backfill every topic until covered, sync and prune all CURATOR_RUN_ENVS (long; real `claude -p` calls)
 	$(CURATOR_RUN) run --full
+
+curator-local: db-up searxng-up ## One shot on the local Ollama model (no usage limits): start Ollama, pull, group, fetch, backfill, sync and prune CURATOR_RUN_ENVS (long)
+	$(CURATOR)/scripts/curator-local.sh
 
 curator-sync: ## Push the curator's local catalog and stories to DEPLOY_ENV's hosted DB (REMOTE_DATABASE_URL_<ENV> in curator/.env)
 	$(CURATOR_RUN) sync --env $(DEPLOY_ENV)

@@ -58,7 +58,15 @@ type Config struct {
 	BackendMigrationsDir string
 	LogLevel             slog.Level
 
-	Claude Claude
+	// Provider selects the AI backend for fetch and request-grouping calls (CURATOR_AI_PROVIDER).
+	Provider Provider
+	Claude   Claude
+	Ollama   Ollama
+	// SearxngURL is the SearXNG instance the Ollama provider searches with (SEARXNG_URL).
+	SearxngURL string
+	// CallDelay is the minimum gap between the starts of two AI calls (CURATOR_CALL_DELAY, a Go
+	// duration; 0 disables it).
+	CallDelay time.Duration
 
 	// MaxCallsPerRun caps the Claude fetch calls per run (CURATOR_MAX_CALLS_PER_RUN).
 	MaxCallsPerRun int
@@ -115,6 +123,29 @@ type Config struct {
 	PruneMaxAge time.Duration
 }
 
+// Provider is an AI backend.
+type Provider string
+
+// The supported providers.
+const (
+	ProviderClaude Provider = "claude"
+	ProviderOllama Provider = "ollama"
+)
+
+// Ollama configures the local Ollama calls.
+type Ollama struct {
+	// URL is the Ollama server (OLLAMA_URL).
+	URL string
+	// Model is the model tag to run (OLLAMA_MODEL).
+	Model string
+	// Timeout bounds one call, including its tool turns (OLLAMA_TIMEOUT, a Go duration).
+	Timeout time.Duration
+	// MaxTurns caps the model's tool-calling rounds in one call (OLLAMA_MAX_TURNS).
+	MaxTurns int
+	// ContextTokens is the model's context window (OLLAMA_NUM_CTX).
+	ContextTokens int
+}
+
 // Claude configures the `claude -p` calls.
 type Claude struct {
 	// Bin is the claude CLI to run (CLAUDE_BIN).
@@ -143,6 +174,21 @@ func Load() (Config, error) {
 		errs = append(errs, fmt.Errorf("CLAUDE_TIMEOUT must be a positive Go duration such as 10m, got %q", os.Getenv("CLAUDE_TIMEOUT")))
 	}
 
+	ollamaTimeout, err := time.ParseDuration(getenv("OLLAMA_TIMEOUT", "20m"))
+	if err != nil || ollamaTimeout <= 0 {
+		errs = append(errs, fmt.Errorf("OLLAMA_TIMEOUT must be a positive Go duration such as 20m, got %q", os.Getenv("OLLAMA_TIMEOUT")))
+	}
+
+	callDelay, err := time.ParseDuration(getenv("CURATOR_CALL_DELAY", "0s"))
+	if err != nil || callDelay < 0 {
+		errs = append(errs, fmt.Errorf("CURATOR_CALL_DELAY must be a non-negative Go duration such as 5s, got %q", os.Getenv("CURATOR_CALL_DELAY")))
+	}
+
+	provider := Provider(getenv("CURATOR_AI_PROVIDER", string(ProviderClaude)))
+	if provider != ProviderClaude && provider != ProviderOllama {
+		errs = append(errs, fmt.Errorf("CURATOR_AI_PROVIDER must be %q or %q, got %q", ProviderClaude, ProviderOllama, provider))
+	}
+
 	configDir, err := claudeConfigDir()
 	if err != nil {
 		errs = append(errs, err)
@@ -153,6 +199,16 @@ func Load() (Config, error) {
 		Remotes:              make(map[Env]Remote, len(Envs)),
 		BackendMigrationsDir: getenv("BACKEND_MIGRATIONS_DIR", "../backend/migrations"),
 		LogLevel:             level,
+		Provider:             provider,
+		Ollama: Ollama{
+			URL:           strings.TrimRight(getenv("OLLAMA_URL", "http://127.0.0.1:11434"), "/"),
+			Model:         getenv("OLLAMA_MODEL", "qwen2.5:14b"),
+			Timeout:       ollamaTimeout,
+			MaxTurns:      envInt(&errs, "OLLAMA_MAX_TURNS", 8),
+			ContextTokens: envInt(&errs, "OLLAMA_NUM_CTX", 16384),
+		},
+		SearxngURL: strings.TrimRight(getenv("SEARXNG_URL", "http://127.0.0.1:8080"), "/"),
+		CallDelay:  callDelay,
 		Claude: Claude{
 			Bin:     getenv("CLAUDE_BIN", "claude"),
 			Model:   getenv("CLAUDE_MODEL", "sonnet"),
