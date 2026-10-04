@@ -1,16 +1,18 @@
 name: Deploy api
 
-# Staging: after CI passes on main, build the image once, migrate, deploy it with no traffic,
-# smoke-test /ready, then shift traffic.
-# Prod: run this workflow by hand with the staging image (printed in the staging run's summary).
-# The production environment's reviewers approve it; it copies that exact digest to the prod
-# registry, then migrates, deploys, smoke-tests and promotes the same way.
+# Staging: after CI passes on the staging branch, build the image once, migrate, deploy it with no
+# traffic, smoke-test /ready, then shift traffic.
+# Prod: after CI passes on main (a staging -> main merge), build the image from that commit, push it to
+# the prod registry, then migrate, deploy, smoke-test and promote the same way. The production
+# environment's reviewers approve it. To redeploy or roll back an image that already ran in staging,
+# run this workflow by hand with it (printed in the staging run's summary): it copies that exact
+# digest to the prod registry instead of rebuilding.
 # Setup (WIF, service accounts, GitHub environments): deploy/README.md, Continuous deployment.
 on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-    branches: [main]
+    branches: [staging, main]
   workflow_dispatch:
     inputs:
       image:
@@ -28,9 +30,10 @@ env:
 # Third-party actions are pinned by commit SHA (Dependabot keeps them current).
 jobs:
   staging:
-    # Only pushes to this repo's main; never a PR's CI run.
+    # Only pushes to this repo's staging branch; never a PR's CI run.
     if: >-
       github.event_name == 'workflow_run' &&
+      github.event.workflow_run.head_branch == 'staging' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository
@@ -87,7 +90,14 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   prod:
-    if: github.event_name == 'workflow_dispatch'
+    # By hand, or only pushes to this repo's main; never a PR's CI run.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
@@ -97,6 +107,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -107,8 +118,10 @@ jobs:
           DEPLOY_ENV_FILE: ${{ vars.DEPLOY_ENV_FILE }}
           SOURCE_IMAGE: ${{ inputs.image }}
         run: |
-          [[ $SOURCE_IMAGE =~ ^[a-z0-9-]+-docker\.pkg\.dev/[^@[:space:]]+/api@sha256:[0-9a-f]{64}$ ]] \
-            || { echo "image must be an Artifact Registry api image pinned by digest, got: $SOURCE_IMAGE"; exit 1; }
+          if [[ $GITHUB_EVENT_NAME == workflow_dispatch ]]; then
+            [[ $SOURCE_IMAGE =~ ^[a-z0-9-]+-docker\.pkg\.dev/[^@[:space:]]+/api@sha256:[0-9a-f]{64}$ ]] \
+              || { echo "image must be an Artifact Registry api image pinned by digest, got: $SOURCE_IMAGE"; exit 1; }
+          fi
           [[ -n $DEPLOY_ENV_FILE ]] || { echo "Set the DEPLOY_ENV_FILE variable on the production environment (deploy/README.md)."; exit 1; }
           printf '%s\n' "$DEPLOY_ENV_FILE" > deploy/prod.env
           set -a; source deploy/prod.env; set +a
@@ -116,14 +129,28 @@ jobs:
             [[ -n ${!key:-} ]] || { echo "Set $key in DEPLOY_ENV_FILE."; exit 1; }
             echo "$key=${!key}" >> "$GITHUB_ENV"
           done
-          echo "SOURCE_IMAGE=$SOURCE_IMAGE" >> "$GITHUB_ENV"
-          echo "IMAGE=$GCP_REGION-docker.pkg.dev/$GCP_PROJECT/$ARTIFACT_REPO/api@${SOURCE_IMAGE#*@}" >> "$GITHUB_ENV"
+          if [[ $GITHUB_EVENT_NAME == workflow_dispatch ]]; then
+            echo "SOURCE_IMAGE=$SOURCE_IMAGE" >> "$GITHUB_ENV"
+            echo "IMAGE=$GCP_REGION-docker.pkg.dev/$GCP_PROJECT/$ARTIFACT_REPO/api@${SOURCE_IMAGE#*@}" >> "$GITHUB_ENV"
+          fi
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.DEPLOYER_SA }}
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - name: Build and push the image
+        if: github.event_name == 'workflow_run'
+        run: |
+          gcloud auth configure-docker "$GCP_REGION-docker.pkg.dev" --quiet
+          image="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT/$ARTIFACT_REPO/api"
+          docker build --label "org.opencontainers.image.revision=$GITHUB_SHA_HEAD" -t "$image:$GITHUB_SHA_HEAD" backend
+          docker push "$image:$GITHUB_SHA_HEAD"
+          ref="$(docker inspect --format '{{index .RepoDigests 0}}' "$image:$GITHUB_SHA_HEAD")"
+          echo "IMAGE=$ref" >> "$GITHUB_ENV"
+        env:
+          GITHUB_SHA_HEAD: ${{ github.event.workflow_run.head_sha }}
       - name: Copy the image to the prod registry
+        if: github.event_name == 'workflow_dispatch'
         run: |
           gcloud auth configure-docker "${SOURCE_IMAGE%%/*},$GCP_REGION-docker.pkg.dev" --quiet
           commit="$(go run "$CRANE" config "$SOURCE_IMAGE" | jq -r '.config.Labels["org.opencontainers.image.revision"] // empty')"
@@ -133,7 +160,8 @@ jobs:
           [[ $copied == "${SOURCE_IMAGE#*@}" ]] || { echo "the copy's digest $copied differs from the source"; exit 1; }
           echo "COMMIT=$commit" >> "$GITHUB_ENV"
       # Deploy with the scripts and commit label of the commit the image was built from.
-      - run: git checkout --detach "$COMMIT"
+      - if: github.event_name == 'workflow_dispatch'
+        run: git checkout --detach "$COMMIT"
       - name: Migrate the database
         run: |
           url="$(gcloud secrets versions access "$MIGRATE_DATABASE_URL_SECRET_VERSION" --secret "$MIGRATE_DATABASE_URL_SECRET" --project "$GCP_PROJECT")"
@@ -142,4 +170,4 @@ jobs:
             "$IMAGE" /app/goose -dir /app/migrations up
       - run: deploy/deploy-api.sh prod --image "$IMAGE"
       - run: deploy/promote-api.sh prod
-      - run: echo "Deployed to prod from \`$SOURCE_IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+      - run: echo "Deployed to prod \`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
