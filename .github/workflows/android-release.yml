@@ -1,6 +1,6 @@
 name: Android release
 
-# Staging: on pushes to main that touch the app, build the signed staging release APK and send it
+# Staging: on pushes to the staging branch that touch the app, build the signed staging release APK and send it
 # to Firebase App Distribution.
 # Prod: on a v<major>.<minor>.<patch> tag, after the production environment's reviewers approve,
 # build the signed prod AAB and upload it to Play's internal track.
@@ -8,7 +8,7 @@ name: Android release
 # Setup (WIF, service accounts, GitHub environments): deploy/README.md, Continuous deployment.
 on:
   push:
-    branches: [main]
+    branches: [staging]
     # Path filters don't apply to tag pushes.
     paths: [mobile/**, .github/workflows/android-release.yml]
     tags: [v*]
