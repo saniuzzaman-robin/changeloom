@@ -3,7 +3,7 @@ name: Mobile CI
 # App checks; skipped when only the backend changed.
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
     paths:
       - mobile/**
       - .github/workflows/mobile-ci.yml

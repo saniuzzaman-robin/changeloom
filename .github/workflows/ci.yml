@@ -4,7 +4,7 @@ name: CI
 # triggers Deploy api, so app-only pushes never deploy the backend.
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
     paths:
       - backend/**
       - curator/**
