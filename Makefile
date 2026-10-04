@@ -46,7 +46,7 @@ MOBILE := mobile
 GRADLE ?= ./gradlew
 
 .PHONY: db-up db-down migrate migrate-down migrate-status migrate-remote generate run-api build test lint fmt \
-	curator-db curator-migrate curator-seed curator-sync curator-generate curator-build curator-test curator-lint curator-fmt \
+	curator-db curator-migrate curator-seed curator-backfill curator-sync curator-generate curator-build curator-test curator-lint curator-fmt \
 	deploy-api android-apk android-bundle release
 
 db-up: ## Start the dev Postgres (docker), or check the installed one is reachable (local)
@@ -106,6 +106,9 @@ curator-migrate: ## Apply the backend and curator migrations to the curator's lo
 
 curator-seed: ## Load curator/seed/catalog/ into the curator's local DB
 	$(CURATOR_RUN) seed
+
+curator-backfill: ## Fill thin topics with real `claude -p` calls (optional MAX_CALLS=N; default CURATOR_BACKFILL_CALLS_PER_RUN)
+	$(CURATOR_RUN) backfill $(if $(MAX_CALLS),--max-calls $(MAX_CALLS))
 
 curator-sync: ## Push the curator's local catalog and stories to DEPLOY_ENV's hosted DB (REMOTE_DATABASE_URL_<ENV> in curator/.env)
 	$(CURATOR_RUN) sync --env $(DEPLOY_ENV)
