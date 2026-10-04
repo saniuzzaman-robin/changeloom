@@ -102,6 +102,10 @@ func (c *Client) Run(ctx context.Context, req Request) (Result, error) {
 	cmd := exec.CommandContext(ctx, c.cfg.Bin, args...) //nolint:gosec // binary and args come from local config
 	// Run outside the repo so no project CLAUDE.md or settings leak into the call.
 	cmd.Dir = os.TempDir()
+	if c.cfg.ConfigDir != "" {
+		// Later duplicates win, so this overrides any CLAUDE_CONFIG_DIR inherited from the shell.
+		cmd.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+c.cfg.ConfigDir)
+	}
 	cmd.Stdin = strings.NewReader(req.Prompt)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
