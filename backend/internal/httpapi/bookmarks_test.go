@@ -84,7 +84,7 @@ func TestSearch(t *testing.T) {
 	}
 
 	var fuzzy timelinePage
-	e.do(http.MethodGet, "/v1/search?q=borow+chekcer", aliceToken, nil, &fuzzy)
+	e.do(http.MethodGet, "/v1/search?q=borow+chekcer", aliceToken, nil, &fuzzy) //nolint:misspell // deliberate typos exercise fuzzy search
 	if got, want := ids(fuzzy.Items), []int64{rust}; !slices.Equal(got, want) {
 		t.Fatalf("fuzzy search = %v, want %v", got, want)
 	}
