@@ -585,4 +585,4 @@ private fun ProfileErrorLight() = ChangeloomTheme(ThemeMode.Light) {
 
 private val SEGMENT_HEIGHT = 40.dp
 
-private fun countryName(code: String): String = Locale("", code).displayCountry
+private fun countryName(code: String): String = Locale.forLanguageTag("und-$code").displayCountry

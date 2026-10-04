@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -129,6 +130,10 @@ type Claude struct {
 	Model string
 	// Timeout bounds one call (CLAUDE_TIMEOUT, a Go duration).
 	Timeout time.Duration
+	// ConfigDir is the Claude account directory passed as CLAUDE_CONFIG_DIR to every call
+	// (CURATOR_CLAUDE_CONFIG_DIR, default ~/.claude-personal), so a CLAUDE_CONFIG_DIR exported in
+	// the calling shell (e.g. the work account) never leaks in. Empty leaves the environment as is.
+	ConfigDir string
 }
 
 // Load reads configuration from the environment and validates it.
@@ -145,6 +150,11 @@ func Load() (Config, error) {
 		errs = append(errs, fmt.Errorf("CLAUDE_TIMEOUT must be a positive Go duration such as 10m, got %q", os.Getenv("CLAUDE_TIMEOUT")))
 	}
 
+	configDir, err := claudeConfigDir()
+	if err != nil {
+		errs = append(errs, err)
+	}
+
 	cfg := Config{
 		LocalDatabaseURL:     getenv("LOCAL_DATABASE_URL", ""),
 		Remotes:              make(map[Env]Remote, len(Envs)),
@@ -154,6 +164,8 @@ func Load() (Config, error) {
 			Bin:     getenv("CLAUDE_BIN", "claude"),
 			Model:   getenv("CLAUDE_MODEL", "sonnet"),
 			Timeout: timeout,
+
+			ConfigDir: configDir,
 		},
 		MaxCallsPerRun:     envInt(&errs, "CURATOR_MAX_CALLS_PER_RUN", 8),
 		TopicsPerCall:      envInt(&errs, "CURATOR_TOPICS_PER_CALL", 5),
@@ -221,4 +233,16 @@ func envInt(errs *[]error, key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// claudeConfigDir returns CURATOR_CLAUDE_CONFIG_DIR, defaulting to ~/.claude-personal.
+func claudeConfigDir() (string, error) {
+	if dir := os.Getenv("CURATOR_CLAUDE_CONFIG_DIR"); dir != "" {
+		return dir, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve default Claude config dir (set CURATOR_CLAUDE_CONFIG_DIR): %w", err)
+	}
+	return filepath.Join(home, ".claude-personal"), nil
 }

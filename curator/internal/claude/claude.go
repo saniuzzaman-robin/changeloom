@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/config"
@@ -20,9 +22,15 @@ import (
 // maxErrorOutput caps how much CLI output is quoted in an error.
 const maxErrorOutput = 2000
 
+// accountTimeout bounds the `claude auth status` lookup.
+const accountTimeout = 30 * time.Second
+
 // Client runs the claude CLI.
 type Client struct {
 	cfg config.Claude
+
+	accountOnce sync.Once
+	account     string
 }
 
 // New returns a client for the CLI and model in cfg.
@@ -45,7 +53,10 @@ type Result struct {
 	// Output is the structured answer matching Request.Schema.
 	Output json.RawMessage
 	// Model is the model that produced most of the output, or the configured model.
-	Model   string
+	Model string
+	// Account is the email of the Claude account the call ran under, or "unknown" when it could
+	// not be determined.
+	Account string
 	CostUSD float64
 	Usage   Usage
 	Turns   int
@@ -99,9 +110,7 @@ func (c *Client) Run(ctx context.Context, req Request) (Result, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.Timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, c.cfg.Bin, args...) //nolint:gosec // binary and args come from local config
-	// Run outside the repo so no project CLAUDE.md or settings leak into the call.
-	cmd.Dir = os.TempDir()
+	cmd := c.command(ctx, args...)
 	cmd.Stdin = strings.NewReader(req.Prompt)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -141,12 +150,49 @@ func (c *Client) Run(ctx context.Context, req Request) (Result, error) {
 	res := Result{
 		Output:   env.StructuredOutput,
 		Model:    mainModel(env, c.cfg.Model),
+		Account:  c.accountEmail(ctx),
 		CostUSD:  env.TotalCostUSD,
 		Usage:    env.Usage,
 		Turns:    env.NumTurns,
 		Duration: time.Since(start),
 	}
 	return res, nil
+}
+
+// command builds a claude CLI invocation that runs outside the repo (so no project CLAUDE.md or
+// settings leak in) under the configured Claude account.
+func (c *Client) command(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, c.cfg.Bin, args...) //nolint:gosec // binary and args come from local config
+	cmd.Dir = os.TempDir()
+	if c.cfg.ConfigDir != "" {
+		// Later duplicates win, so this overrides any CLAUDE_CONFIG_DIR inherited from the shell.
+		cmd.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+c.cfg.ConfigDir)
+	}
+	return cmd
+}
+
+// accountEmail returns the email of the logged-in account (`claude auth status`), looked up once.
+// A failed lookup is logged and reported as "unknown" rather than failing the call.
+func (c *Client) accountEmail(ctx context.Context) string {
+	c.accountOnce.Do(func() {
+		c.account = "unknown"
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), accountTimeout)
+		defer cancel()
+		out, err := c.command(ctx, "auth", "status").Output()
+		if err != nil {
+			slog.WarnContext(ctx, "claude account lookup failed", "error", err)
+			return
+		}
+		var st struct {
+			Email string `json:"email"`
+		}
+		if err := json.Unmarshal(out, &st); err != nil || st.Email == "" {
+			slog.WarnContext(ctx, "claude account lookup returned no email", "error", err)
+			return
+		}
+		c.account = st.Email
+	})
+	return c.account
 }
 
 // mainModel is the model with the most output tokens; side calls (such as fetch summaries) may
