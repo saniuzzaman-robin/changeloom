@@ -37,22 +37,20 @@ func TestRun(t *testing.T) {
 	addStory("fresh unseen", day, 0, false)
 	addStory("old popular", 20*day, 3, false)
 	addStory("old saved", 20*day, 0, true)
-	addStory("week old unseen", 10*day, 1, false)
 	addStory("week old popular", 10*day, 3, false)
 	addStory("week old saved", 10*day, 0, true)
 	exec(t, pool, `INSERT INTO stories (title, summary, body_md, kind, importance, published_at, model, prompt_version)
-		VALUES ('stale deal', 's', 'b', 'deal', 2, now() - interval '6 days', 'm', 'p'), ('fresh deal', 's', 'b', 'deal', 2, now() - interval '2 days', 'm', 'p')`)
-	exec(t, pool, `INSERT INTO story_views (user_id, story_id) SELECT u.id, s.id FROM users u, stories s WHERE s.kind = 'deal'`)
+		VALUES ('week old deal', 's', 'b', 'deal', 2, now() - interval '10 days', 'm', 'p'), ('old deal', 's', 'b', 'deal', 2, now() - interval '20 days', 'm', 'p')`)
 	// More than one batch of old stories.
 	exec(t, pool, `INSERT INTO stories (title, summary, body_md, kind, importance, published_at, model, prompt_version)
 		SELECT 'bulk ' || g, 's', 'b', 'release', 2, now() - interval '30 days', 'm', 'p' FROM generate_series(1, 1100) g`)
 
-	deleted, err := prune.Run(ctx, pool, prune.Settings{MaxAge: 14 * day, DealsMaxAge: 5 * day, Grace: 7 * day, MinViewers: 3}, time.Now())
+	deleted, err := prune.Run(ctx, pool, prune.Settings{MaxAge: 14 * day}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if deleted != 1100+2+1 {
-		t.Errorf("deleted = %d, want 1103", deleted)
+	if deleted != 1100+2 {
+		t.Errorf("deleted = %d, want 1102", deleted)
 	}
 	rows, err := pool.Query(ctx, `SELECT title FROM stories ORDER BY title`)
 	if err != nil {
@@ -67,7 +65,7 @@ func TestRun(t *testing.T) {
 		}
 		kept = append(kept, title)
 	}
-	want := []string{"fresh deal", "fresh unseen", "old saved", "week old popular", "week old saved"}
+	want := []string{"fresh unseen", "old saved", "week old deal", "week old popular", "week old saved"}
 	if len(kept) != len(want) {
 		t.Fatalf("kept %v, want %v", kept, want)
 	}

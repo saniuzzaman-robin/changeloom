@@ -64,21 +64,13 @@ INSERT INTO topic_stats (topic_id, env, followers, profession_users, views_7d)
 SELECT id, @env, @followers, @profession_users, @views_7d FROM topics WHERE slug = @slug;
 
 -- name: PruneHostedStories :execrows
--- Run against the hosted DB. Deletes at most @max_rows stories that nobody saved and that are
--- either older than @max_age_before, a deal older than @deals_before, or older than @grace_before
--- with fewer than @min_viewers distinct viewers. Sources, topics, views and read state cascade.
+-- Run against the hosted DB. Deletes at most @max_rows stories that nobody saved and that were
+-- published before @max_age_before. Sources, topics, views and read state cascade.
 DELETE FROM stories
 WHERE id IN (
     SELECT s.id FROM stories s
     WHERE NOT EXISTS (SELECT 1 FROM user_bookmarks b WHERE b.story_id = s.id)
-        AND (
-            s.published_at < @max_age_before
-            OR (s.kind = 'deal' AND s.published_at < @deals_before)
-            OR (
-                s.published_at < @grace_before
-                AND (SELECT count(*) FROM story_views v WHERE v.story_id = s.id) < @min_viewers::bigint
-            )
-        )
+        AND s.published_at < @max_age_before
     ORDER BY s.id
     LIMIT @max_rows
 );
