@@ -68,8 +68,8 @@ These commands create cloud resources and may cost money. Read them, then run th
 
 ## Backend (api on Cloud Run)
 
-Normally the deploy workflow releases the api (see Continuous deployment): every push to `main` that
-passes CI goes to staging, and you promote the same image to prod by hand. The first deploy of each
+Normally the deploy workflow releases the api (see Continuous deployment): every push to `staging` that
+passes CI goes to staging, and merging `staging` into `main` deploys to prod. The first deploy of each
 env must be manual, because it creates the service and makes it public; the workflow only adds
 revisions to an existing service.
 
@@ -277,15 +277,19 @@ them (see Continuous deployment). Play rejects a `versionCode` it has seen befor
 ## Continuous deployment (GitHub Actions)
 
 - `.github/workflows/deploy-api.yml`
-  - **Staging:** runs after CI passes on a push to `main`. It builds the image once, pushes it to
+  - **Staging:** runs after CI passes on a push to `staging`. It builds the image once, pushes it to
     staging's Artifact Registry, runs the backend migrations with the image's `goose` (same
     `goose_db_version` table as `curator migrate --remote`), deploys with no traffic, checks `/ready`,
     then shifts traffic. The run summary prints the image (`...api@sha256:...`).
-  - **Prod:** Actions → Deploy api → Run workflow, with that image. After the `production`
-    environment's reviewers approve, it copies the same digest to prod's registry (crane), checks out
-    the commit the image was built from, then migrates, deploys, checks and promotes the same way.
+  - **Prod:** runs after CI passes on a push to `main` (a `staging` → `main` merge). After the
+    `production` environment's reviewers approve, it builds the image from that commit, pushes it to
+    prod's registry, then migrates, deploys, checks and promotes the same way. To redeploy or roll back
+    an image that already ran in staging, run Actions → Deploy api → Run workflow with that image: it
+    copies the same digest to prod's registry (crane) and checks out the commit it was built from.
+- **Branches:** open PRs against `staging`; Dependabot does too. Merge `staging` into `main` (a PR, with a
+  merge commit) when you want a prod release. `main` is the only branch that deploys prod; protect both.
 - `.github/workflows/android-release.yml`
-  - **Staging:** pushes to `main` that touch `mobile/` build the signed staging APK and send it to
+  - **Staging:** pushes to `staging` that touch `mobile/` build the signed staging APK and send it to
     Firebase App Distribution. Its `versionName` is the last release plus the build, e.g.
     `1.2.3-staging.45+abc1234` (run 45, commit abc1234; `0.0.0-staging…` before the first release).
   - **Prod:** a `v1.2.3` tag (after approval) builds the signed prod AAB with `versionName` 1.2.3 and
@@ -386,7 +390,7 @@ GitHub environment: `staging`, or `production` for prod.
 
 ## Release order
 
-1. Staging: merge to `main`. The workflows deploy the api and send the app to testers. Run the
+1. Staging: merge to `staging`. The workflows deploy the api and send the app to testers. Run the
    curator's `sync --env staging` and test.
-2. Prod: run Deploy api with the staging image, then push a `v<x.y.z>` tag for the app, and promote
+2. Prod: merge `staging` into `main` (deploys the api after approval), then push a `v<x.y.z>` tag for the app, and promote
    the internal release in Play Console.
