@@ -91,8 +91,7 @@ type Config struct {
 	// DealsMaxCallsPerRun caps the per-country deal calls per run, on top of MaxCallsPerRun
 	// (CURATOR_DEALS_MAX_CALLS_PER_RUN).
 	DealsMaxCallsPerRun int
-	// DealsMaxAge drops deals published longer ago than this, and prunes unsaved ones older than it
-	// (CURATOR_DEALS_MAX_AGE_DAYS).
+	// DealsMaxAge drops deals published longer ago than this (CURATOR_DEALS_MAX_AGE_DAYS).
 	DealsMaxAge time.Duration
 
 	// BackfillTarget is the story count per topic that backfill aims for (CURATOR_BACKFILL_TARGET).
@@ -114,12 +113,6 @@ type Config struct {
 	// PruneMaxAge: unsaved stories published longer ago than this are deleted
 	// (CURATOR_PRUNE_MAX_AGE_DAYS). Sync also skips stories older than this.
 	PruneMaxAge time.Duration
-	// PruneGrace: unsaved stories older than this are deleted when fewer than PruneMinViews
-	// distinct users saw them (CURATOR_PRUNE_GRACE_DAYS).
-	PruneGrace time.Duration
-	// PruneMinViews is the distinct viewers a story older than PruneGrace needs to be kept
-	// (CURATOR_PRUNE_MIN_VIEWS).
-	PruneMinViews int
 }
 
 // Claude configures the `claude -p` calls.
@@ -188,10 +181,8 @@ func Load() (Config, error) {
 
 		RunMinGap: time.Duration(envInt(&errs, "CURATOR_RUN_MIN_GAP_HOURS", 5)) * time.Hour,
 
-		PruneInterval: time.Duration(envInt(&errs, "CURATOR_PRUNE_INTERVAL_DAYS", 7)) * 24 * time.Hour,
+		PruneInterval: time.Duration(envInt(&errs, "CURATOR_PRUNE_INTERVAL_DAYS", 1)) * 24 * time.Hour,
 		PruneMaxAge:   time.Duration(envInt(&errs, "CURATOR_PRUNE_MAX_AGE_DAYS", 14)) * 24 * time.Hour,
-		PruneGrace:    time.Duration(envInt(&errs, "CURATOR_PRUNE_GRACE_DAYS", 7)) * 24 * time.Hour,
-		PruneMinViews: envInt(&errs, "CURATOR_PRUNE_MIN_VIEWS", 10),
 	}
 
 	for _, env := range Envs {

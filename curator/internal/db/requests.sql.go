@@ -235,38 +235,21 @@ DELETE FROM stories
 WHERE id IN (
     SELECT s.id FROM stories s
     WHERE NOT EXISTS (SELECT 1 FROM user_bookmarks b WHERE b.story_id = s.id)
-        AND (
-            s.published_at < $1
-            OR (s.kind = 'deal' AND s.published_at < $2)
-            OR (
-                s.published_at < $3
-                AND (SELECT count(*) FROM story_views v WHERE v.story_id = s.id) < $4::bigint
-            )
-        )
+        AND s.published_at < $1
     ORDER BY s.id
-    LIMIT $5
+    LIMIT $2
 )
 `
 
 type PruneHostedStoriesParams struct {
 	MaxAgeBefore time.Time
-	DealsBefore  time.Time
-	GraceBefore  time.Time
-	MinViewers   int64
 	MaxRows      int32
 }
 
-// Run against the hosted DB. Deletes at most @max_rows stories that nobody saved and that are
-// either older than @max_age_before, a deal older than @deals_before, or older than @grace_before
-// with fewer than @min_viewers distinct viewers. Sources, topics, views and read state cascade.
+// Run against the hosted DB. Deletes at most @max_rows stories that nobody saved and that were
+// published before @max_age_before. Sources, topics, views and read state cascade.
 func (q *Queries) PruneHostedStories(ctx context.Context, arg PruneHostedStoriesParams) (int64, error) {
-	result, err := q.db.Exec(ctx, pruneHostedStories,
-		arg.MaxAgeBefore,
-		arg.DealsBefore,
-		arg.GraceBefore,
-		arg.MinViewers,
-		arg.MaxRows,
-	)
+	result, err := q.db.Exec(ctx, pruneHostedStories, arg.MaxAgeBefore, arg.MaxRows)
 	if err != nil {
 		return 0, err
 	}

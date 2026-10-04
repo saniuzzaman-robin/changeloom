@@ -1,9 +1,8 @@
-// Package prune deletes old and unseen stories from a hosted DB to keep it small. The local DB
+// Package prune deletes old stories from a hosted DB to keep it small. The local DB
 // keeps everything, so dedupe and "already covered" still work.
 package prune
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -23,25 +22,16 @@ const batchSize = 500
 type Settings struct {
 	// MaxAge: unsaved stories published longer ago than this are deleted.
 	MaxAge time.Duration
-	// DealsMaxAge is MaxAge for deals; zero means MaxAge.
-	DealsMaxAge time.Duration
-	// Grace: unsaved stories published longer ago than this are deleted unless MinViewers distinct
-	// users saw them.
-	Grace      time.Duration
-	MinViewers int
 }
 
 // Run deletes from remote, in batches, every story that no user saved and that is older than
-// s.MaxAge, or older than s.Grace with fewer than s.MinViewers distinct viewers. Sources, topics,
-// views and read state go with it. It returns how many stories were deleted.
+// s.MaxAge. Sources, topics, views and read state go with it. It returns how many stories were deleted.
 func Run(ctx context.Context, remote db.DBTX, s Settings, now time.Time) (int64, error) {
 	q := db.New(remote)
 	var total int64
-	dealsMaxAge := cmp.Or(s.DealsMaxAge, s.MaxAge)
 	for {
 		n, err := q.PruneHostedStories(ctx, db.PruneHostedStoriesParams{
-			MaxAgeBefore: now.Add(-s.MaxAge), DealsBefore: now.Add(-dealsMaxAge), GraceBefore: now.Add(-s.Grace),
-			MinViewers: int64(s.MinViewers), MaxRows: batchSize,
+			MaxAgeBefore: now.Add(-s.MaxAge), MaxRows: batchSize,
 		})
 		if err != nil {
 			return total, fmt.Errorf("delete old stories: %w", err)
