@@ -31,6 +31,12 @@ import (
 
 const connectTimeout = 10 * time.Second
 
+// Unattended runs start at login, before Docker has brought Postgres up, so `run` retries the local connection.
+const (
+	localConnectWait  = 2 * time.Minute
+	localConnectRetry = 5 * time.Second
+)
+
 const usage = `usage: curator <command> [flags]
 
 commands:
@@ -379,7 +385,7 @@ func syncEnv(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env co
 // sync and prune run for each hosted env with a database URL. A failing step is logged and the run continues where that is safe, so a
 // failed fetch still pushes request decisions; the error returned lists every failed step.
 func runAll(ctx context.Context, cfg config.Config, ifDue bool) error {
-	local, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
+	local, err := openPoolWait(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL, localConnectWait)
 	if err != nil {
 		return err
 	}
@@ -431,6 +437,23 @@ func runAll(ctx context.Context, cfg config.Config, ifDue bool) error {
 		step("prune "+string(env), func() error { return pruneIfDue(ctx, cfg, local, env) })
 	}
 	return errors.Join(errs...)
+}
+
+// openPoolWait is openPool, retried every localConnectRetry until wait has passed. A missing URL fails at once.
+func openPoolWait(ctx context.Context, key, url string, wait time.Duration) (*pgxpool.Pool, error) {
+	deadline := time.Now().Add(wait)
+	for {
+		pool, err := openPool(ctx, key, url)
+		if err == nil || url == "" || time.Now().Add(localConnectRetry).After(deadline) {
+			return pool, err
+		}
+		slog.Warn("database not reachable yet, retrying", "key", key, "err", err)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(localConnectRetry):
+		}
+	}
 }
 
 // openPool connects to the database in the env var key and checks it is reachable.
