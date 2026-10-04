@@ -3,7 +3,7 @@ updates:
   - package-ecosystem: gomod
     directory: /backend
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       backend:
         patterns: ["*"]
@@ -11,7 +11,7 @@ updates:
   - package-ecosystem: gomod
     directory: /curator
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       curator:
         patterns: ["*"]
@@ -19,7 +19,7 @@ updates:
   - package-ecosystem: gradle
     directory: /mobile
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       mobile:
         patterns: ["*"]
@@ -27,7 +27,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       actions:
         patterns: ["*"]
@@ -35,7 +35,7 @@ updates:
   - package-ecosystem: docker
     directory: /backend
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       docker:
         patterns: ["*"]
