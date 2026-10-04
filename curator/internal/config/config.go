@@ -84,6 +84,16 @@ type Config struct {
 	// Concurrency is how many Claude calls run at once (CURATOR_CONCURRENCY).
 	Concurrency int
 
+	// DealsMaxCountries is the most countries deal topics are fetched for per run, the ones with the
+	// most users (CURATOR_DEALS_MAX_COUNTRIES).
+	DealsMaxCountries int
+	// DealsMaxCallsPerRun caps the per-country deal calls per run, on top of MaxCallsPerRun
+	// (CURATOR_DEALS_MAX_CALLS_PER_RUN).
+	DealsMaxCallsPerRun int
+	// DealsMaxAge drops deals published longer ago than this, and prunes unsaved ones older than it
+	// (CURATOR_DEALS_MAX_AGE_DAYS).
+	DealsMaxAge time.Duration
+
 	// BackfillTarget is the story count per topic that backfill aims for (CURATOR_BACKFILL_TARGET).
 	BackfillTarget int
 	// BackfillTopicsPerCall is the topics per backfill call (CURATOR_BACKFILL_TOPICS_PER_CALL).
@@ -155,6 +165,10 @@ func Load() (Config, error) {
 		ColdInterval:       time.Duration(envInt(&errs, "CURATOR_COLD_INTERVAL_HOURS", 168)) * time.Hour,
 		StoriesPerTopic:    envInt(&errs, "CURATOR_STORIES_PER_TOPIC", 5),
 		Concurrency:        envInt(&errs, "CURATOR_CONCURRENCY", 2),
+
+		DealsMaxCountries:   envInt(&errs, "CURATOR_DEALS_MAX_COUNTRIES", 5),
+		DealsMaxCallsPerRun: envInt(&errs, "CURATOR_DEALS_MAX_CALLS_PER_RUN", 4),
+		DealsMaxAge:         time.Duration(envInt(&errs, "CURATOR_DEALS_MAX_AGE_DAYS", 7)) * 24 * time.Hour,
 
 		BackfillTarget:        envInt(&errs, "CURATOR_BACKFILL_TARGET", 20),
 		BackfillTopicsPerCall: envInt(&errs, "CURATOR_BACKFILL_TOPICS_PER_CALL", 2),

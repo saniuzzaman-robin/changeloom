@@ -83,6 +83,7 @@ func testConfig() config.Config {
 		MergeWindow: 14 * 24 * time.Hour, StoriesPerTopic: 5, Concurrency: 1,
 		HotMinViews: 1, WarmInterval: 24 * time.Hour, ColdInterval: 168 * time.Hour,
 		BackfillTarget: 20, BackfillTopicsPerCall: 2,
+		DealsMaxCountries: 5, DealsMaxCallsPerRun: 4, DealsMaxAge: 7 * 24 * time.Hour,
 	}
 }
 
@@ -297,5 +298,76 @@ func TestFetchConcurrentCallsDedupe(t *testing.T) {
 	}
 	if n := count(t, pool, `SELECT count(*) FROM stories`); n != 1 {
 		t.Errorf("stories = %d, want 1", n)
+	}
+}
+
+func TestFetchDealsPerCountry(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := t.Context()
+	now := time.Now()
+	cat, err := catalog.Parse([]byte(`
+professions:
+  - {slug: enthusiast, name: Tech Enthusiast, topics: [deals]}
+topics:
+  - slug: deals
+    name: Deals
+    children:
+      - {slug: deals/laptops, name: Laptop Deals}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := catalog.Seed(ctx, pool, cat); err != nil {
+		t.Fatal(err)
+	}
+	f := fetch.New(pool, &fakeClaude{}, testConfig())
+
+	// No user chose a country yet: nothing to fetch.
+	if sum, err := f.Run(ctx); err != nil || sum.Calls != 0 {
+		t.Fatalf("no countries: summary %+v, err %v", sum, err)
+	}
+
+	if _, err := pool.Exec(ctx, `INSERT INTO country_stats (env, country, users) VALUES ('prod', 'BD', 3), ('prod', 'US', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	deal := func(title string, countries []string) map[string]any {
+		return story(title, "https://shop.example.com/laptop", now.Add(-time.Hour), func(s map[string]any) {
+			s["kind"] = "deal"
+			s["topics"] = []string{"deals/laptops"}
+			s["countries"] = countries
+		})
+	}
+	fake := &fakeClaude{responses: []any{
+		// BD: no countries defaults to BD.
+		map[string]any{"stories": []any{deal("Laptop deal BD", nil)}},
+		// US: same URL still a separate story; a deal only valid in BD and one with a bad code are rejected.
+		map[string]any{"stories": []any{deal("Laptop deal US", []string{"us"}), deal("Not for US", []string{"BD"}), deal("Bad code", []string{"ZZ"})}},
+	}}
+	f = fetch.New(pool, fake, testConfig())
+
+	sum, err := f.Run(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Calls != 2 || sum.Added != 2 || sum.Merged != 0 || sum.Rejected != 2 {
+		t.Fatalf("summary = %+v", sum)
+	}
+	if !strings.Contains(fake.prompts[0], "Bangladesh (BD)") || !strings.Contains(fake.prompts[1], "United States (US)") {
+		t.Errorf("prompts lack the country:\n%s\n%s", fake.prompts[0], fake.prompts[1])
+	}
+	for title, want := range map[string]string{"Laptop deal BD": "{BD}", "Laptop deal US": "{US}"} {
+		var got string
+		if err := pool.QueryRow(ctx, `SELECT countries::text FROM stories WHERE title = $1`, title).Scan(&got); err != nil || got != want {
+			t.Errorf("%q countries = %q, err %v; want %q", title, got, err, want)
+		}
+	}
+	if n := count(t, pool, `SELECT count(*) FROM fetch_runs WHERE country IN ('BD', 'US') AND status = 'succeeded'`); n != 2 {
+		t.Errorf("country fetch runs = %d, want 2", n)
+	}
+
+	// Both countries were just fetched: not due again.
+	f = fetch.New(pool, &fakeClaude{}, testConfig())
+	if sum, err := f.Run(ctx); err != nil || sum.Calls != 0 {
+		t.Fatalf("second run: summary %+v, err %v", sum, err)
 	}
 }

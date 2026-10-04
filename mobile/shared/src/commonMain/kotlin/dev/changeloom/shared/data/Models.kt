@@ -33,6 +33,8 @@ data class Me(
     val email: String? = null,
     val topics: List<String>,
     val professions: List<String> = emptyList(),
+    /** ISO 3166-1 alpha-2 code the user chose; null until set. */
+    val country: String? = null,
     val stats: MeStats = MeStats(),
 )
 
@@ -50,7 +52,15 @@ data class PutProfessionsRequest(
 )
 
 @Serializable
+data class PutCountryRequest(
+    @SerialName("country") val country: String?,
+)
+
+@Serializable
 data class RecordViewsRequest(val ids: List<Long>)
+
+@Serializable
+data class SyncBookmarksRequest(val add: List<Long>, val remove: List<Long>)
 
 @Serializable
 data class StorySummary(

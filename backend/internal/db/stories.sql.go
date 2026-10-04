@@ -25,6 +25,23 @@ func (q *Queries) AddBookmark(ctx context.Context, arg AddBookmarkParams) error 
 	return err
 }
 
+const addBookmarks = `-- name: AddBookmarks :exec
+INSERT INTO user_bookmarks (user_id, story_id)
+SELECT $1, s.id FROM stories s WHERE s.id = ANY($2::bigint[])
+ON CONFLICT (user_id, story_id) DO NOTHING
+`
+
+type AddBookmarksParams struct {
+	UserID int64
+	Ids    []int64
+}
+
+// Batch form of AddBookmark; ids that are not stories are skipped by the join.
+func (q *Queries) AddBookmarks(ctx context.Context, arg AddBookmarksParams) error {
+	_, err := q.db.Exec(ctx, addBookmarks, arg.UserID, arg.Ids)
+	return err
+}
+
 const getStory = `-- name: GetStory :one
 SELECT s.id, s.title, s.summary, s.body_md, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
     (ub.story_id IS NOT NULL)::boolean AS is_bookmarked,
@@ -222,6 +239,10 @@ WITH RECURSIVE followed AS (
     LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = $1
     LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = $1
     WHERE s.published_at >= $2
+    AND (
+        s.kind <> 'deal' OR cardinality(s.countries) = 0
+        OR (SELECT u.country FROM users u WHERE u.id = $1) = ANY(s.countries)
+    )
 ), page AS (
     SELECT r.id, r.title, r.summary, r.kind, r.severity, r.importance, r.published_at, r.read_at, r.is_read, r.is_bookmarked, r.tier FROM ranked r
     WHERE $3::bigint IS NULL
@@ -269,7 +290,7 @@ type ListTimelineRow struct {
 	Topics       []string
 }
 
-// Every story in the window, ranked by the user's interest: tier 0 is tagged with a followed
+// Every story in the window (deals only for the user's country, or global ones), ranked by the user's interest: tier 0 is tagged with a followed
 // topic (or a descendant of one), tier 1 with an area of one of the user's professions (or a
 // descendant), tier 2 with a related topic (a relation neighbour or an ancestor of a followed
 // topic), tier 3 with anything else. Unread first, then by tier,
@@ -378,6 +399,20 @@ func (q *Queries) RemoveBookmark(ctx context.Context, arg RemoveBookmarkParams) 
 	return err
 }
 
+const removeBookmarks = `-- name: RemoveBookmarks :exec
+DELETE FROM user_bookmarks WHERE user_id = $1 AND story_id = ANY($2::bigint[])
+`
+
+type RemoveBookmarksParams struct {
+	UserID int64
+	Ids    []int64
+}
+
+func (q *Queries) RemoveBookmarks(ctx context.Context, arg RemoveBookmarksParams) error {
+	_, err := q.db.Exec(ctx, removeBookmarks, arg.UserID, arg.Ids)
+	return err
+}
+
 const searchStories = `-- name: SearchStories :many
 SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
     (ub.story_id IS NOT NULL)::boolean AS is_bookmarked,
@@ -388,7 +423,14 @@ SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_a
 FROM stories s
 LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = $1
 LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = $1
-WHERE s.search @@ websearch_to_tsquery('english', $2::text)
+WHERE (
+        s.search @@ websearch_to_tsquery('english', $2::text)
+        OR word_similarity($2::text, s.title) >= 0.4
+    )
+    AND (
+        s.kind <> 'deal' OR cardinality(s.countries) = 0
+        OR (SELECT u.country FROM users u WHERE u.id = $1) = ANY(s.countries)
+    )
     AND (
         $3::bigint IS NULL
         OR (s.published_at, s.id) < ($4::timestamptz, $3::bigint)
@@ -418,7 +460,8 @@ type SearchStoriesRow struct {
 	Topics       []string
 }
 
-// Full-text search over all stories, newest first. Keyset pagination on (published_at, id).
+// Full-text search over all stories visible to the user, newest first; titles also match fuzzily (typos) by trigram
+// word similarity. Keyset pagination on (published_at, id).
 func (q *Queries) SearchStories(ctx context.Context, arg SearchStoriesParams) ([]SearchStoriesRow, error) {
 	rows, err := q.db.Query(ctx, searchStories,
 		arg.UserID,

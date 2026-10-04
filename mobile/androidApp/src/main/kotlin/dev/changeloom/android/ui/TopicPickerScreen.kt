@@ -16,6 +16,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +40,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.triStateToggleable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -211,6 +213,8 @@ internal fun TopicPickerContent(
     }
     val listState = rememberLazyListState()
     val staggered = rememberStaggered(listState)
+    // The two steps share one list, so moving between them starts from the top.
+    LaunchedEffect(professionStep) { listState.scrollToItem(0) }
 
     Box(Modifier.fillMaxSize().background(c.bg)) {
         GridBackground(Modifier.fillMaxWidth().height(360.dp))
@@ -309,8 +313,16 @@ private fun PickerHeader(
                 Spacer(Modifier.weight(1f))
                 TextAction(stringResource(R.string.sign_out), onExit, color = c.fgMuted)
             } else {
-                IconButton(onClick = onExit) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.back), tint = c.fg)
+                Box(
+                    Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(c.navGlass)
+                        .border(1.dp, c.line, CircleShape)
+                        .clickable(role = Role.Button, onClickLabel = stringResource(R.string.back), onClick = onExit),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.back), tint = c.fg, modifier = Modifier.size(20.dp))
                 }
             }
         }

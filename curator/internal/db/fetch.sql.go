@@ -46,15 +46,16 @@ func (q *Queries) AddStoryTopics(ctx context.Context, arg AddStoryTopicsParams) 
 const findMergeTarget = `-- name: FindMergeTarget :one
 SELECT id FROM stories
 WHERE published_at >= $1
+    AND (countries && $2::text[] OR (cardinality(countries) = 0 AND cardinality($2::text[]) = 0))
     AND (
         EXISTS (
             SELECT 1 FROM jsonb_array_elements_text(dedupe_keys -> 'cve_ids') c
-            WHERE c = ANY($2::text[])
+            WHERE c = ANY($3::text[])
         )
         OR (
-            $3::text <> '' AND $4::text <> ''
-            AND dedupe_keys ->> 'project' = $3::text
-            AND dedupe_keys ->> 'version' = $4::text
+            $4::text <> '' AND $5::text <> ''
+            AND dedupe_keys ->> 'project' = $4::text
+            AND dedupe_keys ->> 'version' = $5::text
         )
     )
 ORDER BY published_at DESC, id DESC
@@ -62,16 +63,18 @@ LIMIT 1
 `
 
 type FindMergeTargetParams struct {
-	Since   time.Time
-	CveIds  []string
-	Project string
-	Version string
+	Since     time.Time
+	Countries []string
+	CveIds    []string
+	Project   string
+	Version   string
 }
 
-// A recent story about the same CVE, or the same project and version.
+// A recent story about the same CVE, or the same project and version, for the same countries.
 func (q *Queries) FindMergeTarget(ctx context.Context, arg FindMergeTargetParams) (int64, error) {
 	row := q.db.QueryRow(ctx, findMergeTarget,
 		arg.Since,
+		arg.Countries,
 		arg.CveIds,
 		arg.Project,
 		arg.Version,
@@ -83,8 +86,10 @@ func (q *Queries) FindMergeTarget(ctx context.Context, arg FindMergeTargetParams
 
 const findStoryBySourceURL = `-- name: FindStoryBySourceURL :one
 SELECT story_id FROM story_sources
+JOIN stories s ON s.id = story_id
 WHERE url = ANY($1::text[])
     AND NOT story_id = ANY($2::bigint[])
+    AND (s.countries && $3::text[] OR (cardinality(s.countries) = 0 AND cardinality($3::text[]) = 0))
 ORDER BY story_id DESC
 LIMIT 1
 `
@@ -92,10 +97,11 @@ LIMIT 1
 type FindStoryBySourceURLParams struct {
 	Urls       []string
 	ExcludeIds []int64
+	Countries  []string
 }
 
 func (q *Queries) FindStoryBySourceURL(ctx context.Context, arg FindStoryBySourceURLParams) (int64, error) {
-	row := q.db.QueryRow(ctx, findStoryBySourceURL, arg.Urls, arg.ExcludeIds)
+	row := q.db.QueryRow(ctx, findStoryBySourceURL, arg.Urls, arg.ExcludeIds, arg.Countries)
 	var story_id int64
 	err := row.Scan(&story_id)
 	return story_id, err
@@ -131,8 +137,8 @@ func (q *Queries) FinishFetchRun(ctx context.Context, arg FinishFetchRunParams) 
 }
 
 const insertStory = `-- name: InsertStory :one
-INSERT INTO stories (title, summary, body_md, kind, severity, importance, published_at, dedupe_keys, model, prompt_version)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO stories (title, summary, body_md, kind, severity, importance, published_at, dedupe_keys, model, prompt_version, countries)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::text[])
 RETURNING id
 `
 
@@ -147,6 +153,7 @@ type InsertStoryParams struct {
 	DedupeKeys    []byte
 	Model         string
 	PromptVersion string
+	Countries     []string
 }
 
 func (q *Queries) InsertStory(ctx context.Context, arg InsertStoryParams) (int64, error) {
@@ -161,10 +168,45 @@ func (q *Queries) InsertStory(ctx context.Context, arg InsertStoryParams) (int64
 		arg.DedupeKeys,
 		arg.Model,
 		arg.PromptVersion,
+		arg.Countries,
 	)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const listActiveCountries = `-- name: ListActiveCountries :many
+SELECT country, sum(users)::integer AS users
+FROM country_stats
+GROUP BY country
+ORDER BY sum(users) DESC, country
+LIMIT $1
+`
+
+type ListActiveCountriesRow struct {
+	Country string
+	Users   int32
+}
+
+// Countries with users, summed over the hosted envs, the most users first.
+func (q *Queries) ListActiveCountries(ctx context.Context, maxRows int32) ([]ListActiveCountriesRow, error) {
+	rows, err := q.db.Query(ctx, listActiveCountries, maxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveCountriesRow{}
+	for rows.Next() {
+		var i ListActiveCountriesRow
+		if err := rows.Scan(&i.Country, &i.Users); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listBackfillTopics = `-- name: ListBackfillTopics :many
@@ -182,6 +224,8 @@ SELECT t.id,
 FROM topics t
 LEFT JOIN topics p ON p.id = t.parent_id
 WHERE NOT EXISTS (SELECT 1 FROM topics c WHERE c.parent_id = t.id)
+    -- Deals are fetched per country, never in a backfill.
+    AND t.slug <> 'deals' AND t.slug NOT LIKE 'deals/%'
     AND (
         SELECT count(*) FROM story_topics st JOIN stories sv ON sv.id = st.story_id
         WHERE st.topic_id = t.id AND sv.published_at >= $1
@@ -243,6 +287,40 @@ func (q *Queries) ListBackfillTopics(ctx context.Context, arg ListBackfillTopics
 	return items, nil
 }
 
+const listCountryFetches = `-- name: ListCountryFetches :many
+SELECT tid::bigint AS topic_id, fr.country::text AS country, max(fr.started_at)::timestamptz AS last_fetched_at
+FROM fetch_runs fr, unnest(fr.topic_ids) AS tid
+WHERE fr.status = 'succeeded' AND fr.country IS NOT NULL
+GROUP BY tid, fr.country
+`
+
+type ListCountryFetchesRow struct {
+	TopicID       int64
+	Country       string
+	LastFetchedAt time.Time
+}
+
+// When a successful call last covered each topic for each country.
+func (q *Queries) ListCountryFetches(ctx context.Context) ([]ListCountryFetchesRow, error) {
+	rows, err := q.db.Query(ctx, listCountryFetches)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCountryFetchesRow{}
+	for rows.Next() {
+		var i ListCountryFetchesRow
+		if err := rows.Scan(&i.TopicID, &i.Country, &i.LastFetchedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listFetchTopics = `-- name: ListFetchTopics :many
 SELECT t.id,
     t.slug,
@@ -262,7 +340,7 @@ SELECT t.id,
     -- 'epoch' when no call covering the topic has succeeded yet.
     COALESCE((
         SELECT max(fr.started_at) FROM fetch_runs fr
-        WHERE fr.status = 'succeeded' AND fr.topic_ids @> ARRAY[t.id]
+        WHERE fr.status = 'succeeded' AND fr.country IS NULL AND fr.topic_ids @> ARRAY[t.id]
     ), 'epoch')::timestamptz AS last_fetched_at
 FROM topics t
 LEFT JOIN topics p ON p.id = t.parent_id
@@ -325,14 +403,16 @@ SELECT s.title, COALESCE(MIN(ss.url), '')::text AS url
 FROM stories s
 LEFT JOIN story_sources ss ON ss.story_id = s.id
 WHERE s.published_at >= $1
-    AND EXISTS (SELECT 1 FROM story_topics st WHERE st.story_id = s.id AND st.topic_id = ANY($2::bigint[]))
+    AND ($2::text = '' OR $2::text = ANY(s.countries))
+    AND EXISTS (SELECT 1 FROM story_topics st WHERE st.story_id = s.id AND st.topic_id = ANY($3::bigint[]))
 GROUP BY s.id
 ORDER BY s.published_at DESC, s.id DESC
-LIMIT $3
+LIMIT $4
 `
 
 type ListRecentStoryRefsParams struct {
 	Since    time.Time
+	Country  string
 	TopicIds []int64
 	MaxRows  int32
 }
@@ -342,9 +422,15 @@ type ListRecentStoryRefsRow struct {
 	Url   string
 }
 
-// Recent stories in the given topics, sent to Claude so it skips what we already have.
+// Recent stories in the given topics, sent to Claude so it skips what we already have. A
+// non-empty @country keeps only stories for that country.
 func (q *Queries) ListRecentStoryRefs(ctx context.Context, arg ListRecentStoryRefsParams) ([]ListRecentStoryRefsRow, error) {
-	rows, err := q.db.Query(ctx, listRecentStoryRefs, arg.Since, arg.TopicIds, arg.MaxRows)
+	rows, err := q.db.Query(ctx, listRecentStoryRefs,
+		arg.Since,
+		arg.Country,
+		arg.TopicIds,
+		arg.MaxRows,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -402,18 +488,19 @@ func (q *Queries) ListTopicRelations(ctx context.Context) ([]ListTopicRelationsR
 }
 
 const startFetchRun = `-- name: StartFetchRun :one
-INSERT INTO fetch_runs (group_slug, topic_ids)
-VALUES ($1, $2::bigint[])
+INSERT INTO fetch_runs (group_slug, topic_ids, country)
+VALUES ($1, $2::bigint[], $3)
 RETURNING id
 `
 
 type StartFetchRunParams struct {
 	GroupSlug string
 	TopicIds  []int64
+	Country   *string
 }
 
 func (q *Queries) StartFetchRun(ctx context.Context, arg StartFetchRunParams) (int64, error) {
-	row := q.db.QueryRow(ctx, startFetchRun, arg.GroupSlug, arg.TopicIds)
+	row := q.db.QueryRow(ctx, startFetchRun, arg.GroupSlug, arg.TopicIds, arg.Country)
 	var id int64
 	err := row.Scan(&id)
 	return id, err

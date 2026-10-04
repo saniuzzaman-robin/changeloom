@@ -30,7 +30,7 @@ type PullResult struct {
 }
 
 // Pull copies env's pending topic requests into the inbox and replaces env's per-topic demand
-// (followers, profession users, recent viewers). remote is the hosted DB of env. Only request ids,
+// (followers, profession users, recent viewers) and users per country. remote is the hosted DB of env. Only request ids,
 // texts and times and per-topic counts are read, never users.
 func Pull(ctx context.Context, local *pgxpool.Pool, remote db.DBTX, env config.Env) (PullResult, error) {
 	rq := db.New(remote)
@@ -41,6 +41,11 @@ func Pull(ctx context.Context, local *pgxpool.Pool, remote db.DBTX, env config.E
 	counts, err := rq.ListHostedTopicDemand(ctx, time.Now().Add(-viewWindow))
 	if err != nil {
 		return PullResult{}, fmt.Errorf("read topic demand from %s: %w", env, err)
+	}
+
+	countries, err := rq.ListHostedCountryDemand(ctx)
+	if err != nil {
+		return PullResult{}, fmt.Errorf("read country demand from %s: %w", env, err)
 	}
 
 	res := PullResult{Requests: len(pending)}
@@ -70,6 +75,14 @@ func Pull(ctx context.Context, local *pgxpool.Pool, remote db.DBTX, env config.E
 				continue
 			}
 			res.Topics++
+		}
+		if err := q.DeleteCountryStats(ctx, string(env)); err != nil {
+			return fmt.Errorf("clear country counts: %w", err)
+		}
+		for _, c := range countries {
+			if err := q.AddCountryStat(ctx, db.AddCountryStatParams{Env: string(env), Country: c.Country, Users: c.Users}); err != nil {
+				return fmt.Errorf("store users of country %q: %w", c.Country, err)
+			}
 		}
 		return nil
 	})

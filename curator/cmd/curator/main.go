@@ -323,7 +323,7 @@ func pruneEnv(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env c
 
 	now := time.Now()
 	deleted, err := prune.Run(ctx, remote, prune.Settings{
-		MaxAge: cfg.PruneMaxAge, Grace: cfg.PruneGrace, MinViewers: cfg.PruneMinViews,
+		MaxAge: cfg.PruneMaxAge, DealsMaxAge: cfg.DealsMaxAge, Grace: cfg.PruneGrace, MinViewers: cfg.PruneMinViews,
 	}, now)
 	slog.InfoContext(ctx, "pruned", "env", env, "deleted_stories", deleted)
 	if err != nil {

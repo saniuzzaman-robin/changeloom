@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -17,6 +18,9 @@ import (
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/auth"
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/db"
 )
+
+// countryCode matches an upper-case ISO 3166-1 alpha-2 code.
+var countryCode = regexp.MustCompile(`^[A-Z]{2}$`)
 
 // topicsMaxAge is how long clients may reuse GET /v1/topics without revalidating.
 const topicsMaxAge = 5 * time.Minute
@@ -227,6 +231,28 @@ func (s *Server) PutMyProfessions(w http.ResponseWriter, r *http.Request) {
 	s.writeMe(w, r, user)
 }
 
+// PutMyCountry sets or clears the user's country.
+func (s *Server) PutMyCountry(w http.ResponseWriter, r *http.Request) {
+	user := mustUser(r)
+
+	var body PutMyCountryJSONRequestBody
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body: "+err.Error())
+		return
+	}
+	if body.Country != nil && !countryCode.MatchString(*body.Country) {
+		writeError(w, http.StatusBadRequest, "bad_request", "country must be an upper-case ISO 3166-1 alpha-2 code")
+		return
+	}
+	if err := s.q.SetUserCountry(r.Context(), db.SetUserCountryParams{UserID: user.ID, Country: body.Country}); err != nil {
+		internalError(w, r, "set user country", err)
+		return
+	}
+	s.writeMe(w, r, user)
+}
+
 func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user auth.User) {
 	slugs, err := s.q.ListUserTopicSlugs(r.Context(), user.ID)
 	if err != nil {
@@ -236,6 +262,11 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user auth.User)
 	professions, err := s.q.ListUserProfessionSlugs(r.Context(), user.ID)
 	if err != nil {
 		internalError(w, r, "list user professions", err)
+		return
+	}
+	country, err := s.q.GetUserCountry(r.Context(), user.ID)
+	if err != nil {
+		internalError(w, r, "get user country", err)
 		return
 	}
 	stats, err := s.q.GetUserStats(r.Context(), user.ID)
@@ -248,6 +279,7 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user auth.User)
 		Email:       user.Email,
 		Topics:      slugs,
 		Professions: professions,
+		Country:     country,
 		Stats:       MeStats{Saved: stats.Saved, Read: stats.Read},
 	})
 }

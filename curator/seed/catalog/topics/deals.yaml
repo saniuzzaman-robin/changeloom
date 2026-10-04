@@ -1,0 +1,16 @@
+- slug: deals
+  name: "Tech & Gadget Deals"
+  description: "Price drops and limited-time offers on gadgets and home products."
+  children:
+    - {slug: deals/laptops, name: "Laptop Deals"}
+    - {slug: deals/macbook, name: "MacBook Deals"}
+    - {slug: deals/iphone, name: "iPhone Deals"}
+    - {slug: deals/android-phones, name: "Android Phone Deals"}
+    - {slug: deals/tablets, name: "Tablet Deals"}
+    - {slug: deals/audio, name: "Headphone & Audio Deals"}
+    - {slug: deals/wearables, name: "Smartwatch & Wearable Deals"}
+    - {slug: deals/tvs, name: "TV & Monitor Deals"}
+    - {slug: deals/gaming, name: "Gaming Deals"}
+    - {slug: deals/smart-home, name: "Smart Home Deals"}
+    - {slug: deals/home-appliances, name: "Home Appliance Deals"}
+    - {slug: deals/accessories, name: "Accessory Deals"}

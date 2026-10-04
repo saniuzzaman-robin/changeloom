@@ -1,5 +1,5 @@
 -- name: ListTimeline :many
--- Every story in the window, ranked by the user's interest: tier 0 is tagged with a followed
+-- Every story in the window (deals only for the user's country, or global ones), ranked by the user's interest: tier 0 is tagged with a followed
 -- topic (or a descendant of one), tier 1 with an area of one of the user's professions (or a
 -- descendant), tier 2 with a related topic (a relation neighbour or an ancestor of a followed
 -- topic), tier 3 with anything else. Unread first, then by tier,
@@ -46,6 +46,10 @@ WITH RECURSIVE followed AS (
     LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = @user_id
     LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = @user_id
     WHERE s.published_at >= @since
+    AND (
+        s.kind <> 'deal' OR cardinality(s.countries) = 0
+        OR (SELECT u.country FROM users u WHERE u.id = @user_id) = ANY(s.countries)
+    )
 ), page AS (
     SELECT r.* FROM ranked r
     WHERE sqlc.narg(cursor_id)::bigint IS NULL
@@ -101,6 +105,15 @@ ON CONFLICT (user_id, story_id) DO NOTHING;
 -- name: RemoveBookmark :exec
 DELETE FROM user_bookmarks WHERE user_id = @user_id AND story_id = @story_id;
 
+-- name: AddBookmarks :exec
+-- Batch form of AddBookmark; ids that are not stories are skipped by the join.
+INSERT INTO user_bookmarks (user_id, story_id)
+SELECT @user_id, s.id FROM stories s WHERE s.id = ANY(@ids::bigint[])
+ON CONFLICT (user_id, story_id) DO NOTHING;
+
+-- name: RemoveBookmarks :exec
+DELETE FROM user_bookmarks WHERE user_id = @user_id AND story_id = ANY(@ids::bigint[]);
+
 -- name: ListBookmarks :many
 -- The user's bookmarked stories, most recently bookmarked first. Keyset pagination on
 -- (bookmarked_at, id).
@@ -122,7 +135,8 @@ ORDER BY ub.created_at DESC, s.id DESC
 LIMIT @page_size;
 
 -- name: SearchStories :many
--- Full-text search over all stories, newest first. Keyset pagination on (published_at, id).
+-- Full-text search over all stories visible to the user, newest first; titles also match fuzzily (typos) by trigram
+-- word similarity. Keyset pagination on (published_at, id).
 SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
     (ub.story_id IS NOT NULL)::boolean AS is_bookmarked,
     ARRAY(
@@ -132,7 +146,14 @@ SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_a
 FROM stories s
 LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = @user_id
 LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = @user_id
-WHERE s.search @@ websearch_to_tsquery('english', @query::text)
+WHERE (
+        s.search @@ websearch_to_tsquery('english', @query::text)
+        OR word_similarity(@query::text, s.title) >= 0.4
+    )
+    AND (
+        s.kind <> 'deal' OR cardinality(s.countries) = 0
+        OR (SELECT u.country FROM users u WHERE u.id = @user_id) = ANY(s.countries)
+    )
     AND (
         sqlc.narg(cursor_id)::bigint IS NULL
         OR (s.published_at, s.id) < (sqlc.narg(cursor_published_at)::timestamptz, sqlc.narg(cursor_id)::bigint)

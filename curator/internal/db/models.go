@@ -10,6 +10,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type CountryStat struct {
+	Env     string
+	Country string
+	Users   int32
+}
+
 type DeviceToken struct {
 	Token     string
 	UserID    int64
@@ -27,6 +33,7 @@ type FetchRun struct {
 	Error        *string
 	CostUsd      *float64
 	TopicIds     []int64
+	Country      *string
 }
 
 type Profession struct {
@@ -74,6 +81,7 @@ type Story struct {
 	NotifiedAt    *time.Time
 	Uid           pgtype.UUID
 	UpdatedAt     time.Time
+	Countries     []string
 }
 
 type StorySource struct {
@@ -154,6 +162,7 @@ type User struct {
 	FirebaseUid string
 	Email       *string
 	CreatedAt   time.Time
+	Country     *string
 }
 
 type UserBookmark struct {

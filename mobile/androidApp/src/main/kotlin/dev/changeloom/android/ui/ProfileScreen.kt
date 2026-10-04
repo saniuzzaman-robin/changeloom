@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -105,6 +107,7 @@ import dev.changeloom.android.ui.theme.expoTween
 import dev.changeloom.shared.data.MeStats
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import java.util.Locale
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import kotlin.math.roundToLong
@@ -143,6 +146,7 @@ internal fun ProfileScreen(
         version = BuildConfig.VERSION_NAME,
         contentPadding = contentPadding,
         onEditTopics = onEditTopics,
+        onCountry = vm::setCountry,
         onEditProfessions = {
             picker.setStep(PickerStep.Professions)
             onEditTopics()
@@ -194,6 +198,7 @@ internal fun ProfileContent(
     followed: List<String>,
     professions: List<String> = emptyList(),
     onEditProfessions: () -> Unit = {},
+    onCountry: (String) -> Unit = {},
     themeMode: ThemeMode,
     version: String,
     contentPadding: PaddingValues,
@@ -209,6 +214,7 @@ internal fun ProfileContent(
     val c = ChangeloomTheme.colors
     val topicName = LocalTopicName.current
     var confirmSignOut by rememberSaveable { mutableStateOf(false) }
+    var pickCountry by rememberSaveable { mutableStateOf(false) }
     val scroll = rememberScrollState()
 
     Box(Modifier.fillMaxSize().tabContentBounds(contentPadding)) {
@@ -261,6 +267,19 @@ internal fun ProfileContent(
                     }
                 }
 
+                Column(Modifier.enter(260)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Eyebrow(stringResource(R.string.country_label), Modifier.weight(1f))
+                        TextAction(stringResource(R.string.edit_country), { pickCountry = true }, icon = Icons.Rounded.Edit)
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        state.country?.let(::countryName) ?: stringResource(R.string.country_none),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (state.country == null) c.fgMuted else c.fg,
+                    )
+                }
+
                 Column(Modifier.enter(280)) {
                     TopicRequestSection(state, onRequestText, onSubmitRequest)
                 }
@@ -298,6 +317,38 @@ internal fun ProfileContent(
         }
     }
 
+    if (pickCountry) {
+        val countries = remember { Locale.getISOCountries().map { it to countryName(it) }.sortedBy { it.second } }
+        AlertDialog(
+            onDismissRequest = { pickCountry = false },
+            confirmButton = {},
+            dismissButton = { TextAction(stringResource(R.string.cancel), onClick = { pickCountry = false }, color = c.fgMuted) },
+            title = { Text(stringResource(R.string.country_title)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.country_body), style = MaterialTheme.typography.bodyMedium, color = c.fgMuted)
+                    Spacer(Modifier.height(8.dp))
+                    LazyColumn {
+                        items(countries, key = { it.first }) { (code, name) ->
+                            TextAction(
+                                name,
+                                onClick = {
+                                    pickCountry = false
+                                    onCountry(code)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = if (code == state.country) c.primaryText else c.fg,
+                            )
+                        }
+                    }
+                }
+            },
+            shape = Radius.xxl,
+            containerColor = c.elevated,
+            titleContentColor = c.fg,
+            textContentColor = c.fgMuted,
+        )
+    }
     if (confirmSignOut) {
         AlertDialog(
             onDismissRequest = { confirmSignOut = false },
@@ -533,3 +584,5 @@ private fun ProfileErrorLight() = ChangeloomTheme(ThemeMode.Light) {
 }
 
 private val SEGMENT_HEIGHT = 40.dp
+
+private fun countryName(code: String): String = Locale("", code).displayCountry

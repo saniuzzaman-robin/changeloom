@@ -37,6 +37,8 @@ import dev.changeloom.android.ui.theme.ChangeloomTheme
 import dev.changeloom.android.ui.theme.ThemePreferences
 import dev.changeloom.android.ui.theme.isDark
 import dev.changeloom.shared.auth.AuthRepository
+import dev.changeloom.shared.data.TimelineRepository
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -58,6 +60,7 @@ class MainActivity : ComponentActivity() {
     private val analytics: Analytics by inject()
     private val consent: ConsentManager by inject()
     private val updater: InAppUpdater by inject()
+    private val timeline: TimelineRepository by inject()
 
     /** Set once AppRoot shows a real screen (sign-in, onboarding or the feed); the splash stays up until then. */
     @Volatile private var contentReady = false
@@ -114,6 +117,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** The app is closing or leaving the foreground: sync bookmark changes made since the last sync, if any. */
+    override fun onStop() {
+        super.onStop()
+        lifecycleScope.launch(NonCancellable) { timeline.flushBookmarks() }
     }
 
     private fun onContentReady() {

@@ -37,7 +37,7 @@ func parse(t *testing.T, stories ...map[string]any) ([]fetch.Story, []error) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, rejected, err := fetch.ParseOutput(raw, map[string]bool{"languages/go": true}, testNow, 7*24*time.Hour)
+	out, rejected, err := fetch.ParseOutput(raw, map[string]bool{"languages/go": true}, testNow, 7*24*time.Hour, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestParseOutputRejects(t *testing.T) {
 }
 
 func TestParseOutputUndecodable(t *testing.T) {
-	if _, _, err := fetch.ParseOutput([]byte(`{"stories":[],"extra":1}`), nil, testNow, time.Hour); err == nil {
+	if _, _, err := fetch.ParseOutput([]byte(`{"stories":[],"extra":1}`), nil, testNow, time.Hour, ""); err == nil {
 		t.Fatal("unknown field should fail")
 	}
 }

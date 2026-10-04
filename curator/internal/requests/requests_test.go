@@ -99,9 +99,17 @@ func TestPull(t *testing.T) {
 	exec(t, remote, `INSERT INTO story_views (user_id, story_id) SELECT u.id, s.id FROM users u, stories s WHERE s.title = 'seen'`)
 	exec(t, remote, `INSERT INTO story_views (user_id, story_id, seen_at) SELECT u.id, s.id, now() - interval '30 days' FROM users u, stories s WHERE s.title = 'old view'`)
 
+	exec(t, remote, `UPDATE users SET country = 'BD' WHERE firebase_uid = 'a'`)
+
 	res, err := requests.Pull(ctx, local, remote, config.EnvStaging)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if n := count(t, local, `SELECT users FROM country_stats WHERE env = 'staging' AND country = 'BD'`); n != 1 {
+		t.Errorf("BD users = %d, want 1", n)
+	}
+	if n := count(t, local, `SELECT count(*) FROM country_stats WHERE env = 'staging'`); n != 1 {
+		t.Errorf("country rows = %d, want 1 (users without a country are not counted)", n)
 	}
 	if res.Requests != 1 || res.New != 1 || res.Topics != 2 || res.Unknown != 1 {
 		t.Errorf("result = %+v, want 1 request, 1 new, 2 topics, 1 unknown", res)

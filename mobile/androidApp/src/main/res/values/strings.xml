@@ -190,6 +190,12 @@
     <string name="professions_skip">Skip</string>
     <string name="edit_professions">Edit professions</string>
     <string name="professions_label">Profession</string>
+    <string name="country_label">Country</string>
+    <string name="edit_country">Change country</string>
+    <string name="country_none">Not set. Deals are hidden until you choose one.</string>
+    <string name="country_title">Your country</string>
+    <string name="country_body">Deal stories are shown for this country.</string>
+    <string name="country_save_failed">Couldn\'t save your country. Try again.</string>
     <string name="more_areas">More areas</string>
     <string name="suggested_areas">Suggested for you</string>
     <string name="back_to_professions">Professions</string>

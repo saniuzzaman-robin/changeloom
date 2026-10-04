@@ -93,12 +93,28 @@ class ChangeloomApi(
             setBody(PutProfessionsRequest(slugs))
         }.parse()
 
+    /** Sets the country that scopes deal stories; null clears it. */
+    suspend fun putMyCountry(country: String?): Me =
+        client.put("v1/me/country") {
+            authorize()
+            contentType(ContentType.Application.Json)
+            setBody(PutCountryRequest(country))
+        }.parse()
+
     /** Reports stories the user has seen in the feed (at most [MAX_VIEW_IDS] per call); idempotent on the server. */
     suspend fun recordViews(ids: List<Long>) =
         client.post("v1/stories/views") {
             authorize()
             contentType(ContentType.Application.Json)
             setBody(RecordViewsRequest(ids))
+        }.checkSuccess()
+
+    /** Applies bookmark additions and removals in one call (at most [MAX_VIEW_IDS] ids per list); idempotent on the server. */
+    suspend fun syncBookmarks(add: List<Long>, remove: List<Long>) =
+        client.post("v1/bookmarks/sync") {
+            authorize()
+            contentType(ContentType.Application.Json)
+            setBody(SyncBookmarksRequest(add, remove))
         }.checkSuccess()
 
     suspend fun timeline(cursor: String? = null, limit: Int = TIMELINE_PAGE_SIZE): TimelinePage =

@@ -170,25 +170,43 @@ class TimelineRepositoryTest {
     }
 
     @Test
-    fun setBookmarkedUpdatesTimelineAndRollsBackOnFailure() = runTest {
-        var failBookmark = false
+    fun bookmarkChangesAreQueuedLocallyAndSyncedInOneCallOnFlush() = runTest {
+        var syncs = 0
+        var failSync = false
         val cache = MemoryCache()
         val repo = repo(cache) { request ->
             when {
                 request.url.encodedPath == "/v1/timeline" -> respond(firstPage, headers = json)
-                failBookmark -> respondError(HttpStatusCode.InternalServerError)
-                else -> respond("", HttpStatusCode.NoContent)
+                failSync -> respondError(HttpStatusCode.InternalServerError)
+                else -> { syncs++; respond("", HttpStatusCode.NoContent) }
             }
         }
         repo.refresh()
-        assertTrue(repo.setBookmarked(1, true))
+        repo.setBookmarked(1, true)
+        repo.setBookmarked(2, true)
+        repo.setBookmarked(2, false) // toggled back: no net change
         assertTrue(repo.state.value.items.first { it.id == 1L }.isBookmarked)
         assertTrue(cache.timeline.first { it.id == 1L }.isBookmarked)
+        assertEquals(0, syncs)
 
-        failBookmark = true
-        assertFalse(repo.setBookmarked(2, true))
-        assertFalse(repo.state.value.items.first { it.id == 2L }.isBookmarked)
-        assertTrue(repo.state.value.error != null)
+        failSync = true
+        repo.flushBookmarks()
+        failSync = false
+        assertEquals(0, syncs)
+
+        repo.flushBookmarks()
+        assertEquals(1, syncs)
+        repo.flushBookmarks() // nothing queued: no call
+        assertEquals(1, syncs)
+    }
+
+    @Test
+    fun refreshKeepsUnsyncedBookmarkChanges() = runTest {
+        val repo = repo(MemoryCache()) { respond(firstPage, headers = json) }
+        repo.refresh()
+        repo.setBookmarked(1, true)
+        repo.refresh()
+        assertTrue(repo.state.value.items.first { it.id == 1L }.isBookmarked)
     }
 
     @Test

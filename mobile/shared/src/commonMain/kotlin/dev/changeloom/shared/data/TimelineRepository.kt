@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.time.Instant
 
 data class TimelineState(
@@ -36,6 +38,11 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
     private val _state = MutableStateFlow(TimelineState())
     val state: StateFlow<TimelineState> = _state.asStateFlow()
 
+    private val bookmarkMutex = Mutex()
+
+    /** Bookmark changes not yet synced, story id to wanted state. Always differs from the server's state. */
+    private val pendingBookmarks = LinkedHashMap<Long, Boolean>()
+
     /** Shows the cached timeline immediately (if nothing is loaded yet), then fetches the first page. */
     suspend fun refresh() {
         if (_state.value.items.isEmpty()) {
@@ -44,8 +51,9 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
         _state.update { it.copy(refreshing = true, error = null) }
         try {
             val page = api.timeline()
-            cache.saveTimeline(page.items)
-            _state.value = TimelineState(items = page.items, nextCursor = page.nextCursor)
+            val items = withPendingBookmarks(page.items)
+            cache.saveTimeline(items)
+            _state.value = TimelineState(items = items, nextCursor = page.nextCursor)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -64,7 +72,7 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
             _state.update { s ->
                 val known = s.items.mapTo(HashSet()) { it.id }
                 s.copy(
-                    items = s.items + page.items.filter { it.id !in known },
+                    items = s.items + withPendingBookmarks(page.items).filter { it.id !in known },
                     nextCursor = page.nextCursor,
                     loadingMore = false,
                 )
@@ -97,22 +105,35 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
     }
 
     /**
-     * Applies the change to the timeline copy (if the story is in it), then syncs. Returns false and rolls
-     * the timeline back when the sync fails, so callers holding their own copy can roll back too.
+     * Applies the change to the timeline copy (if the story is in it) and queues it; nothing is sent until
+     * [flushBookmarks]. Toggling a story back cancels its queued change.
      */
-    suspend fun setBookmarked(id: Long, on: Boolean): Boolean {
+    suspend fun setBookmarked(id: Long, on: Boolean) {
         applyBookmark(id, on)
-        try {
-            if (on) api.addBookmark(id) else api.removeBookmark(id)
-            cache.saveTimeline(_state.value.items)
-            return true
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            applyBookmark(id, !on)
-            _state.update { it.copy(error = userMessage(e, "Couldn't update the bookmark")) }
-            return false
+        bookmarkMutex.withLock {
+            if (pendingBookmarks[id] == !on) pendingBookmarks.remove(id) else pendingBookmarks[id] = on
         }
+        cache.saveTimeline(_state.value.items)
+    }
+
+    /** Sends the queued bookmark changes, if any, in as few calls as possible. Failed changes stay queued for the next flush. */
+    suspend fun flushBookmarks() = bookmarkMutex.withLock {
+        val sent = LinkedHashMap(pendingBookmarks)
+        for (batch in sent.entries.chunked(ChangeloomApi.MAX_VIEW_IDS)) {
+            try {
+                api.syncBookmarks(batch.filter { it.value }.map { it.key }, batch.filter { !it.value }.map { it.key })
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return@withLock
+            }
+            batch.forEach { pendingBookmarks.remove(it.key) }
+        }
+    }
+
+    private suspend fun withPendingBookmarks(items: List<StorySummary>): List<StorySummary> = bookmarkMutex.withLock {
+        if (pendingBookmarks.isEmpty()) items
+        else items.map { s -> pendingBookmarks[s.id]?.let { s.copy(isBookmarked = it) } ?: s }
     }
 
     private fun applyBookmark(id: Long, on: Boolean) = _state.update { s ->
@@ -127,6 +148,7 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
     /** Drops in-memory and cached data (on sign-out, so the next user never sees it). */
     suspend fun clear() {
         _state.value = TimelineState()
+        bookmarkMutex.withLock { pendingBookmarks.clear() }
         cache.clear()
     }
 
@@ -134,7 +156,8 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
 
     /** Story detail: network first, cached copy when offline. */
     suspend fun story(id: Long): Story = try {
-        api.story(id).also { cache.saveStory(it) }
+        api.story(id).let { s -> bookmarkMutex.withLock { pendingBookmarks[id] }?.let { s.copy(isBookmarked = it) } ?: s }
+            .also { cache.saveStory(it) }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

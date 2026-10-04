@@ -105,6 +105,7 @@ fun kindColor(kind: String): Color {
         "announcement" -> c.accent
         "research" -> c.blue
         "policy" -> c.slate
+        "deal" -> c.accent
         else -> c.fgMuted
     }
 }

@@ -32,6 +32,9 @@ type storeResult struct {
 // source URLs, or about the same CVE or project+version since o.mergeSince. A merge adds the new
 // sources and topics, raises the importance and bumps updated_at.
 //
+// A story only merges into one for the same countries, so a deal found for one country never
+// stands in for another's.
+//
 // Stories inserted from the same answer are never matched by URL: Claude already put each event
 // in one story, so two of its stories sharing a URL means an index or aggregator page.
 func storeStories(ctx context.Context, q *db.Queries, stories []Story, o storeOptions) (storeResult, error) {
@@ -55,7 +58,7 @@ func storeStories(ctx context.Context, q *db.Queries, stories []Story, o storeOp
 			id, err = q.InsertStory(ctx, db.InsertStoryParams{
 				Title: s.Title, Summary: s.Summary, BodyMd: s.BodyMD,
 				Kind: s.Kind, Severity: s.Severity, Importance: s.Importance,
-				PublishedAt: s.PublishedAt, DedupeKeys: keys, Model: o.model, PromptVersion: o.promptVer,
+				PublishedAt: s.PublishedAt, DedupeKeys: keys, Model: o.model, PromptVersion: o.promptVer, Countries: s.Countries,
 			})
 			if err != nil {
 				return storeResult{}, fmt.Errorf("insert story %q: %w", s.Title, err)
@@ -88,7 +91,7 @@ func findExisting(ctx context.Context, q *db.Queries, s Story, o storeOptions, i
 		}
 	}
 	if len(urls) > 0 {
-		id, err := q.FindStoryBySourceURL(ctx, db.FindStoryBySourceURLParams{Urls: urls, ExcludeIds: inserted})
+		id, err := q.FindStoryBySourceURL(ctx, db.FindStoryBySourceURLParams{Urls: urls, ExcludeIds: inserted, Countries: s.Countries})
 		switch {
 		case err == nil:
 			return id, true, nil
@@ -98,7 +101,7 @@ func findExisting(ctx context.Context, q *db.Queries, s Story, o storeOptions, i
 	}
 
 	id, err := q.FindMergeTarget(ctx, db.FindMergeTargetParams{
-		Since: o.mergeSince, CveIds: s.Dedupe.CVEIDs, Project: s.Dedupe.Project, Version: s.Dedupe.Version,
+		Since: o.mergeSince, CveIds: s.Dedupe.CVEIDs, Project: s.Dedupe.Project, Version: s.Dedupe.Version, Countries: s.Countries,
 	})
 	switch {
 	case err == nil:

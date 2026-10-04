@@ -3,6 +3,7 @@
 package fetch
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -156,7 +157,15 @@ func (f *Fetcher) Run(ctx context.Context) (Summary, error) {
 		return Summary{}, err
 	}
 
-	groups, deferred := Plan(topics, PlanSettings{
+	var global, deals []Topic
+	for _, t := range topics {
+		if isDealSlug(t.Slug) {
+			deals = append(deals, t)
+		} else {
+			global = append(global, t)
+		}
+	}
+	settings := PlanSettings{
 		TopicsPerCall:   f.cfg.TopicsPerCall,
 		MaxCalls:        f.cfg.MaxCallsPerRun,
 		StoriesPerTopic: f.cfg.StoriesPerTopic,
@@ -164,7 +173,13 @@ func (f *Fetcher) Run(ctx context.Context) (Summary, error) {
 		WarmInterval:    f.cfg.WarmInterval,
 		ColdInterval:    f.cfg.ColdInterval,
 		MaxAge:          f.cfg.ItemMaxAge,
-	}, f.now())
+	}
+	groups, deferred := Plan(global, settings, f.now())
+	dealGroups, dealDeferred, err := f.planDeals(ctx, deals, settings)
+	if err != nil {
+		return Summary{}, err
+	}
+	groups, deferred = append(groups, dealGroups...), append(deferred, dealDeferred...)
 	if len(deferred) > 0 {
 		slog.InfoContext(ctx, "due topics deferred to a later run (raise CURATOR_MAX_CALLS_PER_RUN to fetch more)", "topics", deferred)
 	}
@@ -175,6 +190,60 @@ func (f *Fetcher) Run(ctx context.Context) (Summary, error) {
 	sum, err := f.runGroups(ctx, groups, cat)
 	sum.Deferred = deferred
 	return sum, err
+}
+
+// isDealSlug reports whether slug is the deals topic or one below it. Deal topics are fetched per
+// country, never globally.
+func isDealSlug(slug string) bool {
+	return slug == "deals" || strings.HasPrefix(slug, "deals/")
+}
+
+// planDeals plans the deal topics once for each of the countries with the most users, most users
+// first, sharing CURATOR_DEALS_MAX_CALLS_PER_RUN calls. A topic's last fetch is per country. Deal
+// topics are only fetched for countries users chose, so with none there are no calls.
+func (f *Fetcher) planDeals(ctx context.Context, deals []Topic, s PlanSettings) (groups []Group, deferred []string, err error) {
+	if len(deals) == 0 {
+		return nil, nil, nil
+	}
+	q := db.New(f.pool)
+	countries, err := q.ListActiveCountries(ctx, int32(f.cfg.DealsMaxCountries)) //nolint:gosec // bounded by config
+	if err != nil {
+		return nil, nil, fmt.Errorf("list countries: %w", err)
+	}
+	fetches, err := q.ListCountryFetches(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list country fetches: %w", err)
+	}
+	type key struct {
+		topic   int64
+		country string
+	}
+	last := make(map[key]time.Time, len(fetches))
+	for _, r := range fetches {
+		last[key{r.TopicID, r.Country}] = r.LastFetchedAt
+	}
+
+	s.MaxAge = f.cfg.DealsMaxAge
+	budget := f.cfg.DealsMaxCallsPerRun
+	for _, c := range countries {
+		if _, ok := countryNames[c.Country]; !ok {
+			slog.WarnContext(ctx, "skipping deals for an unknown country code", "country", c.Country)
+			continue
+		}
+		topics := slices.Clone(deals)
+		for i := range topics {
+			topics[i].LastFetchedAt = cmp.Or(last[key{topics[i].ID, c.Country}], time.Unix(0, 0))
+		}
+		s.MaxCalls = budget
+		gs, d := Plan(topics, s, f.now())
+		for i := range gs {
+			gs[i].Country = c.Country
+			gs[i].Slug = c.Country + ":" + gs[i].Slug
+		}
+		budget -= len(gs)
+		groups, deferred = append(groups, gs...), append(deferred, d...)
+	}
+	return groups, deferred, nil
 }
 
 // Backfill fills leaf topics that have fewer than CURATOR_BACKFILL_TARGET recent stories, with
@@ -267,7 +336,11 @@ func (f *Fetcher) runGroup(ctx context.Context, g Group, cat catalog) (groupResu
 	for i, t := range g.Topics {
 		ids[i], slugs[i] = t.ID, t.Slug
 	}
-	runID, err := q.StartFetchRun(ctx, db.StartFetchRunParams{GroupSlug: g.Slug, TopicIds: ids})
+	var country *string
+	if g.Country != "" {
+		country = &g.Country
+	}
+	runID, err := q.StartFetchRun(ctx, db.StartFetchRunParams{GroupSlug: g.Slug, TopicIds: ids, Country: country})
 	if err != nil {
 		return groupResult{}, fmt.Errorf("record fetch run: %w", err)
 	}
@@ -283,7 +356,7 @@ func (f *Fetcher) runGroup(ctx context.Context, g Group, cat catalog) (groupResu
 
 	now := f.now()
 	refs, err := q.ListRecentStoryRefs(ctx, db.ListRecentStoryRefsParams{
-		Since: now.Add(-f.cfg.ItemMaxAge), TopicIds: ids, MaxRows: maxKnownStories,
+		Since: now.Add(-f.cfg.ItemMaxAge), TopicIds: ids, Country: g.Country, MaxRows: maxKnownStories,
 	})
 	if err != nil {
 		return fail(fmt.Errorf("list recent stories: %w", err))
@@ -301,7 +374,11 @@ func (f *Fetcher) runGroup(ctx context.Context, g Group, cat catalog) (groupResu
 	}
 	res.cost = out.CostUSD
 
-	stories, rejected, err := ParseOutput(out.Output, cat.valid, f.now(), f.cfg.ItemMaxAge)
+	maxAge := f.cfg.ItemMaxAge
+	if g.Country != "" {
+		maxAge = f.cfg.DealsMaxAge
+	}
+	stories, rejected, err := ParseOutput(out.Output, cat.valid, f.now(), maxAge, g.Country)
 	if err != nil {
 		return fail(err)
 	}

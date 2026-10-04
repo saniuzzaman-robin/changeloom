@@ -43,3 +43,9 @@ DELETE FROM user_professions WHERE user_id = @user_id;
 -- name: InsertUserProfessions :exec
 INSERT INTO user_professions (user_id, profession_id)
 SELECT @user_id, unnest(@profession_ids::bigint[]);
+
+-- name: GetUserCountry :one
+SELECT country FROM users WHERE id = @user_id;
+
+-- name: SetUserCountry :exec
+UPDATE users SET country = sqlc.narg(country) WHERE id = @user_id;

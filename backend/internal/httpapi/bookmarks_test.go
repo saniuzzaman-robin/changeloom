@@ -83,6 +83,12 @@ func TestSearch(t *testing.T) {
 		t.Fatalf("search = %v, want %v", got, want)
 	}
 
+	var fuzzy timelinePage
+	e.do(http.MethodGet, "/v1/search?q=borow+chekcer", aliceToken, nil, &fuzzy)
+	if got, want := ids(fuzzy.Items), []int64{rust}; !slices.Equal(got, want) {
+		t.Fatalf("fuzzy search = %v, want %v", got, want)
+	}
+
 	var none timelinePage
 	e.do(http.MethodGet, "/v1/search?q=nonexistentterm", aliceToken, nil, &none)
 	if len(none.Items) != 0 {
@@ -134,5 +140,34 @@ func TestDeviceTokens(t *testing.T) {
 		if code := e.do(http.MethodPut, "/v1/me/devices", aliceToken, bad, nil); code != http.StatusBadRequest {
 			t.Errorf("register %v: status %d, want 400", bad, code)
 		}
+	}
+}
+
+func TestSyncBookmarks(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+	a := e.insertStory("A", now.Add(-3*time.Hour), "languages/go")
+	b := e.insertStory("B", now.Add(-2*time.Hour), "languages/go")
+	c := e.insertStory("C", now.Add(-1*time.Hour), "languages/go")
+	e.follow(aliceToken, "languages/go")
+
+	sync := func(add, remove []int64) int {
+		return e.do(http.MethodPost, "/v1/bookmarks/sync", aliceToken, map[string][]int64{"add": add, "remove": remove}, nil)
+	}
+	if code := sync([]int64{a, b, 999999}, []int64{}); code != http.StatusNoContent {
+		t.Fatalf("sync add: status %d", code)
+	}
+	if code := sync([]int64{c}, []int64{a}); code != http.StatusNoContent {
+		t.Fatalf("sync add+remove: status %d", code)
+	}
+	var page timelinePage
+	e.do(http.MethodGet, "/v1/bookmarks", aliceToken, nil, &page)
+	got := ids(page.Items)
+	slices.Sort(got)
+	if want := []int64{b, c}; !slices.Equal(got, want) {
+		t.Fatalf("bookmarks = %v, want %v", got, want)
+	}
+	if code := e.do(http.MethodPost, "/v1/bookmarks/sync", aliceToken, map[string][]int64{"add": {a}}, nil); code != http.StatusBadRequest {
+		t.Fatalf("missing remove: status %d, want 400", code)
 	}
 }

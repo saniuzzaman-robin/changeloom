@@ -33,6 +33,8 @@ type Group struct {
 	// Slug labels the call in fetch_runs: the topic families it covers, joined by "+".
 	Slug   string
 	Topics []Topic
+	// Country is the ISO code the call is for (deal topics); empty for a global call.
+	Country string
 	// Since is the oldest publish time asked for.
 	Since time.Time
 	// PerTopic is the most stories asked for per topic.

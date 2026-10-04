@@ -49,6 +49,7 @@ type Story struct {
 	NotifiedAt    *time.Time
 	Uid           pgtype.UUID
 	UpdatedAt     time.Time
+	Countries     []string
 }
 
 type StorySource struct {
@@ -98,6 +99,7 @@ type User struct {
 	FirebaseUid string
 	Email       *string
 	CreatedAt   time.Time
+	Country     *string
 }
 
 type UserBookmark struct {

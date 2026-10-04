@@ -75,6 +75,37 @@ func (s *Server) setBookmark(w http.ResponseWriter, r *http.Request, id StoryID,
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// SyncBookmarks applies a batch of bookmark additions and removals, additions first. It is
+// idempotent and ignores ids that are not stories.
+func (s *Server) SyncBookmarks(w http.ResponseWriter, r *http.Request) {
+	user := mustUser(r)
+
+	var body SyncBookmarksJSONRequestBody
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body: "+err.Error())
+		return
+	}
+	if body.Add == nil || body.Remove == nil || len(body.Add) > maxViewIDs || len(body.Remove) > maxViewIDs {
+		writeError(w, http.StatusBadRequest, "bad_request", fmt.Sprintf("add and remove are required and hold at most %d ids each", maxViewIDs))
+		return
+	}
+	if len(body.Add) > 0 {
+		if err := s.q.AddBookmarks(r.Context(), db.AddBookmarksParams{UserID: user.ID, Ids: body.Add}); err != nil {
+			internalError(w, r, "add bookmarks", err)
+			return
+		}
+	}
+	if len(body.Remove) > 0 {
+		if err := s.q.RemoveBookmarks(r.Context(), db.RemoveBookmarksParams{UserID: user.ID, Ids: body.Remove}); err != nil {
+			internalError(w, r, "remove bookmarks", err)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ListBookmarks returns the user's bookmarked stories, most recently bookmarked first.
 // The cursor's PublishedAt field holds the bookmark time.
 func (s *Server) ListBookmarks(w http.ResponseWriter, r *http.Request, params ListBookmarksParams) {

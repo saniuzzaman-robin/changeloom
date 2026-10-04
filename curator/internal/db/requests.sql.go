@@ -10,6 +10,21 @@ import (
 	"time"
 )
 
+const addCountryStat = `-- name: AddCountryStat :exec
+INSERT INTO country_stats (env, country, users) VALUES ($1, $2, $3)
+`
+
+type AddCountryStatParams struct {
+	Env     string
+	Country string
+	Users   int32
+}
+
+func (q *Queries) AddCountryStat(ctx context.Context, arg AddCountryStatParams) error {
+	_, err := q.db.Exec(ctx, addCountryStat, arg.Env, arg.Country, arg.Users)
+	return err
+}
+
 const addTopicStat = `-- name: AddTopicStat :execrows
 INSERT INTO topic_stats (topic_id, env, followers, profession_users, views_7d)
 SELECT id, $1, $2, $3, $4 FROM topics WHERE slug = $5
@@ -38,6 +53,15 @@ func (q *Queries) AddTopicStat(ctx context.Context, arg AddTopicStatParams) (int
 	return result.RowsAffected(), nil
 }
 
+const deleteCountryStats = `-- name: DeleteCountryStats :exec
+DELETE FROM country_stats WHERE env = $1
+`
+
+func (q *Queries) DeleteCountryStats(ctx context.Context, env string) error {
+	_, err := q.db.Exec(ctx, deleteCountryStats, env)
+	return err
+}
+
 const deleteTopicStats = `-- name: DeleteTopicStats :exec
 DELETE FROM topic_stats WHERE env = $1
 `
@@ -45,6 +69,39 @@ DELETE FROM topic_stats WHERE env = $1
 func (q *Queries) DeleteTopicStats(ctx context.Context, env string) error {
 	_, err := q.db.Exec(ctx, deleteTopicStats, env)
 	return err
+}
+
+const listHostedCountryDemand = `-- name: ListHostedCountryDemand :many
+SELECT country::text AS country, count(*)::integer AS users
+FROM users
+WHERE country IS NOT NULL
+GROUP BY country
+`
+
+type ListHostedCountryDemandRow struct {
+	Country string
+	Users   int32
+}
+
+// Run against the hosted DB. Users per chosen country: aggregate only, never per user.
+func (q *Queries) ListHostedCountryDemand(ctx context.Context) ([]ListHostedCountryDemandRow, error) {
+	rows, err := q.db.Query(ctx, listHostedCountryDemand)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListHostedCountryDemandRow{}
+	for rows.Next() {
+		var i ListHostedCountryDemandRow
+		if err := rows.Scan(&i.Country, &i.Users); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listHostedPendingRequests = `-- name: ListHostedPendingRequests :many
@@ -180,29 +237,32 @@ WHERE id IN (
     WHERE NOT EXISTS (SELECT 1 FROM user_bookmarks b WHERE b.story_id = s.id)
         AND (
             s.published_at < $1
+            OR (s.kind = 'deal' AND s.published_at < $2)
             OR (
-                s.published_at < $2
-                AND (SELECT count(*) FROM story_views v WHERE v.story_id = s.id) < $3::bigint
+                s.published_at < $3
+                AND (SELECT count(*) FROM story_views v WHERE v.story_id = s.id) < $4::bigint
             )
         )
     ORDER BY s.id
-    LIMIT $4
+    LIMIT $5
 )
 `
 
 type PruneHostedStoriesParams struct {
 	MaxAgeBefore time.Time
+	DealsBefore  time.Time
 	GraceBefore  time.Time
 	MinViewers   int64
 	MaxRows      int32
 }
 
 // Run against the hosted DB. Deletes at most @max_rows stories that nobody saved and that are
-// either older than @max_age_before or older than @grace_before with fewer than @min_viewers
-// distinct viewers. Sources, topics, views and read state cascade.
+// either older than @max_age_before, a deal older than @deals_before, or older than @grace_before
+// with fewer than @min_viewers distinct viewers. Sources, topics, views and read state cascade.
 func (q *Queries) PruneHostedStories(ctx context.Context, arg PruneHostedStoriesParams) (int64, error) {
 	result, err := q.db.Exec(ctx, pruneHostedStories,
 		arg.MaxAgeBefore,
+		arg.DealsBefore,
 		arg.GraceBefore,
 		arg.MinViewers,
 		arg.MaxRows,

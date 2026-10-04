@@ -3,6 +3,7 @@
 package prune
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -22,6 +23,8 @@ const batchSize = 500
 type Settings struct {
 	// MaxAge: unsaved stories published longer ago than this are deleted.
 	MaxAge time.Duration
+	// DealsMaxAge is MaxAge for deals; zero means MaxAge.
+	DealsMaxAge time.Duration
 	// Grace: unsaved stories published longer ago than this are deleted unless MinViewers distinct
 	// users saw them.
 	Grace      time.Duration
@@ -34,9 +37,10 @@ type Settings struct {
 func Run(ctx context.Context, remote db.DBTX, s Settings, now time.Time) (int64, error) {
 	q := db.New(remote)
 	var total int64
+	dealsMaxAge := cmp.Or(s.DealsMaxAge, s.MaxAge)
 	for {
 		n, err := q.PruneHostedStories(ctx, db.PruneHostedStoriesParams{
-			MaxAgeBefore: now.Add(-s.MaxAge), GraceBefore: now.Add(-s.Grace),
+			MaxAgeBefore: now.Add(-s.MaxAge), DealsBefore: now.Add(-dealsMaxAge), GraceBefore: now.Add(-s.Grace),
 			MinViewers: int64(s.MinViewers), MaxRows: batchSize,
 		})
 		if err != nil {

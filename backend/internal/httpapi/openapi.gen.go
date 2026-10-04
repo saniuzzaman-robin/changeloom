@@ -67,6 +67,7 @@ const (
 	Announcement StoryKind = "announcement"
 	Article      StoryKind = "article"
 	Breaking     StoryKind = "breaking"
+	Deal         StoryKind = "deal"
 	Deprecation  StoryKind = "deprecation"
 	Policy       StoryKind = "policy"
 	Release      StoryKind = "release"
@@ -82,6 +83,8 @@ func (e StoryKind) Valid() bool {
 	case Article:
 		return true
 	case Breaking:
+		return true
+	case Deal:
 		return true
 	case Deprecation:
 		return true
@@ -173,8 +176,10 @@ type Error struct {
 
 // Me defines model for Me.
 type Me struct {
-	Email *string `json:"email,omitempty"`
-	Id    int64   `json:"id"`
+	// Country ISO 3166-1 alpha-2 country the user chose; absent until set.
+	Country *string `json:"country,omitempty"`
+	Email   *string `json:"email,omitempty"`
+	Id      int64   `json:"id"`
 
 	// Professions Profession slugs.
 	Professions []string `json:"professions"`
@@ -324,6 +329,18 @@ type ListBookmarksParams struct {
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// SyncBookmarksJSONBody defines parameters for SyncBookmarks.
+type SyncBookmarksJSONBody struct {
+	Add    []int64 `json:"add"`
+	Remove []int64 `json:"remove"`
+}
+
+// PutMyCountryJSONBody defines parameters for PutMyCountry.
+type PutMyCountryJSONBody struct {
+	// Country ISO 3166-1 alpha-2 code, upper case.
+	Country *string `json:"country"`
+}
+
 // DeleteMyDeviceParams defines parameters for DeleteMyDevice.
 type DeleteMyDeviceParams struct {
 	Token string `form:"token" json:"token"`
@@ -378,6 +395,12 @@ type CreateTopicRequestJSONBody struct {
 	Text string `json:"text"`
 }
 
+// SyncBookmarksJSONRequestBody defines body for SyncBookmarks for application/json ContentType.
+type SyncBookmarksJSONRequestBody SyncBookmarksJSONBody
+
+// PutMyCountryJSONRequestBody defines body for PutMyCountry for application/json ContentType.
+type PutMyCountryJSONRequestBody PutMyCountryJSONBody
+
 // PutMyDeviceJSONRequestBody defines body for PutMyDevice for application/json ContentType.
 type PutMyDeviceJSONRequestBody PutMyDeviceJSONBody
 
@@ -407,12 +430,18 @@ type ServerInterface interface {
 	// ListBookmarks Bookmarked stories, most recently bookmarked first.
 	// (GET /v1/bookmarks)
 	ListBookmarks(w http.ResponseWriter, r *http.Request, params ListBookmarksParams)
+	// SyncBookmarks Apply a batch of bookmark additions and removals (idempotent).
+	// (POST /v1/bookmarks/sync)
+	SyncBookmarks(w http.ResponseWriter, r *http.Request)
 	// DeleteMe Delete the signed-in user's account data.
 	// (DELETE /v1/me)
 	DeleteMe(w http.ResponseWriter, r *http.Request)
 	// GetMe Get the signed-in user.
 	// (GET /v1/me)
 	GetMe(w http.ResponseWriter, r *http.Request)
+	// PutMyCountry Set (or clear) the user's country.
+	// (PUT /v1/me/country)
+	PutMyCountry(w http.ResponseWriter, r *http.Request)
 	// DeleteMyDevice Unregister a push notification token (idempotent).
 	// (DELETE /v1/me/devices)
 	DeleteMyDevice(w http.ResponseWriter, r *http.Request, params DeleteMyDeviceParams)
@@ -425,7 +454,7 @@ type ServerInterface interface {
 	// PutMyTopics Replace the set of followed topics.
 	// (PUT /v1/me/topics)
 	PutMyTopics(w http.ResponseWriter, r *http.Request)
-	// SearchStories Full-text search over all stories, newest first.
+	// SearchStories Full-text search over all stories, newest first; titles also match fuzzily.
 	// (GET /v1/search)
 	SearchStories(w http.ResponseWriter, r *http.Request, params SearchStoriesParams)
 	// RecordStoryViews Record stories that were visible in the user's feed (idempotent).
@@ -557,6 +586,20 @@ func (siw *ServerInterfaceWrapper) ListBookmarks(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// SyncBookmarks operation middleware
+func (siw *ServerInterfaceWrapper) SyncBookmarks(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SyncBookmarks(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteMe operation middleware
 func (siw *ServerInterfaceWrapper) DeleteMe(w http.ResponseWriter, r *http.Request) {
 
@@ -576,6 +619,20 @@ func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutMyCountry operation middleware
+func (siw *ServerInterfaceWrapper) PutMyCountry(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutMyCountry(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1079,6 +1136,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/me", wrapper.GetMe)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/topics", wrapper.PutMyTopics)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/professions", wrapper.PutMyProfessions)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/country", wrapper.PutMyCountry)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/me/devices", wrapper.DeleteMyDevice)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/devices", wrapper.PutMyDevice)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/timeline", wrapper.GetTimeline)
@@ -1087,6 +1145,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/stories/{id}/read", wrapper.MarkStoryRead)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/search", wrapper.SearchStories)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/bookmarks", wrapper.ListBookmarks)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/bookmarks/sync", wrapper.SyncBookmarks)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/stories/views", wrapper.RecordStoryViews)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/stories/{id}/bookmark", wrapper.RemoveBookmark)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/stories/{id}/bookmark", wrapper.AddBookmark)

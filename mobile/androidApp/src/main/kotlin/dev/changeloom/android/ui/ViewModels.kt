@@ -48,6 +48,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.IOException
+import java.util.Locale
 
 private const val VIEW_FLUSH_INTERVAL_MS = 30_000L
 private const val TAG_SIGN_IN = "SignIn"
@@ -395,9 +396,7 @@ class StoryDetailViewModel(
         if (_state.value.story == null) return
         if (on) analytics.bookmarkAdd(id)
         _state.update { s -> s.copy(story = s.story?.copy(isBookmarked = on)) }
-        viewModelScope.launch {
-            if (!repo.setBookmarked(id, on)) _state.update { s -> s.copy(story = s.story?.copy(isBookmarked = !on)) }
-        }
+        viewModelScope.launch { repo.setBookmarked(id, on) }
     }
 
     fun shared() = analytics.share(id)
@@ -412,8 +411,12 @@ class BookmarksViewModel(
     private val pager = StoryPager { cursor -> api.bookmarks(cursor) }
     val state: StateFlow<PagerState> = pager.state
 
+    /** Syncs queued changes first (only if there are any), since the list is read from the server. */
     fun refresh() {
-        viewModelScope.launch { pager.refresh() }
+        viewModelScope.launch {
+            repo.flushBookmarks()
+            pager.refresh()
+        }
     }
 
     fun loadMore() {
@@ -423,13 +426,13 @@ class BookmarksViewModel(
     fun setBookmarked(id: Long, on: Boolean) {
         if (on) analytics.bookmarkAdd(id)
         pager.setBookmarked(id, on)
-        viewModelScope.launch { if (!repo.setBookmarked(id, on)) pager.setBookmarked(id, !on) }
+        viewModelScope.launch { repo.setBookmarked(id, on) }
     }
 
-    /** Unsaves and drops the story from the list; a failed sync reloads the list to bring it back. */
+    /** Unsaves and drops the story from the list. */
     fun remove(id: Long) {
         pager.remove(id)
-        viewModelScope.launch { if (!repo.setBookmarked(id, false)) pager.refresh() }
+        viewModelScope.launch { repo.setBookmarked(id, false) }
     }
 
     fun dismissError() = pager.clearError()
@@ -457,6 +460,11 @@ class SearchViewModel(
 
     fun setQuery(text: String) {
         saved[KEY_QUERY] = text
+        // Clearing the field drops the results, which brings the suggestions back.
+        if (text.isEmpty()) {
+            saved[KEY_SEARCHED] = null
+            pager.value = null
+        }
     }
 
     fun search() {
@@ -485,7 +493,7 @@ class SearchViewModel(
         val current = pager.value ?: return
         if (on) analytics.bookmarkAdd(id)
         current.setBookmarked(id, on)
-        viewModelScope.launch { if (!repo.setBookmarked(id, on)) current.setBookmarked(id, !on) }
+        viewModelScope.launch { repo.setBookmarked(id, on) }
     }
 
     fun dismissError() {
@@ -501,6 +509,8 @@ data class DeleteState(val step: DeleteStep, val error: String? = null)
 data class ProfileState(
     /** Null until the first `/v1/me` load succeeds. */
     val stats: MeStats? = null,
+    /** ISO 3166-1 alpha-2 code the server has saved; null until set. */
+    val country: String? = null,
     val error: String? = null,
     /** The user's topic requests, newest first; null until the first load succeeds. */
     val requests: List<TopicRequest>? = null,
@@ -546,8 +556,9 @@ class ProfileViewModel(
     fun refresh() {
         viewModelScope.launch {
             try {
-                val stats = api.me().stats
-                _state.update { it.copy(stats = stats, error = null) }
+                val me = api.me()
+                _state.update { it.copy(stats = me.stats, country = me.country, error = null) }
+                if (me.country == null) deviceCountry()?.let(::setCountry)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -561,6 +572,22 @@ class ProfileViewModel(
                 throw e
             } catch (e: Exception) {
                 AppLog.failure(TAG_PROFILE, "Couldn't load topic requests", e)
+            }
+        }
+    }
+
+    /** Saves the user's country; it scopes deal stories. */
+    fun setCountry(code: String) {
+        val previous = _state.value.country
+        _state.update { it.copy(country = code) }
+        viewModelScope.launch {
+            try {
+                api.putMyCountry(code)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLog.failure(TAG_PROFILE, "Couldn't save the country", e)
+                _state.update { it.copy(country = previous, error = strings.errorText(e, R.string.country_save_failed)) }
             }
         }
     }
@@ -645,3 +672,7 @@ class ProfileViewModel(
         }
     }
 }
+
+/** The device locale's region when it is a known country code; the default until the user picks one. */
+private fun deviceCountry(): String? =
+    Locale.getDefault().country.takeIf { it in Locale.getISOCountries() }

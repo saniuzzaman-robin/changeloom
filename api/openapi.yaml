@@ -139,6 +139,34 @@ paths:
               schema: {$ref: "#/components/schemas/Me"}
         "400": {$ref: "#/components/responses/BadRequest"}
         "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/me/country:
+    put:
+      operationId: putMyCountry
+      summary: Set (or clear) the user's country.
+      description: >
+        Deal stories are shown only for the user's country (or when they are global). The country
+        is an ISO 3166-1 alpha-2 code the user chose; null clears it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [country]
+              properties:
+                country:
+                  type: string
+                  nullable: true
+                  pattern: "^[A-Z]{2}$"
+                  description: ISO 3166-1 alpha-2 code, upper case.
+      responses:
+        "200":
+          description: The updated user.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Me"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
   /v1/me/devices:
     put:
       operationId: putMyDevice
@@ -237,7 +265,7 @@ paths:
   /v1/search:
     get:
       operationId: searchStories
-      summary: Full-text search over all stories, newest first.
+      summary: Full-text search over all stories, newest first; titles also match fuzzily.
       parameters:
         - name: q
           in: query
@@ -271,6 +299,31 @@ paths:
           schema: {type: integer, minimum: 1, maximum: 100, default: 20}
       responses:
         "200": {$ref: "#/components/responses/StoryPage"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/bookmarks/sync:
+    post:
+      operationId: syncBookmarks
+      summary: Apply a batch of bookmark additions and removals (idempotent).
+      description: Additions are applied before removals. Unknown story ids are ignored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [add, remove]
+              properties:
+                add:
+                  type: array
+                  maxItems: 100
+                  items: {type: integer, format: int64}
+                remove:
+                  type: array
+                  maxItems: 100
+                  items: {type: integer, format: int64}
+      responses:
+        "204": {description: Applied.}
         "400": {$ref: "#/components/responses/BadRequest"}
         "401": {$ref: "#/components/responses/Unauthorized"}
   /v1/stories/views:
@@ -439,6 +492,9 @@ components:
           type: array
           description: Profession slugs.
           items: {type: string}
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country the user chose; absent until set.
         stats: {$ref: "#/components/schemas/MeStats"}
     MeStats:
       type: object
@@ -448,7 +504,7 @@ components:
         read: {type: integer, format: int64, description: Number of stories marked read.}
     StoryKind:
       type: string
-      enum: [release, breaking, security, deprecation, announcement, article, research, policy]
+      enum: [release, breaking, security, deprecation, announcement, article, research, policy, deal]
     Severity:
       type: string
       enum: [low, medium, high, critical]

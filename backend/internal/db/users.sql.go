@@ -54,6 +54,17 @@ func (q *Queries) GetUserByFirebaseUID(ctx context.Context, firebaseUid string) 
 	return i, err
 }
 
+const getUserCountry = `-- name: GetUserCountry :one
+SELECT country FROM users WHERE id = $1
+`
+
+func (q *Queries) GetUserCountry(ctx context.Context, userID int64) (*string, error) {
+	row := q.db.QueryRow(ctx, getUserCountry, userID)
+	var country *string
+	err := row.Scan(&country)
+	return country, err
+}
+
 const getUserStats = `-- name: GetUserStats :one
 SELECT
     (SELECT count(*) FROM user_bookmarks ub WHERE ub.user_id = $1)::bigint AS saved,
@@ -156,6 +167,20 @@ func (q *Queries) ListUserTopicSlugs(ctx context.Context, userID int64) ([]strin
 		return nil, err
 	}
 	return items, nil
+}
+
+const setUserCountry = `-- name: SetUserCountry :exec
+UPDATE users SET country = $1 WHERE id = $2
+`
+
+type SetUserCountryParams struct {
+	Country *string
+	UserID  int64
+}
+
+func (q *Queries) SetUserCountry(ctx context.Context, arg SetUserCountryParams) error {
+	_, err := q.db.Exec(ctx, setUserCountry, arg.Country, arg.UserID)
+	return err
 }
 
 const upsertUser = `-- name: UpsertUser :one

@@ -21,7 +21,7 @@ const (
 
 // Allowed values, mirrored in the stories table's CHECK constraints ("none" means no severity).
 var (
-	kinds      = []string{"release", "breaking", "security", "deprecation", "announcement", "article", "research", "policy"}
+	kinds      = []string{"release", "breaking", "security", "deprecation", "announcement", "article", "research", "policy", "deal"}
 	severities = []string{"none", "low", "medium", "high", "critical"}
 )
 
@@ -42,6 +42,8 @@ type StoryOutput struct {
 	Topics      []string `json:"topics"`
 	Sources     []Source `json:"sources"`
 	Dedupe      Dedupe   `json:"dedupe"`
+	// Countries are the ISO 3166-1 alpha-2 codes a deal is valid in; empty for other kinds.
+	Countries []string `json:"countries"`
 }
 
 // Source is a page a story is based on.
@@ -71,12 +73,16 @@ type Story struct {
 	// Sources have normalized URLs, without duplicates.
 	Sources []Source
 	Dedupe  Dedupe
+	// Countries are the upper-case codes a deal is for; never nil, empty for other kinds.
+	Countries []string
 }
 
 // ParseOutput decodes Claude's answer and validates each story against the known topics. A bad
 // story is reported in rejected and skipped; only an undecodable answer is an error. Stories
-// published before now-maxAge are rejected; ones dated in the future are clamped to now.
-func ParseOutput(raw []byte, validTopics map[string]bool, now time.Time, maxAge time.Duration) (stories []Story, rejected []error, err error) {
+// published before now-maxAge are rejected; ones dated in the future are clamped to now. country
+// is the ISO code the call was made for ("" for a global call): a deal must be valid there, and
+// defaults to it when it names no country.
+func ParseOutput(raw []byte, validTopics map[string]bool, now time.Time, maxAge time.Duration, country string) (stories []Story, rejected []error, err error) {
 	var out Output
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
@@ -84,7 +90,7 @@ func ParseOutput(raw []byte, validTopics map[string]bool, now time.Time, maxAge 
 		return nil, nil, fmt.Errorf("decode claude output: %w", err)
 	}
 	for i, so := range out.Stories {
-		s, err := validateStory(so, validTopics, now, maxAge)
+		s, err := validateStory(so, validTopics, now, maxAge, country)
 		if err != nil {
 			rejected = append(rejected, fmt.Errorf("story %d %q: %w", i, so.Title, err))
 			continue
@@ -94,7 +100,7 @@ func ParseOutput(raw []byte, validTopics map[string]bool, now time.Time, maxAge 
 	return stories, rejected, nil
 }
 
-func validateStory(so StoryOutput, validTopics map[string]bool, now time.Time, maxAge time.Duration) (Story, error) {
+func validateStory(so StoryOutput, validTopics map[string]bool, now time.Time, maxAge time.Duration, country string) (Story, error) {
 	s := Story{
 		Title:   strings.TrimSpace(so.Title),
 		Summary: strings.TrimSpace(so.Summary),
@@ -111,6 +117,11 @@ func validateStory(so StoryOutput, validTopics map[string]bool, now time.Time, m
 	if so.Severity != "none" {
 		s.Severity = &so.Severity
 	}
+	countries, err := dealCountries(so, country)
+	if err != nil {
+		return Story{}, err
+	}
+	s.Countries = countries
 	if so.Importance < 1 || so.Importance > 5 {
 		return Story{}, fmt.Errorf("importance %d out of range 1-5", so.Importance)
 	}
@@ -162,6 +173,33 @@ func validateStory(so StoryOutput, validTopics map[string]bool, now time.Time, m
 		return Story{}, fmt.Errorf("no valid source URL in %v", so.Sources)
 	}
 	return s, nil
+}
+
+// dealCountries validates the countries of a story. Only deals have any: they must be known codes
+// and include country when the call was for one; none defaults to country.
+func dealCountries(so StoryOutput, country string) ([]string, error) {
+	out := []string{}
+	if so.Kind != "deal" {
+		return out, nil
+	}
+	for _, c := range so.Countries {
+		c = strings.ToUpper(strings.TrimSpace(c))
+		if _, ok := countryNames[c]; !ok {
+			return nil, fmt.Errorf("unknown country code %q", c)
+		}
+		if !slices.Contains(out, c) {
+			out = append(out, c)
+		}
+	}
+	switch {
+	case country == "":
+	case len(out) == 0:
+		out = append(out, country)
+	case !slices.Contains(out, country):
+		return nil, fmt.Errorf("deal is for %v, not %s", out, country)
+	}
+	slices.Sort(out)
+	return out, nil
 }
 
 // parseTime accepts RFC 3339 or a bare date (midnight UTC).

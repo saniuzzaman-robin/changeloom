@@ -239,7 +239,7 @@
 - slug: tech-enthusiast
   name: "Tech Enthusiast"
   description: "Gadgets, big tech and consumer technology."
-  topics: [gadgets, big-tech, space-tech, electric-vehicles, consumer-ai, internet-culture]
+  topics: [gadgets, deals, big-tech, space-tech, electric-vehicles, consumer-ai, internet-culture]
 - slug: science-enthusiast
   name: "Science Enthusiast"
   description: "Discoveries across space, nature and medicine."

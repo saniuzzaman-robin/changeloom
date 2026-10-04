@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Gavel
+import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.RocketLaunch
 import androidx.compose.material.icons.rounded.Science
@@ -65,6 +66,7 @@ fun kindIcon(kind: String): ImageVector = when (kind) {
     "announcement" -> Icons.Rounded.Campaign
     "research" -> Icons.Rounded.Science
     "policy" -> Icons.Rounded.Gavel
+    "deal" -> Icons.Rounded.LocalOffer
     else -> Icons.AutoMirrored.Rounded.Article
 }
 
