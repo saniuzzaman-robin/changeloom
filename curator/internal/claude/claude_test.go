@@ -21,6 +21,8 @@ func fakeCLI(t *testing.T, out string, code int) (bin, dir string) {
 		t.Fatal(err)
 	}
 	script := "#!/bin/sh\n" +
+		`if [ "$1" = auth ]; then echo '{"email":"me@example.com"}'; exit 0; fi` + "\n" +
+		`printf '%s' "$CLAUDE_CONFIG_DIR" > "` + dir + `/config_dir"` + "\n" +
 		`printf '%s\n' "$@" > "` + dir + `/args"` + "\n" +
 		`cat > "` + dir + `/stdin"` + "\n" +
 		`cat "` + dir + `/out.json"` + "\n" +
@@ -33,7 +35,7 @@ func fakeCLI(t *testing.T, out string, code int) (bin, dir string) {
 }
 
 func client(bin string) *claude.Client {
-	return claude.New(config.Claude{Bin: bin, Model: "sonnet", Timeout: 10 * time.Second})
+	return claude.New(config.Claude{Bin: bin, Model: "sonnet", Timeout: 10 * time.Second, ConfigDir: "/accounts/personal"})
 }
 
 func TestRunParsesStructuredOutput(t *testing.T) {
@@ -51,13 +53,16 @@ func TestRunParsesStructuredOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(res.Output) != `{"stories":[]}` || res.CostUSD != 0.25 || res.Turns != 3 ||
-		res.Model != "claude-sonnet-5-5" || res.Usage.OutputTokens != 20 {
+		res.Model != "claude-sonnet-5-5" || res.Usage.OutputTokens != 20 || res.Account != "me@example.com" {
 		t.Fatalf("unexpected result %+v", res)
 	}
 
 	stdin, _ := os.ReadFile(filepath.Join(dir, "stdin")) //nolint:gosec // test temp dir
 	if string(stdin) != "find news" {
 		t.Errorf("stdin = %q", stdin)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "config_dir")); string(got) != "/accounts/personal" { //nolint:gosec // test temp dir
+		t.Errorf("CLAUDE_CONFIG_DIR = %q", got)
 	}
 	args, _ := os.ReadFile(filepath.Join(dir, "args")) //nolint:gosec // test temp dir
 	for _, want := range []string{"-p", "--output-format\njson", `--json-schema
