@@ -44,10 +44,13 @@ DEPLOY_FLAVOR := $(if $(filter prod,$(DEPLOY_ENV)),Prod,Staging)
 MOBILE := mobile
 # Gradle for the android-* targets; use GRADLE=gradle when the wrapper download fails.
 GRADLE ?= ./gradlew
+# Headless Chrome renders the brand SVGs to PNG for brand-assets.
+CHROME ?= /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+BRANDING := $(MOBILE)/branding
 
 .PHONY: db-up db-down migrate migrate-down migrate-status migrate-remote generate run-api build test lint fmt \
 	curator-db curator-migrate curator-seed curator-backfill curator-sync curator-generate curator-build curator-test curator-lint curator-fmt \
-	deploy-api android-apk android-bundle release
+	deploy-api android-apk android-bundle brand-assets release
 
 db-up: ## Start the dev Postgres (docker), or check the installed one is reachable (local)
 ifeq ($(POSTGRES_MODE),local)
@@ -136,6 +139,13 @@ android-apk: ## Build the signed release APK for DEPLOY_ENV (androidApp/build/ou
 
 android-bundle: ## Build the signed release AAB for DEPLOY_ENV, for Play Console (androidApp/build/outputs/bundle/<env>Release)
 	cd $(MOBILE) && $(GRADLE) :androidApp:bundle$(DEPLOY_FLAVOR)Release
+
+brand-assets: ## Render the Play Console icon and feature graphic PNGs from the SVGs in mobile/branding (needs Chrome; CHROME=path overrides)
+	@test -x "$(CHROME)" || { echo "Chrome not found at $(CHROME): install it or pass CHROME=/path/to/chrome"; exit 1; }
+	"$(CHROME)" --headless=new --hide-scrollbars --default-background-color=00000000 --window-size=512,512 \
+		--screenshot=$(BRANDING)/play-icon-512.png $(BRANDING)/play-icon.svg 2>/dev/null
+	"$(CHROME)" --headless=new --hide-scrollbars --default-background-color=00000000 --window-size=1024,500 \
+		--screenshot=$(BRANDING)/feature-graphic-1024x500.png $(BRANDING)/feature-graphic.svg 2>/dev/null
 
 release: ## Propose the next app version from commits since the last v* tag, then tag main and push it (asks first; VERSION=x.y.z overrides, DRY_RUN=1 only shows)
 	deploy/release.sh $(if $(VERSION),--version $(VERSION)) $(if $(DRY_RUN),--dry-run)

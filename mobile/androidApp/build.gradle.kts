@@ -89,8 +89,8 @@ android {
         versionCode = providers.gradleProperty("changeloom.versionCode").orNull?.let {
             it.toIntOrNull()?.takeIf { code -> code > 0 }
                 ?: throw GradleException("changeloom.versionCode must be a positive integer, got \"$it\"")
-        } ?: 4
-        versionName = providers.gradleProperty("changeloom.versionName").orNull ?: "0.2.4"
+        } ?: 6
+        versionName = providers.gradleProperty("changeloom.versionName").orNull ?: "0.2.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -179,9 +179,9 @@ androidComponents {
                 manifestPlaceholders["firebaseCollectionEnabled"] = "false"
                 crashlyticsMappingUpload(false)
             }
-            android.sourceSets.getByName(name).res.srcDir("src/debug/res")
+            android.sourceSets.getByName(name).res.directories.add("src/debug/res")
             // The App Check provider is per build type (src/debug, src/release); these build like release.
-            android.sourceSets.getByName(name).kotlin.srcDir("src/release/kotlin")
+            android.sourceSets.getByName(name).kotlin.directories.add("src/release/kotlin")
         }
     }
 

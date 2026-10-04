@@ -70,6 +70,8 @@ type Result struct {
 	// Applied is false for a dry run.
 	Applied bool
 	CostUSD float64
+	// Account is the Claude account email the call ran under.
+	Account string
 }
 
 // Grouper groups pending requests into topics.
@@ -126,7 +128,7 @@ func (g *Grouper) Run(ctx context.Context, dryRun bool) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	res := Result{Pending: len(inbox), CostUSD: out.CostUSD}
+	res := Result{Pending: len(inbox), CostUSD: out.CostUSD, Account: out.Account}
 	res.Plan, err = ParseOutput(out.Output, existing, known, pending, g.cfg.MaxNewTopicsPerRun)
 	if err != nil {
 		return res, err

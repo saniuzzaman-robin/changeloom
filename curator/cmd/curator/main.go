@@ -269,7 +269,7 @@ func runGroup(ctx context.Context, cfg config.Config, local *pgxpool.Pool, dryRu
 	res, err := requests.New(local, claude.New(cfg.Claude), cfg).Run(ctx, dryRun)
 	if res.Pending > 0 {
 		slog.InfoContext(ctx, "requests grouped", "requests", res.Pending, "new_topics", len(res.Plan.NewTopics),
-			"decisions", len(res.Plan.Decisions), "applied", res.Applied, "cost_usd", res.CostUSD)
+			"decisions", len(res.Plan.Decisions), "applied", res.Applied, "cost_usd", res.CostUSD, "account", res.Account)
 	}
 	if err != nil {
 		return err

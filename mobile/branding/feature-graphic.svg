@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="500" viewBox="0 0 1024 500">
+  <!-- Play Console feature graphic. Tagline matches the tagline string in the app. -->
+  <rect width="1024" height="500" fill="#FBF8F3"/>
+  <g transform="translate(96 146) scale(4.4) translate(-24 -24)">
+  <path d="M43.33,46.5 L54,28 L76.5,67 L31.5,67 L36.98,57.5" fill="none" stroke="#4F46E5" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M60.35,49 L27,49 A3,3 0 0 0 27,55 L60.35,55 Z M75.35,49 L81,49 A3,3 0 0 1 81,55 L75.35,55 Z" fill="#06B6D4"/>
+  </g>
+  <g font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Roboto, Arial, sans-serif">
+    <text x="420" y="232" font-size="88" font-weight="700" letter-spacing="-2" fill="#0F172A">Changeloom</text>
+    <text x="424" y="296" font-size="32" fill="#475569">The updates you care about,</text>
+    <text x="424" y="338" font-size="32" fill="#475569">all in one place.</text>
+  </g>
+</svg>

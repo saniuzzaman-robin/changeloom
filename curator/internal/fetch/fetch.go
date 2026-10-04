@@ -419,6 +419,6 @@ func (f *Fetcher) runGroup(ctx context.Context, g Group, cat catalog) (groupResu
 
 	slog.InfoContext(ctx, "fetch call finished", "group", g.Slug, "added", stored.added, "merged", stored.merged,
 		"rejected", res.rejected, "cost_usd", out.CostUSD, "turns", out.Turns, "duration", out.Duration.Round(time.Second),
-		"output_tokens", out.Usage.OutputTokens, "model", out.Model)
+		"output_tokens", out.Usage.OutputTokens, "model", out.Model, "account", out.Account)
 	return res, nil
 }

@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp"
-    android:viewportWidth="24" android:viewportHeight="24">
-    <path android:pathData="M8.16,2.88 L8.16,4.44 M8.16,9.96 L8.16,14.04 M8.16,19.56 L8.16,21.12" android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="1.68" android:strokeLineCap="round" />
-    <path android:pathData="M12,2.88 L12,9.24 M12,14.76 L12,21.12" android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="1.68" android:strokeLineCap="round" />
-    <path android:pathData="M15.84,2.88 L15.84,4.44 M15.84,9.96 L15.84,14.04 M15.84,19.56 L15.84,21.12" android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="1.68" android:strokeLineCap="round" />
-    <path android:pathData="M3.84,7.2 L9.22,7.2 M14.78,7.2 L18.72,7.2 L18.82,7.2 L18.91,7.21 L19.01,7.22 L19.1,7.23 L19.2,7.25 L19.29,7.27 L19.39,7.29 L19.48,7.32 L19.57,7.36 L19.66,7.39 L19.75,7.43 L19.84,7.47 L19.92,7.52 L20,7.57 L20.08,7.62 L20.16,7.68 L20.24,7.74 L20.31,7.8 L20.38,7.87 L20.45,7.94 L20.52,8.01 L20.58,8.08 L20.64,8.16 L20.7,8.24 L20.75,8.32 L20.8,8.4 L20.85,8.48 L20.89,8.57 L20.93,8.66 L20.96,8.75 L21,8.84 L21.03,8.93 L21.05,9.03 L21.07,9.12 L21.09,9.22 L21.1,9.31 L21.11,9.41 L21.12,9.5 L21.12,9.6 L21.12,9.7 L21.11,9.79 L21.1,9.89 L21.09,9.98 L21.07,10.08 L21.05,10.17 L21.03,10.27 L21,10.36 L20.96,10.45 L20.93,10.54 L20.89,10.63 L20.85,10.72 L20.8,10.8 L20.75,10.88 L20.7,10.96 L20.64,11.04 L20.58,11.12 L20.52,11.19 L20.45,11.26 L20.38,11.33 L20.31,11.4 L20.24,11.46 L20.16,11.52 L20.08,11.58 L20,11.63 L19.92,11.68 L19.84,11.73 L19.75,11.77 L19.66,11.81 L19.57,11.84 L19.48,11.88 L19.39,11.91 L19.29,11.93 L19.2,11.95 L19.1,11.97 L19.01,11.98 L18.91,11.99 L18.82,12 L18.72,12 L18.62,12 M13.06,12 L10.94,12 M5.38,12 L5.28,12 L5.18,12 L5.09,12.01 L4.99,12.02 L4.9,12.03 L4.8,12.05 L4.71,12.07 L4.61,12.09 L4.52,12.12 L4.43,12.16 L4.34,12.19 L4.25,12.23 L4.16,12.27 L4.08,12.32 L4,12.37 L3.92,12.42 L3.84,12.48 L3.76,12.54 L3.69,12.6 L3.62,12.67 L3.55,12.74 L3.48,12.81 L3.42,12.88 L3.36,12.96 L3.3,13.04 L3.25,13.12 L3.2,13.2 L3.15,13.28 L3.11,13.37 L3.07,13.46 L3.04,13.55 L3,13.64 L2.97,13.73 L2.95,13.83 L2.93,13.92 L2.91,14.02 L2.9,14.11 L2.89,14.21 L2.88,14.3 L2.88,14.4 L2.88,14.5 L2.89,14.59 L2.9,14.69 L2.91,14.78 L2.93,14.88 L2.95,14.97 L2.97,15.07 L3,15.16 L3.04,15.25 L3.07,15.34 L3.11,15.43 L3.15,15.52 L3.2,15.6 L3.25,15.68 L3.3,15.76 L3.36,15.84 L3.42,15.92 L3.48,15.99 L3.55,16.06 L3.62,16.13 L3.69,16.2 L3.76,16.26 L3.84,16.32 L3.92,16.38 L4,16.43 L4.08,16.48 L4.16,16.53 L4.25,16.57 L4.34,16.61 L4.43,16.64 L4.52,16.68 L4.61,16.71 L4.71,16.73 L4.8,16.75 L4.9,16.77 L4.99,16.78 L5.09,16.79 L5.18,16.8 L5.28,16.8 L9.22,16.8 M14.78,16.8 L20.16,16.8"
-        android:strokeWidth="2.4" android:strokeLineCap="round" android:strokeLineJoin="round"
-        android:strokeColor="#FFFFFFFF" />
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- The launcher mark scaled to fill the status-bar icon. -->
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="1.5" android:scaleY="1.5" android:translateY="9.75">
+        <!-- The delta, open where the weft passes over its left side. -->
+        <path android:pathData="M43.33,46.5 L54,28 L76.5,67 L31.5,67 L36.98,57.5" android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="8" android:strokeLineJoin="round" />
+        <!-- The weft, open where it passes under the right side. -->
+        <path android:pathData="M60.35,49 L27,49 A3,3 0 0 0 27,55 L60.35,55 Z M75.35,49 L81,49 A3,3 0 0 1 81,55 L75.35,55 Z"
+            android:fillColor="#FFFFFFFF" />
+    </group>
 </vector>
