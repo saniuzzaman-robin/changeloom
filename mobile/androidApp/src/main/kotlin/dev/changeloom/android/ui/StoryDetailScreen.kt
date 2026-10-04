@@ -465,7 +465,7 @@ private fun cannotOpen(context: Context, error: Exception) {
 }
 
 private fun Context.shareStory(story: Story) {
-    val text = listOfNotNull(story.title, story.summary, story.sources.firstOrNull()?.url).joinToString("\n\n")
+    val text = listOfNotNull(story.title, story.sources.firstOrNull()?.url).joinToString("\n\n")
     val send = Intent(Intent.ACTION_SEND)
         .setType("text/plain")
         .putExtra(Intent.EXTRA_SUBJECT, story.title)
