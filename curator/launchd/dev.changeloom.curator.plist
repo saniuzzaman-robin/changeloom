@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Runs `curator run --if-due` at 02:00, 08:00, 14:00 and 20:00 (6 hours apart) and at login. launchd runs a missed
-  job when the Mac wakes; RunAtLoad covers a shutdown, and --if-due skips a run that is not yet due.
+  Runs `curator run --full` once a day at 11:00. launchd runs a missed job when the Mac wakes. --full
+  covers every topic in one run, so there is no RunAtLoad (it would start a full run at every login).
   Template: replace __REPO__ with the absolute path of this repo and __HOME__ with your home
   directory, then install:
     make curator-build
@@ -26,17 +26,10 @@
     <array>
         <string>/bin/zsh</string>
         <string>-lc</string>
-        <string>[ -s "$HOME/.nvm/nvm.sh" ] &amp;&amp; . "$HOME/.nvm/nvm.sh"; cd __REPO__/curator &amp;&amp; export $(grep -E '^[A-Z_]+=' .env | xargs) &amp;&amp; export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-personal}" &amp;&amp; exec ./bin/curator run --if-due</string>
+        <string>[ -s "$HOME/.nvm/nvm.sh" ] &amp;&amp; . "$HOME/.nvm/nvm.sh"; cd __REPO__/curator &amp;&amp; export $(grep -E '^[A-Z_]+=' .env | xargs) &amp;&amp; export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-personal}" &amp;&amp; exec ./bin/curator run --full</string>
     </array>
-    <key>RunAtLoad</key>
-    <true/>
     <key>StartCalendarInterval</key>
-    <array>
-        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
-    </array>
+    <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>0</integer></dict>
     <key>StandardOutPath</key>
     <string>__HOME__/Library/Logs/changeloom-curator.log</string>
     <key>StandardErrorPath</key>
