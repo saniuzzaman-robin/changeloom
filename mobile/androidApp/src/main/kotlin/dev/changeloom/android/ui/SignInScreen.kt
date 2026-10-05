@@ -1,14 +1,19 @@
 package dev.changeloom.android.ui
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -19,7 +24,9 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.imeAnimationTarget
 import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -55,6 +62,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -72,6 +80,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -113,8 +122,10 @@ import kotlin.math.sin
 
 /** Firebase rejects shorter passwords; shown as a hint when creating an account. */
 private const val MIN_PASSWORD_LENGTH = 6
+private const val KEYBOARD_LIFT_MS = 250
 private const val ORB_PERIOD_MS = 24_000
 private val SHEET_MAX_WIDTH = 520.dp
+private val SHEET_BORDER = 1.dp
 
 /** Height (inside the system bars) from which the large hero and the sheet's subtitle still fit without scrolling. */
 private val ROOMY_HEIGHT = 720.dp
@@ -171,6 +182,7 @@ fun SignInScreen(vm: SignInViewModel = koinViewModel()) {
 }
 
 /** Brand hero centred in the space above a bottom-anchored form sheet; scrolls once the keyboard leaves too little room. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SignInContent(
     state: SignInState,
@@ -192,26 +204,62 @@ private fun SignInContent(
         )
         // App rule: content stays between the status bar and the navigation bar (and above the keyboard).
         // The layout ignores the keyboard, so opening it never re-measures the screen or swaps the hero (which
-        // would restart its entrance animations). Instead the content is lifted in the draw phase by the keyboard's
-        // height, which stays smooth while the keyboard animates; whatever slides off the top is clipped.
+        // would restart its entrance animations). Instead only the sheet is lifted in the draw phase by the
+        // keyboard's height, which stays smooth while the keyboard animates; the hero stays put and fades out
+        // behind it, and whatever slides off the top is clipped.
         val density = LocalDensity.current
         val navBottom = WindowInsets.navigationBars
-        val ime = WindowInsets.ime
-        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.exclude(ime)).clipToBounds()) {
+        // The lift animates towards the keyboard's final height rather than following its per-frame inset, which
+        // some devices report with a bounce while it hides; this way it only ever moves straight to the target.
+        val imeTarget = WindowInsets.imeAnimationTarget
+        val liftTarget = (imeTarget.getBottom(density) - navBottom.getBottom(density)).coerceAtLeast(0).toFloat()
+        val lift by animateFloatAsState(
+            targetValue = liftTarget,
+            animationSpec = tween(KEYBOARD_LIFT_MS, easing = FastOutSlowInEasing),
+            label = "keyboardLift",
+        )
+        val keyboardLift = { lift }
+        // The hero just cross-fades out while the keyboard is up (and back in), on the same clock as the lift.
+        val heroAlpha by animateFloatAsState(
+            targetValue = if (liftTarget > 0f) 0f else 1f,
+            animationSpec = tween(KEYBOARD_LIFT_MS, easing = FastOutSlowInEasing),
+            label = "heroAlpha",
+        )
+        // The sheet's height with the Google row shown; only measured while it is, so collapsing can't undo itself.
+        var expandedHeight by remember { mutableIntStateOf(0) }
+        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.exclude(WindowInsets.ime)).clipToBounds()) {
             // Everything fits without scrolling: the full hero where there's room, a compact one on shorter
             // screens. Scrolling remains only for very large font scales.
             val roomy = maxHeight >= ROOMY_HEIGHT
+            // Where the lifted sheet would slide its title off the top, the Google row folds away instead.
+            val collapse = liftTarget > 0f && expandedHeight + liftTarget > constraints.maxHeight
+            val sheetEdge = with(density) { SHEET_BORDER.toPx() }
             Column(
                 Modifier
                     .fillMaxSize()
-                    .graphicsLayer { translationY = -(ime.getBottom(density) - navBottom.getBottom(density)).coerceAtLeast(0).toFloat() }
                     .verticalScroll(rememberScrollState())
                     .heightIn(min = maxHeight),
                 verticalArrangement = HeroAboveSheet,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Hero(roomy)
-                AuthSheet(state, form, onGoogle, showSubtitle = roomy)
+                Hero(
+                    roomy,
+                    Modifier.graphicsLayer { alpha = heroAlpha },
+                )
+                AuthSheet(
+                    state, form, onGoogle, showSubtitle = roomy, collapseSocial = collapse,
+                    modifier = Modifier
+                        .onSizeChanged { if (!collapse) expandedHeight = it.height }
+                        // The lift can run ahead of the keyboard; the sheet's colour fills the gap below it (tucked
+                        // under its bottom edge) so the backdrop never shows between the sheet and the keyboard.
+                        .drawBehind {
+                            val l = keyboardLift()
+                            if (l > 0f) {
+                                drawRect(c.surface, Offset(0f, size.height - l - sheetEdge), Size(size.width, l + sheetEdge))
+                            }
+                        }
+                        .graphicsLayer { translationY = -keyboardLift() },
+                )
             }
         }
     }
@@ -228,10 +276,10 @@ private object HeroAboveSheet : Arrangement.Vertical {
 
 /** The mark, name and tagline: stacked and large when [roomy], else the mark beside the name in one row. */
 @Composable
-private fun Hero(roomy: Boolean) {
+private fun Hero(roomy: Boolean, modifier: Modifier = Modifier) {
     val animate = !LocalInspectionMode.current
     Column(
-        Modifier.padding(horizontal = 24.dp, vertical = if (roomy) 28.dp else 16.dp),
+        modifier.padding(horizontal = 24.dp, vertical = if (roomy) 28.dp else 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (roomy) {
@@ -263,6 +311,8 @@ private fun AuthSheet(
     form: AuthForm,
     onGoogle: () -> Unit,
     showSubtitle: Boolean,
+    collapseSocial: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val c = ChangeloomTheme.colors
     val focus = LocalFocusManager.current
@@ -284,14 +334,14 @@ private fun AuthSheet(
     }
 
     Column(
-        Modifier
+        modifier
             .widthIn(max = SHEET_MAX_WIDTH)
             .fillMaxWidth()
             .enter(delayMillis = 900)
             .shadow(32.dp, Radius.sheet, ambientColor = Color.Black.copy(alpha = 0.25f), spotColor = c.primary.copy(alpha = 0.35f))
             .clip(Radius.sheet)
             .background(c.surface)
-            .border(1.dp, c.lineStrong, Radius.sheet)
+            .border(SHEET_BORDER, c.lineStrong, Radius.sheet)
             .padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 8.dp),
     ) {
         AnimatedContent(mode, transitionSpec = { fadeIn(expoTween()) togetherWith fadeOut(expoTween()) }, label = "authTitle") { m ->
@@ -304,18 +354,26 @@ private fun AuthSheet(
             }
         }
         Spacer(Modifier.height(18.dp))
-        SecondaryButton(
-            text = stringResource(R.string.continue_with_google),
-            onClick = onGoogle,
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !state.busy,
-            leading = { GoogleMark(Modifier.size(18.dp)) },
-            dense = true,
-        )
-        Row(Modifier.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            HorizontalDivider(Modifier.weight(1f), color = c.line)
-            Eyebrow(stringResource(R.string.or_with_email), Modifier.padding(horizontal = 12.dp))
-            HorizontalDivider(Modifier.weight(1f), color = c.line)
+        AnimatedVisibility(
+            !collapseSocial,
+            enter = expandVertically(expoTween()) + fadeIn(expoTween()),
+            exit = shrinkVertically(expoTween()) + fadeOut(expoTween()),
+        ) {
+            Column {
+                SecondaryButton(
+                    text = stringResource(R.string.continue_with_google),
+                    onClick = onGoogle,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !state.busy,
+                    leading = { GoogleMark(Modifier.size(18.dp)) },
+                    dense = true,
+                )
+                Row(Modifier.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    HorizontalDivider(Modifier.weight(1f), color = c.line)
+                    Eyebrow(stringResource(R.string.or_with_email), Modifier.padding(horizontal = 12.dp))
+                    HorizontalDivider(Modifier.weight(1f), color = c.line)
+                }
+            }
         }
         Column(Modifier.graphicsLayer { translationX = shake.value }) {
             ChangeloomTextField(
