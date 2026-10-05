@@ -20,11 +20,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -60,6 +62,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
@@ -188,13 +191,20 @@ private fun SignInContent(
                 .background(c.surface),
         )
         // App rule: content stays between the status bar and the navigation bar (and above the keyboard).
-        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+        // The layout ignores the keyboard, so opening it never re-measures the screen or swaps the hero (which
+        // would restart its entrance animations). Instead the content is lifted in the draw phase by the keyboard's
+        // height, which stays smooth while the keyboard animates; whatever slides off the top is clipped.
+        val density = LocalDensity.current
+        val navBottom = WindowInsets.navigationBars
+        val ime = WindowInsets.ime
+        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.exclude(ime)).clipToBounds()) {
             // Everything fits without scrolling: the full hero where there's room, a compact one on shorter
-            // screens. Scrolling remains only for the keyboard or very large font scales.
+            // screens. Scrolling remains only for very large font scales.
             val roomy = maxHeight >= ROOMY_HEIGHT
             Column(
                 Modifier
                     .fillMaxSize()
+                    .graphicsLayer { translationY = -(ime.getBottom(density) - navBottom.getBottom(density)).coerceAtLeast(0).toFloat() }
                     .verticalScroll(rememberScrollState())
                     .heightIn(min = maxHeight),
                 verticalArrangement = HeroAboveSheet,
