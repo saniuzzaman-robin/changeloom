@@ -7,6 +7,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -39,6 +41,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.DoneAll
@@ -47,9 +50,10 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PrivacyTip
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SettingsBrightness
 import androidx.compose.material.icons.rounded.Tag
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -89,7 +93,9 @@ import dev.changeloom.android.R
 import dev.changeloom.android.ads.ConsentManager
 import dev.changeloom.android.auth.requestGoogleIdToken
 import dev.changeloom.android.ui.components.BannerTone
+import dev.changeloom.android.ui.components.ChangeloomDialog
 import dev.changeloom.android.ui.components.ChangeloomTextField
+import dev.changeloom.android.ui.components.DialogConfirmButton
 import dev.changeloom.android.ui.components.Eyebrow
 import dev.changeloom.android.ui.components.GlassCard
 import dev.changeloom.android.ui.components.GradientAvatar
@@ -319,52 +325,68 @@ internal fun ProfileContent(
 
     if (pickCountry) {
         val countries = remember { Locale.getISOCountries().map { it to countryName(it) }.sortedBy { it.second } }
-        AlertDialog(
-            onDismissRequest = { pickCountry = false },
-            confirmButton = {},
-            dismissButton = { TextAction(stringResource(R.string.cancel), onClick = { pickCountry = false }, color = c.fgMuted) },
-            title = { Text(stringResource(R.string.country_title)) },
-            text = {
-                Column {
-                    Text(stringResource(R.string.country_body), style = MaterialTheme.typography.bodyMedium, color = c.fgMuted)
-                    Spacer(Modifier.height(8.dp))
-                    LazyColumn {
-                        items(countries, key = { it.first }) { (code, name) ->
-                            TextAction(
-                                name,
-                                onClick = {
-                                    pickCountry = false
-                                    onCountry(code)
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                color = if (code == state.country) c.primaryText else c.fg,
-                            )
-                        }
+        var query by rememberSaveable { mutableStateOf("") }
+        val shown = remember(query) { if (query.isBlank()) countries else countries.filter { it.second.contains(query.trim(), ignoreCase = true) } }
+        ChangeloomDialog(
+            onDismiss = { pickCountry = false },
+            title = stringResource(R.string.country_title),
+            icon = Icons.Rounded.Public,
+            actions = { SecondaryButton(stringResource(R.string.cancel), onClick = { pickCountry = false }, dense = true, modifier = Modifier.weight(1f)) },
+        ) {
+            Column {
+                ChangeloomTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = stringResource(R.string.country_search),
+                leadingIcon = Icons.Rounded.Search,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            )
+            Spacer(Modifier.height(8.dp))
+            LazyColumn(Modifier.heightIn(max = 264.dp)) {
+                items(shown, key = { it.first }) { (code, name) ->
+                    val selected = code == state.country
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(Radius.md)
+                            .clickable {
+                                pickCountry = false
+                                onCountry(code)
+                            }
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(countryFlag(code), style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            name,
+                            Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (selected) c.primaryText else c.fg,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (selected) Icon(Icons.Rounded.Check, contentDescription = null, tint = c.primaryText, modifier = Modifier.size(18.dp))
                     }
                 }
-            },
-            shape = Radius.xxl,
-            containerColor = c.elevated,
-            titleContentColor = c.fg,
-            textContentColor = c.fgMuted,
-        )
+            }
+            }
+        }
     }
     if (confirmSignOut) {
-        AlertDialog(
-            onDismissRequest = { confirmSignOut = false },
-            confirmButton = {
-                TextAction(stringResource(R.string.sign_out), onClick = {
+        ChangeloomDialog(
+            onDismiss = { confirmSignOut = false },
+            title = stringResource(R.string.sign_out_title),
+            message = stringResource(R.string.sign_out_body),
+            icon = Icons.AutoMirrored.Rounded.Logout,
+            actions = {
+                SecondaryButton(stringResource(R.string.cancel), onClick = { confirmSignOut = false }, dense = true, modifier = Modifier.weight(1f))
+                DialogConfirmButton(stringResource(R.string.sign_out), onClick = {
                     confirmSignOut = false
                     onSignOut()
-                }, color = c.rose)
+                }, modifier = Modifier.weight(1f))
             },
-            dismissButton = { TextAction(stringResource(R.string.cancel), onClick = { confirmSignOut = false }, color = c.fgMuted) },
-            title = { Text(stringResource(R.string.sign_out_title)) },
-            text = { Text(stringResource(R.string.sign_out_body)) },
-            shape = Radius.xxl,
-            containerColor = c.elevated,
-            titleContentColor = c.fg,
-            textContentColor = c.fgMuted,
         )
     }
     state.delete?.let { DeleteAccountDialog(it, deleteActions) }
@@ -375,60 +397,60 @@ private fun DeleteAccountDialog(delete: DeleteState, actions: DeleteActions) {
     val c = ChangeloomTheme.colors
     var password by remember(delete.step) { mutableStateOf("") }
     val deleting = delete.step == DeleteStep.Deleting
-    AlertDialog(
-        onDismissRequest = actions.cancel,
+    val confirmLabel = when (delete.step) {
+        DeleteStep.Google -> R.string.continue_with_google
+        else -> R.string.delete
+    }
+    ChangeloomDialog(
+        onDismiss = actions.cancel,
         properties = DialogProperties(dismissOnBackPress = !deleting, dismissOnClickOutside = !deleting),
-        confirmButton = {
+        title = stringResource(if (delete.step == DeleteStep.Confirm || deleting) R.string.delete_title else R.string.reauth_title),
+        message = stringResource(
             when (delete.step) {
-                DeleteStep.Confirm -> TextAction(stringResource(R.string.delete), actions.confirm, color = c.red)
-                DeleteStep.Password -> TextAction(
-                    stringResource(R.string.delete),
-                    onClick = { actions.withPassword(password) },
-                    enabled = password.isNotEmpty(),
-                    color = c.red,
-                )
-                DeleteStep.Google -> TextAction(stringResource(R.string.continue_with_google), actions.withGoogle, color = c.red)
-                DeleteStep.Deleting -> Unit
-            }
-        },
-        dismissButton = {
-            if (!deleting) TextAction(stringResource(R.string.cancel), onClick = actions.cancel, color = c.fgMuted)
-        },
-        title = {
-            Text(stringResource(if (delete.step == DeleteStep.Confirm || deleting) R.string.delete_title else R.string.reauth_title))
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    stringResource(
+                DeleteStep.Confirm -> R.string.delete_body
+                DeleteStep.Password -> R.string.reauth_password_body
+                DeleteStep.Google -> R.string.reauth_google_body
+                DeleteStep.Deleting -> R.string.deleting
+            },
+        ),
+        icon = Icons.Rounded.DeleteForever,
+        danger = true,
+        actions = {
+            if (!deleting) {
+                SecondaryButton(stringResource(R.string.cancel), onClick = actions.cancel, dense = true, modifier = Modifier.weight(1f))
+                DialogConfirmButton(
+                    stringResource(confirmLabel),
+                    onClick = {
                         when (delete.step) {
-                            DeleteStep.Confirm -> R.string.delete_body
-                            DeleteStep.Password -> R.string.reauth_password_body
-                            DeleteStep.Google -> R.string.reauth_google_body
-                            DeleteStep.Deleting -> R.string.deleting
-                        },
-                    ),
+                            DeleteStep.Confirm -> actions.confirm()
+                            DeleteStep.Password -> actions.withPassword(password)
+                            DeleteStep.Google -> actions.withGoogle()
+                            DeleteStep.Deleting -> Unit
+                        }
+                    },
+                    enabled = delete.step != DeleteStep.Password || password.isNotEmpty(),
+                    danger = true,
+                    modifier = Modifier.weight(1f),
                 )
-                if (delete.step == DeleteStep.Password) {
-                    ChangeloomTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = stringResource(R.string.password),
-                        leadingIcon = Icons.Rounded.Lock,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { if (password.isNotEmpty()) actions.withPassword(password) }),
-                        visualTransformation = PasswordVisualTransformation(),
-                    )
-                }
-                if (deleting) LinearProgressIndicator(Modifier.fillMaxWidth(), color = c.red, trackColor = c.surface2)
-                StatusBanner(delete.error, Icons.Rounded.ErrorOutline, tone = BannerTone.Error)
             }
         },
-        shape = Radius.xxl,
-        containerColor = c.elevated,
-        titleContentColor = c.fg,
-        textContentColor = c.fgMuted,
-    )
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (delete.step == DeleteStep.Password) {
+                ChangeloomTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = stringResource(R.string.password),
+                    leadingIcon = Icons.Rounded.Lock,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { if (password.isNotEmpty()) actions.withPassword(password) }),
+                    visualTransformation = PasswordVisualTransformation(),
+                )
+            }
+            if (deleting) LinearProgressIndicator(Modifier.fillMaxWidth(), color = c.red, trackColor = c.surface2)
+            StatusBanner(delete.error, Icons.Rounded.ErrorOutline, tone = BannerTone.Error)
+        }
+    }
 }
 
 @Composable
@@ -586,3 +608,6 @@ private fun ProfileErrorLight() = ChangeloomTheme(ThemeMode.Light) {
 private val SEGMENT_HEIGHT = 40.dp
 
 private fun countryName(code: String): String = Locale.forLanguageTag("und-$code").displayCountry
+
+private fun countryFlag(code: String): String =
+    code.uppercase().map { String(Character.toChars(0x1F1E6 + (it - 'A'))) }.joinToString("")
