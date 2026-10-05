@@ -18,15 +18,5 @@ services:
       timeout: 3s
       retries: 10
 
-  # Web search for the curator's Ollama provider (`make searxng-up`); not started by `make db-up`.
-  searxng:
-    image: searxng/searxng:latest
-    profiles: ["curator"]
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:${SEARXNG_PORT:-8080}:8080"
-    volumes:
-      - ./curator/searxng/settings.yml:/etc/searxng/settings.yml:ro
-
 volumes:
   pgdata:

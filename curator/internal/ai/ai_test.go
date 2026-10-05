@@ -78,7 +78,12 @@ func TestNewRejectsUnknownProvider(t *testing.T) {
 	if _, err := New(config.Config{Provider: "gpt"}); err == nil {
 		t.Fatal("want an error")
 	}
-	if _, err := New(config.Config{Provider: config.ProviderOllama}); err != nil {
-		t.Fatal(err)
+}
+
+func TestNewBuildsEveryProvider(t *testing.T) {
+	for _, p := range config.Providers {
+		if _, err := New(config.Config{Provider: p}); err != nil {
+			t.Errorf("%s: %v", p, err)
+		}
 	}
 }

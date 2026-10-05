@@ -1,4 +1,4 @@
-package ollama
+package openai
 
 import "time"
 

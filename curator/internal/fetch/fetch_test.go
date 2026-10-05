@@ -175,6 +175,30 @@ func TestFetchStoresAndMerges(t *testing.T) {
 	}
 }
 
+func TestFetchCompactPrompt(t *testing.T) {
+	pool := setup(t)
+	ctx := t.Context()
+
+	fake := &fakeClaude{responses: []any{map[string]any{"stories": []any{
+		story("Go 1.27", "https://go.dev/blog/go1.27", time.Now().Add(-time.Hour), nil),
+	}}}}
+	cfg := testConfig()
+	cfg.PromptStyle = config.PromptCompact
+	if _, err := fetch.New(pool, fake, cfg).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	p := fake.prompts[0]
+	if !strings.Contains(p, "## Steps") || !strings.Contains(p, "Do not put dates in queries") || !strings.Contains(p, "hints: https://go.dev/blog/feed.atom") {
+		t.Errorf("compact prompt lacks steps, query rule or hints:\n%s", p)
+	}
+	if strings.Contains(p, "## Deals") {
+		t.Errorf("compact prompt has the deals section without deal topics:\n%s", p)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM stories WHERE prompt_version = $1`, fetch.PromptVersionCompact); n != 1 {
+		t.Errorf("compact stories = %d", n)
+	}
+}
+
 func TestFetchRecordsFailure(t *testing.T) {
 	pool := setup(t)
 	fake := &fakeClaude{responses: []any{errors.New("claude call failed (error_max_turns)")}}

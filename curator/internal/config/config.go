@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -61,9 +62,10 @@ type Config struct {
 	// Provider selects the AI backend for fetch and request-grouping calls (CURATOR_AI_PROVIDER).
 	Provider Provider
 	Claude   Claude
-	Ollama   Ollama
-	// SearxngURL is the SearXNG instance the Ollama provider searches with (SEARXNG_URL).
-	SearxngURL string
+	OpenAI   OpenAI
+	// PromptStyle selects the prompt wording (CURATOR_PROMPT_STYLE; defaults to frontier for claude
+	// and compact for openai).
+	PromptStyle PromptStyle
 	// CallDelay is the minimum gap between the starts of two AI calls (CURATOR_CALL_DELAY, a Go
 	// duration; 0 disables it).
 	CallDelay time.Duration
@@ -129,21 +131,36 @@ type Provider string
 // The supported providers.
 const (
 	ProviderClaude Provider = "claude"
-	ProviderOllama Provider = "ollama"
+	ProviderOpenAI Provider = "openai"
 )
 
-// Ollama configures the local Ollama calls.
-type Ollama struct {
-	// URL is the Ollama server (OLLAMA_URL).
-	URL string
-	// Model is the model tag to run (OLLAMA_MODEL).
+// PromptStyle is a wording of the curator's prompts.
+type PromptStyle string
+
+// The supported prompt styles: frontier for large models, compact (shorter, with explicit research
+// steps) for smaller models.
+const (
+	PromptFrontier PromptStyle = "frontier"
+	PromptCompact  PromptStyle = "compact"
+)
+
+// PromptStyles lists the supported prompt styles.
+var PromptStyles = []PromptStyle{PromptFrontier, PromptCompact}
+
+// Providers lists the supported providers.
+var Providers = []Provider{ProviderClaude, ProviderOpenAI}
+
+// OpenAI configures calls to an OpenAI-compatible /chat/completions API. The curator gives the
+// model no tools, so the model must search the web on its own.
+type OpenAI struct {
+	// BaseURL is the API root, e.g. https://api.openai.com/v1 (OPENAI_BASE_URL).
+	BaseURL string
+	// APIKey is sent as a Bearer token; empty sends none, for local servers (OPENAI_API_KEY).
+	APIKey string
+	// Model is the model to call (OPENAI_MODEL); required with this provider.
 	Model string
-	// Timeout bounds one call, including its tool turns (OLLAMA_TIMEOUT, a Go duration).
+	// Timeout bounds one call, including its format retries (OPENAI_TIMEOUT, a Go duration).
 	Timeout time.Duration
-	// MaxTurns caps the model's tool-calling rounds in one call (OLLAMA_MAX_TURNS).
-	MaxTurns int
-	// ContextTokens is the model's context window (OLLAMA_NUM_CTX).
-	ContextTokens int
 }
 
 // Claude configures the `claude -p` calls.
@@ -174,19 +191,19 @@ func Load() (Config, error) {
 		errs = append(errs, fmt.Errorf("CLAUDE_TIMEOUT must be a positive Go duration such as 10m, got %q", os.Getenv("CLAUDE_TIMEOUT")))
 	}
 
-	ollamaTimeout, err := time.ParseDuration(getenv("OLLAMA_TIMEOUT", "20m"))
-	if err != nil || ollamaTimeout <= 0 {
-		errs = append(errs, fmt.Errorf("OLLAMA_TIMEOUT must be a positive Go duration such as 20m, got %q", os.Getenv("OLLAMA_TIMEOUT")))
-	}
-
 	callDelay, err := time.ParseDuration(getenv("CURATOR_CALL_DELAY", "0s"))
 	if err != nil || callDelay < 0 {
 		errs = append(errs, fmt.Errorf("CURATOR_CALL_DELAY must be a non-negative Go duration such as 5s, got %q", os.Getenv("CURATOR_CALL_DELAY")))
 	}
 
+	openaiTimeout, err := time.ParseDuration(getenv("OPENAI_TIMEOUT", "10m"))
+	if err != nil || openaiTimeout <= 0 {
+		errs = append(errs, fmt.Errorf("OPENAI_TIMEOUT must be a positive Go duration such as 10m, got %q", os.Getenv("OPENAI_TIMEOUT")))
+	}
+
 	provider := Provider(getenv("CURATOR_AI_PROVIDER", string(ProviderClaude)))
-	if provider != ProviderClaude && provider != ProviderOllama {
-		errs = append(errs, fmt.Errorf("CURATOR_AI_PROVIDER must be %q or %q, got %q", ProviderClaude, ProviderOllama, provider))
+	if !slices.Contains(Providers, provider) {
+		errs = append(errs, fmt.Errorf("CURATOR_AI_PROVIDER must be one of %v, got %q", Providers, provider))
 	}
 
 	configDir, err := claudeConfigDir()
@@ -200,15 +217,13 @@ func Load() (Config, error) {
 		BackendMigrationsDir: getenv("BACKEND_MIGRATIONS_DIR", "../backend/migrations"),
 		LogLevel:             level,
 		Provider:             provider,
-		Ollama: Ollama{
-			URL:           strings.TrimRight(getenv("OLLAMA_URL", "http://127.0.0.1:11434"), "/"),
-			Model:         getenv("OLLAMA_MODEL", "qwen2.5:14b"),
-			Timeout:       ollamaTimeout,
-			MaxTurns:      envInt(&errs, "OLLAMA_MAX_TURNS", 8),
-			ContextTokens: envInt(&errs, "OLLAMA_NUM_CTX", 16384),
+		OpenAI: OpenAI{
+			BaseURL: strings.TrimRight(getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"), "/"),
+			APIKey:  getenv("OPENAI_API_KEY", ""),
+			Model:   getenv("OPENAI_MODEL", ""),
+			Timeout: openaiTimeout,
 		},
-		SearxngURL: strings.TrimRight(getenv("SEARXNG_URL", "http://127.0.0.1:8080"), "/"),
-		CallDelay:  callDelay,
+		CallDelay: callDelay,
 		Claude: Claude{
 			Bin:     getenv("CLAUDE_BIN", "claude"),
 			Model:   getenv("CLAUDE_MODEL", "sonnet"),
@@ -247,6 +262,28 @@ func Load() (Config, error) {
 			APIBaseURL:   strings.TrimRight(getenv("API_BASE_URL_"+env.Suffix(), ""), "/"),
 			NotifySecret: getenv("NOTIFY_SECRET_"+env.Suffix(), ""),
 		}
+	}
+
+	// CURATOR_AI_MODEL overrides the selected provider's model, e.g. for a one-off run.
+	if model := getenv("CURATOR_AI_MODEL", ""); model != "" {
+		switch provider {
+		case ProviderClaude:
+			cfg.Claude.Model = model
+		case ProviderOpenAI:
+			cfg.OpenAI.Model = model
+		}
+	}
+	if provider == ProviderOpenAI && cfg.OpenAI.Model == "" {
+		errs = append(errs, errors.New("OPENAI_MODEL (or CURATOR_AI_MODEL) is required with CURATOR_AI_PROVIDER=openai"))
+	}
+
+	defaultStyle := PromptCompact
+	if provider == ProviderClaude {
+		defaultStyle = PromptFrontier
+	}
+	cfg.PromptStyle = PromptStyle(getenv("CURATOR_PROMPT_STYLE", string(defaultStyle)))
+	if !slices.Contains(PromptStyles, cfg.PromptStyle) {
+		errs = append(errs, fmt.Errorf("CURATOR_PROMPT_STYLE must be one of %v, got %q", PromptStyles, cfg.PromptStyle))
 	}
 
 	for _, name := range strings.Split(getenv("CURATOR_RUN_ENVS", string(EnvProd)), ",") {

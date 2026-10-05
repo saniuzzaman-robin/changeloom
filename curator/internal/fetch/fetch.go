@@ -368,7 +368,7 @@ func (f *Fetcher) runGroup(ctx context.Context, g Group, cat catalog) (groupResu
 
 	g.Also = cat.also(g)
 	slog.InfoContext(ctx, "fetch call started", "group", g.Slug, "topics", slugs, "since", g.Since.UTC().Format(time.RFC3339), "known_stories", len(known))
-	out, err := f.claude.Run(ctx, claude.Request{Prompt: Prompt(g, known), Schema: Schema(slices.Concat(slugs, g.Also)), Tools: tools})
+	out, err := f.claude.Run(ctx, claude.Request{Prompt: Prompt(f.cfg.PromptStyle, g, known), Schema: Schema(slices.Concat(slugs, g.Also)), Tools: tools})
 	if err != nil {
 		return fail(err)
 	}
@@ -400,7 +400,7 @@ func (f *Fetcher) runGroup(ctx context.Context, g Group, cat catalog) (groupResu
 		hintURLs:   cat.hintURLs,
 		mergeSince: now.Add(-f.cfg.MergeWindow),
 		model:      out.Model,
-		promptVer:  PromptVersion,
+		promptVer:  promptVersion(f.cfg.PromptStyle),
 	})
 	if err != nil {
 		_ = tx.Rollback(context.WithoutCancel(ctx))

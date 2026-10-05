@@ -1,5 +1,5 @@
-// Package ai picks the backend that answers the curator's calls (Claude or a local Ollama model)
-// and spaces the calls out so a provider's rate limit is not hit.
+// Package ai picks the backend that answers the curator's calls (Claude or an OpenAI-compatible
+// API) and spaces the calls out so a provider's rate limit is not hit.
 package ai
 
 import (
@@ -10,8 +10,7 @@ import (
 
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/claude"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/config"
-	"github.com/saniuzzaman-robin/changeloom/curator/internal/ollama"
-	"github.com/saniuzzaman-robin/changeloom/curator/internal/web"
+	"github.com/saniuzzaman-robin/changeloom/curator/internal/openai"
 )
 
 // Runner makes one call; fetch.Runner and requests.Runner are satisfied by it.
@@ -19,18 +18,19 @@ type Runner interface {
 	Run(ctx context.Context, req claude.Request) (claude.Result, error)
 }
 
+// providers builds the runner of each provider in config.Providers.
+var providers = map[config.Provider]func(cfg config.Config) Runner{
+	config.ProviderClaude: func(cfg config.Config) Runner { return claude.New(cfg.Claude) },
+	config.ProviderOpenAI: func(cfg config.Config) Runner { return openai.New(cfg.OpenAI) },
+}
+
 // New returns the runner for cfg.Provider, wrapped to leave cfg.CallDelay between call starts.
 func New(cfg config.Config) (Runner, error) {
-	var r Runner
-	switch cfg.Provider {
-	case config.ProviderClaude:
-		r = claude.New(cfg.Claude)
-	case config.ProviderOllama:
-		r = ollama.New(cfg.Ollama, web.New(cfg.SearxngURL))
-	default:
+	build, ok := providers[cfg.Provider]
+	if !ok {
 		return nil, fmt.Errorf("unknown CURATOR_AI_PROVIDER %q", cfg.Provider)
 	}
-	return Spaced(r, cfg.CallDelay), nil
+	return Spaced(build(cfg), cfg.CallDelay), nil
 }
 
 // Spaced returns r with at least delay between the starts of two calls, also across concurrent

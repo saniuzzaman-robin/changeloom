@@ -12,6 +12,7 @@ import (
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/catalog"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/claude"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/config"
+	"github.com/saniuzzaman-robin/changeloom/curator/internal/db"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/dbtest"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/requests"
 )
@@ -230,6 +231,21 @@ func TestGroup(t *testing.T) {
 	fake.prompts = nil
 	if _, err := g.Run(t.Context(), false); err != nil || len(fake.prompts) != 0 {
 		t.Errorf("empty inbox: err = %v, calls = %d, want none", err, len(fake.prompts))
+	}
+}
+
+func TestPromptStyles(t *testing.T) {
+	topics := []db.ListFetchTopicsRow{{Slug: "databases/postgres", Name: "PostgreSQL"}}
+	professions := []catalog.Profession{{Slug: "engineer", Name: "Engineer"}}
+	inbox := []db.ListPendingInboxRow{{ID: 7, Text: "zig news"}}
+	for style, steps := range map[config.PromptStyle]bool{config.PromptFrontier: false, config.PromptCompact: true} {
+		p := requests.Prompt(style, topics, professions, inbox, 2)
+		if strings.Contains(p, "## Steps") != steps {
+			t.Errorf("%s prompt: has steps = %t, want %t:\n%s", style, !steps, steps, p)
+		}
+		if !strings.Contains(p, "- databases/postgres: PostgreSQL") || !strings.Contains(p, "- engineer: Engineer") || !strings.Contains(p, `- 7: "zig news"`) {
+			t.Errorf("%s prompt lacks the lists:\n%s", style, p)
+		}
 	}
 }
 

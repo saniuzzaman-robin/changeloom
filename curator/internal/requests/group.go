@@ -124,7 +124,7 @@ func (g *Grouper) Run(ctx context.Context, dryRun bool) (Result, error) {
 	}
 
 	slog.InfoContext(ctx, "grouping topic requests", "requests", len(inbox), "topics", len(rows))
-	out, err := g.claude.Run(ctx, claude.Request{Prompt: Prompt(rows, professions, inbox, g.cfg.MaxNewTopicsPerRun), Schema: Schema(), Tools: tools})
+	out, err := g.claude.Run(ctx, claude.Request{Prompt: Prompt(g.cfg.PromptStyle, rows, professions, inbox, g.cfg.MaxNewTopicsPerRun), Schema: Schema(), Tools: tools})
 	if err != nil {
 		return Result{}, err
 	}

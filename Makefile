@@ -49,7 +49,7 @@ CHROME ?= /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 BRANDING := $(MOBILE)/branding
 
 .PHONY: db-up db-down migrate migrate-down migrate-status migrate-remote generate run-api build test lint fmt \
-	searxng-up searxng-down curator-local curator-db curator-migrate curator-seed curator-backfill curator-full curator-sync curator-generate curator-build curator-test curator-lint curator-fmt \
+	curator-db curator-migrate curator-seed curator-fetch curator-backfill curator-full curator-sync curator-generate curator-build curator-test curator-lint curator-fmt \
 	deploy-api android-apk android-bundle brand-assets release
 
 db-up: ## Start the dev Postgres (docker), or check the installed one is reachable (local)
@@ -100,12 +100,6 @@ fmt: ## Format backend code
 
 CURATOR_RUN := cd $(CURATOR) && go run ./cmd/curator
 
-searxng-up: ## Start SearXNG (web search for CURATOR_AI_PROVIDER=ollama) on 127.0.0.1:SEARXNG_PORT (default 8080)
-	docker compose --profile curator up -d searxng
-
-searxng-down: ## Stop SearXNG
-	docker compose --profile curator stop searxng
-
 curator-db: ## Create the curator's local database on the dev Postgres (needs `make db-up`)
 	@$(PSQL) -tAc "SELECT 1 FROM pg_database WHERE datname = '$(CURATOR_DB)'" | grep -q 1 \
 		|| $(PSQL) -c 'CREATE DATABASE "$(CURATOR_DB)"'
@@ -116,14 +110,19 @@ curator-migrate: ## Apply the backend and curator migrations to the curator's lo
 curator-seed: ## Load curator/seed/catalog/ into the curator's local DB
 	$(CURATOR_RUN) seed
 
-curator-backfill: ## Fill thin topics with real `claude -p` calls (optional MAX_CALLS=N; default CURATOR_BACKFILL_CALLS_PER_RUN)
-	$(CURATOR_RUN) backfill $(if $(MAX_CALLS),--max-calls $(MAX_CALLS))
+# For one run, AI=claude|openai, MODEL=<name> and PROMPT=frontier|compact override
+# CURATOR_AI_PROVIDER, CURATOR_AI_MODEL and CURATOR_PROMPT_STYLE from curator/.env.
+CURATOR_AI_RUN = cd $(CURATOR) && $(if $(AI),CURATOR_AI_PROVIDER=$(AI)) $(if $(MODEL),CURATOR_AI_MODEL=$(MODEL)) \
+	$(if $(PROMPT),CURATOR_PROMPT_STYLE=$(PROMPT)) go run ./cmd/curator
 
-curator-full: ## One shot: pull, group, fetch and backfill every topic until covered, sync and prune all CURATOR_RUN_ENVS (long; real `claude -p` calls)
-	$(CURATOR_RUN) run --full
+curator-fetch: ## Fetch stories for due topics with real AI calls (optional AI= MODEL= PROMPT=)
+	$(CURATOR_AI_RUN) fetch
 
-curator-local: db-up searxng-up ## One shot on the local Ollama model (no usage limits): start Ollama, pull, group, fetch, backfill, sync and prune CURATOR_RUN_ENVS (long)
-	$(CURATOR)/scripts/curator-local.sh
+curator-backfill: ## Fill thin topics with real AI calls (optional MAX_CALLS=N, default CURATOR_BACKFILL_CALLS_PER_RUN; AI= MODEL= PROMPT=)
+	$(CURATOR_AI_RUN) backfill $(if $(MAX_CALLS),--max-calls $(MAX_CALLS))
+
+curator-full: ## One shot: pull, group, fetch and backfill every topic until covered, sync and prune all CURATOR_RUN_ENVS (long; real AI calls; optional AI= MODEL= PROMPT=)
+	$(CURATOR_AI_RUN) run --full
 
 curator-sync: ## Push the curator's local catalog and stories to DEPLOY_ENV's hosted DB (REMOTE_DATABASE_URL_<ENV> in curator/.env)
 	$(CURATOR_RUN) sync --env $(DEPLOY_ENV)
