@@ -52,6 +52,7 @@ make migrate-remote DEPLOY_ENV=staging   # REMOTE_DATABASE_URL_<ENV> in curator/
 make curator-sync DEPLOY_ENV=staging     # push the curator's local catalog and stories to the hosted DB
 make deploy-api DEPLOY_ENV=staging       # Cloud Run; reads deploy/<env>.env; migrate first
 make release                             # propose next version from commits, tag main and push (asks first)
+make release PRE=alpha                   # same, as a closed-testing build (vX.Y.Z-alpha.N)
 make release VERSION=x.y.z DRY_RUN=1     # only show what it would do
 ```
 

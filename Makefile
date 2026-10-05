@@ -158,5 +158,5 @@ brand-assets: ## Render the Play Console icon and feature graphic PNGs from the 
 	"$(CHROME)" --headless=new --hide-scrollbars --default-background-color=00000000 --window-size=1024,500 \
 		--screenshot=$(BRANDING)/feature-graphic-1024x500.png $(BRANDING)/feature-graphic.svg 2>/dev/null
 
-release: ## Propose the next app version from commits since the last v* tag, then tag main and push it (asks first; VERSION=x.y.z overrides, DRY_RUN=1 only shows)
-	deploy/release.sh $(if $(VERSION),--version $(VERSION)) $(if $(DRY_RUN),--dry-run)
+release: ## Propose the next app version from commits since the last v* tag, then tag main and push it (asks first; PRE=alpha for closed testing, VERSION=x.y.z overrides, DRY_RUN=1 only shows)
+	deploy/release.sh $(if $(VERSION),--version $(VERSION)) $(if $(PRE),--pre $(PRE)) $(if $(DRY_RUN),--dry-run)

@@ -283,8 +283,10 @@ them (see Continuous deployment). Play rejects a `versionCode` it has seen befor
   - **Staging:** pushes to `staging` that touch `mobile/` build the signed staging APK and send it to
     Firebase App Distribution. Its `versionName` is the last release plus the build, e.g.
     `1.2.3-staging.45+abc1234` (run 45, commit abc1234; `0.0.0-staging…` before the first release).
-  - **Prod:** a `v1.2.3` tag (after approval) builds the signed prod AAB with `versionName` 1.2.3 and
-    uploads it to Play's internal track. Promote it in Play Console.
+  - **Prod:** a release tag (after approval) builds the signed prod AAB with the tag's `versionName` and
+    uploads it to Play: `v1.2.3-alpha.4` to closed testing (the default closed track, `alpha`), `v1.2.3`
+    to production. `PLAY_RELEASE_STATUS` (default `completed`) applies to both; `draft` leaves the
+    release for you to roll out in Play Console.
   - `versionCode` is the workflow's run number plus the optional repo variable
     `ANDROID_VERSION_CODE_OFFSET`. Set the offset above any `versionCode` you uploaded by hand.
 - **Cutting a release:** `make release` lists the commits since the last `v*` tag and proposes the next
@@ -292,6 +294,9 @@ them (see Continuous deployment). Play rejects a `versionCode` it has seen befor
   `BREAKING CHANGE:` → major). After you confirm, it tags `main` and pushes the tag, which starts the prod
   release above. It refuses unless `main` is clean and matches `origin/main`. `make release DRY_RUN=1` only
   shows the proposal; `make release VERSION=1.4.0` picks the number yourself (it must be above the last).
+  `make release PRE=alpha` tags a closed-testing build instead: `v1.4.0-alpha.1`, then `-alpha.2` and so on
+  for the same version. A later `make release` releases that version (`v1.4.0`) to production, even from
+  the same commit. First alpha: `make release VERSION=1.0.0 PRE=alpha`.
 
 The workflows reach GCP through Workload Identity Federation, so there are no service account keys.
 **One-time setup, per env.** These commands change IAM and create resources; read them, then run them
@@ -383,5 +388,5 @@ GitHub environment: `staging`, or `production` for prod.
 
 1. Staging: merge to `staging`. The workflows deploy the api and send the app to testers. Run the
    curator's `sync --env staging` and test.
-2. Prod: merge `staging` into `main` (deploys the api after approval), then push a `v<x.y.z>` tag for the app, and promote
-   the internal release in Play Console.
+2. Prod: merge `staging` into `main` (deploys the api after approval), then `make release PRE=alpha` for a
+   closed-testing build of the app, and `make release` to ship that version to production.
