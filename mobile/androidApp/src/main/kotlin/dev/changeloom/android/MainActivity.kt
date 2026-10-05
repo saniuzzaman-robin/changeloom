@@ -41,6 +41,7 @@ import dev.changeloom.shared.data.TimelineRepository
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 
 private const val SPLASH_EXIT_MS = 500L
@@ -122,7 +123,7 @@ class MainActivity : ComponentActivity() {
     /** The app is closing or leaving the foreground: sync bookmark changes made since the last sync, if any. */
     override fun onStop() {
         super.onStop()
-        lifecycleScope.launch(NonCancellable) { timeline.flushBookmarks() }
+        lifecycleScope.launch { withContext(NonCancellable) { timeline.flushBookmarks() } }
     }
 
     private fun onContentReady() {
