@@ -1,5 +1,6 @@
 - slug: case-law
   name: "Case Law & Courts"
+  priority: 2
   description: "Courts and key rulings."
   children:
     - {slug: case-law/us-supreme, name: "US Supreme Court"}
@@ -12,6 +13,7 @@
     - {slug: case-law/landmark, name: "Landmark Rulings"}
 - slug: corporate-law
   name: "Corporate & Commercial Law"
+  priority: 3
   description: "Deals and business law."
   children:
     - {slug: corporate-law/ma, name: "M&A Law"}
@@ -24,6 +26,7 @@
     - {slug: corporate-law/real-estate, name: "Real Estate Law"}
 - slug: litigation-practice
   name: "Litigation & Practice"
+  priority: 3
   description: "Procedure and the practice of law."
   children:
     - {slug: litigation-practice/civil-procedure, name: "Civil Procedure"}
@@ -36,6 +39,7 @@
     - {slug: litigation-practice/access, name: "Pro Bono & Access to Justice"}
 - slug: legal-tech
   name: "Legal Tech"
+  priority: 3
   description: "Software and AI for law."
   children:
     - {slug: legal-tech/ai-research, name: "AI Legal Research"}
@@ -47,6 +51,7 @@
     - {slug: legal-tech/analytics, name: "Legal Analytics"}
 - slug: ip-tech-law
   name: "IP & Technology Law"
+  priority: 3
   description: "Rights, data and digital law."
   children:
     - {slug: ip-tech-law/copyright, name: "Copyright"}
@@ -59,6 +64,7 @@
     - {slug: ip-tech-law/open-source, name: "Open Source Licensing"}
 - slug: regulation-compliance
   name: "Regulation & Compliance"
+  priority: 3
   description: "Rules and enforcement."
   children:
     - {slug: regulation-compliance/anti-corruption, name: "Anti-Corruption"}
@@ -71,6 +77,7 @@
     - {slug: regulation-compliance/enforcement, name: "Regulatory Enforcement"}
 - slug: public-administration
   name: "Public Administration"
+  priority: 3
   description: "Running government."
   children:
     - {slug: public-administration/budgets, name: "Government Budgets"}
@@ -83,6 +90,7 @@
     - {slug: public-administration/transparency, name: "Transparency & FOI"}
 - slug: policy-making
   name: "Policy & Legislation"
+  priority: 3
   description: "Laws and policy debates."
   children:
     - {slug: policy-making/legislation, name: "Legislation Tracker"}
@@ -96,6 +104,7 @@
     - {slug: policy-making/elections, name: "Elections & Voting"}
 - slug: civic-tech
   name: "Civic Tech & Services"
+  priority: 4
   description: "Digital government and civic services."
   children:
     - {slug: civic-tech/digital-id, name: "Digital Identity"}
@@ -107,6 +116,7 @@
     - {slug: civic-tech/social-programs, name: "Social Programs"}
 - slug: law-enforcement
   name: "Law Enforcement"
+  priority: 3
   description: "Policing and operations."
   children:
     - {slug: law-enforcement/practice, name: "Policing Practice"}
@@ -119,6 +129,7 @@
     - {slug: law-enforcement/organized-crime, name: "Organized Crime"}
 - slug: criminal-justice
   name: "Criminal Justice"
+  priority: 3
   description: "Courts, prisons and sentencing."
   children:
     - {slug: criminal-justice/sentencing, name: "Sentencing"}
@@ -131,6 +142,7 @@
     - {slug: criminal-justice/probation, name: "Probation & Parole"}
 - slug: public-safety
   name: "Public Safety & Emergency"
+  priority: 4
   description: "Emergency response and safety."
   children:
     - {slug: public-safety/emergency, name: "Emergency Management"}

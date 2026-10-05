@@ -1,5 +1,6 @@
 - slug: deals
   name: "Tech & Gadget Deals"
+  priority: 2
   description: "Price drops and limited-time offers on gadgets and home products."
   children:
     - {slug: deals/laptops, name: "Laptop Deals"}

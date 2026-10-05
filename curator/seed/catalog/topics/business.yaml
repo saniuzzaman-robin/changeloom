@@ -1,5 +1,6 @@
 - slug: fundraising-vc
   name: "Fundraising & VC"
+  priority: 2
   description: "Investors and capital."
   children:
     - {slug: fundraising-vc/vc, name: "Venture Capital"}
@@ -12,6 +13,7 @@
     - {slug: fundraising-vc/rounds, name: "Funding Rounds"}
 - slug: small-business
   name: "Small Business"
+  priority: 2
   description: "Running a small company."
   children:
     - {slug: small-business/loans, name: "Business Loans"}
@@ -24,6 +26,7 @@
     - {slug: small-business/local, name: "Local Business"}
 - slug: growth-sales
   name: "Growth & Revenue"
+  priority: 2
   description: "Acquisition and monetization."
   children:
     - {slug: growth-sales/acquisition, name: "Customer Acquisition"}
@@ -35,6 +38,7 @@
     - {slug: growth-sales/funnels, name: "Sales Funnels"}
 - slug: leadership
   name: "Leadership & Management"
+  priority: 2
   description: "Leading teams and organizations."
   children:
     - {slug: leadership/management, name: "Management Skills"}
@@ -47,19 +51,21 @@
     - {slug: leadership/ceo-moves, name: "CEO Moves"}
 - slug: digital-marketing
   name: "Digital Marketing"
+  priority: 1
   description: "Paid and organic channels."
   children:
     - {slug: digital-marketing/google-ads, name: "Google Ads"}
     - {slug: digital-marketing/meta-ads, name: "Meta Ads"}
     - {slug: digital-marketing/seo, name: "SEO"}
     - {slug: digital-marketing/email, name: "Email Marketing"}
-    - {slug: digital-marketing/affiliate, name: "Affiliate Marketing"}
-    - {slug: digital-marketing/programmatic, name: "Programmatic Advertising"}
-    - {slug: digital-marketing/automation, name: "Marketing Automation"}
+    - {slug: digital-marketing/affiliate, name: "Affiliate Marketing", priority: 2}
+    - {slug: digital-marketing/programmatic, name: "Programmatic Advertising", priority: 2}
+    - {slug: digital-marketing/automation, name: "Marketing Automation", priority: 2}
     - {slug: digital-marketing/search-updates, name: "Search Algorithm Updates"}
     - {slug: digital-marketing/ai, name: "AI in Marketing"}
 - slug: social-media-marketing
   name: "Social Media Marketing"
+  priority: 2
   description: "Platforms and creators."
   children:
     - {slug: social-media-marketing/tiktok, name: "TikTok Marketing"}
@@ -72,6 +78,7 @@
     - {slug: social-media-marketing/short-form, name: "Short-Form Video"}
 - slug: brand-content
   name: "Brand & Content"
+  priority: 3
   description: "Positioning and storytelling."
   children:
     - {slug: brand-content/branding, name: "Branding"}
@@ -84,6 +91,7 @@
     - {slug: brand-content/campaigns, name: "Brand Campaigns"}
 - slug: marketing-analytics
   name: "Marketing Analytics"
+  priority: 3
   description: "Measurement and attribution."
   children:
     - {slug: marketing-analytics/attribution, name: "Attribution"}
@@ -95,6 +103,7 @@
     - {slug: marketing-analytics/dashboards, name: "Dashboards"}
 - slug: ecommerce
   name: "E-commerce"
+  priority: 2
   description: "Online retail and marketplaces."
   children:
     - {slug: ecommerce/shopify, name: "Shopify"}
@@ -108,6 +117,7 @@
     - {slug: ecommerce/retail, name: "Retail Trends"}
 - slug: supply-chain-logistics
   name: "Supply Chain & Logistics"
+  priority: 3
   description: "Shipping and fulfillment."
   children:
     - {slug: supply-chain-logistics/freight, name: "Freight & Shipping"}
@@ -120,6 +130,7 @@
     - {slug: supply-chain-logistics/sourcing, name: "Sourcing"}
 - slug: sales-practice
   name: "Sales Practice"
+  priority: 2
   description: "Techniques and process."
   children:
     - {slug: sales-practice/prospecting, name: "Prospecting"}
@@ -132,6 +143,7 @@
     - {slug: sales-practice/enterprise, name: "Enterprise Sales"}
 - slug: crm-sales-tech
   name: "Sales Tech"
+  priority: 3
   description: "Tools and automation."
   children:
     - {slug: crm-sales-tech/salesforce, name: "Salesforce"}
@@ -143,6 +155,7 @@
     - {slug: crm-sales-tech/intent-data, name: "Intent Data"}
 - slug: recruiting
   name: "Recruiting & Hiring"
+  priority: 2
   description: "Talent acquisition."
   children:
     - {slug: recruiting/sourcing, name: "Sourcing Candidates"}
@@ -155,6 +168,7 @@
     - {slug: recruiting/campus, name: "Campus Recruiting"}
 - slug: people-management
   name: "People & Culture"
+  priority: 3
   description: "Engagement and development."
   children:
     - {slug: people-management/performance, name: "Performance Management"}
@@ -167,6 +181,7 @@
     - {slug: people-management/layoffs, name: "Layoffs & Restructuring"}
 - slug: employment-law
   name: "Employment Law"
+  priority: 3
   description: "Rules for employers."
   children:
     - {slug: employment-law/wage-hour, name: "Wage & Hour"}
@@ -179,6 +194,7 @@
     - {slug: employment-law/classification, name: "Worker Classification"}
 - slug: workplace-trends
   name: "Workplace Trends"
+  priority: 2
   description: "The changing nature of work."
   children:
     - {slug: workplace-trends/remote-hybrid, name: "Remote & Hybrid"}
@@ -191,6 +207,7 @@
     - {slug: workplace-trends/rto, name: "Return to Office"}
 - slug: corporate-finance
   name: "Corporate Finance"
+  priority: 2
   description: "Capital, M&A and treasury."
   children:
     - {slug: corporate-finance/mergers, name: "Mergers & Acquisitions"}
@@ -203,6 +220,7 @@
     - {slug: corporate-finance/cfo, name: "CFO Trends"}
 - slug: banking
   name: "Banking"
+  priority: 2
   description: "Retail, commercial and investment banks."
   children:
     - {slug: banking/big-banks, name: "Big Banks"}
@@ -214,6 +232,7 @@
     - {slug: banking/rates, name: "Interest Rates"}
 - slug: fintech-payments
   name: "Fintech & Payments"
+  priority: 2
   description: "Payment rails and financial software."
   children:
     - {slug: fintech-payments/processors, name: "Stripe & PayPal"}
@@ -226,6 +245,7 @@
     - {slug: fintech-payments/embedded, name: "Embedded Finance"}
 - slug: financial-regulation
   name: "Financial Regulation"
+  priority: 3
   description: "Rules for financial institutions."
   children:
     - {slug: financial-regulation/sec, name: "SEC"}
@@ -237,6 +257,7 @@
     - {slug: financial-regulation/sanctions, name: "Sanctions Compliance"}
 - slug: accounting-standards
   name: "Accounting Standards"
+  priority: 3
   description: "GAAP, IFRS and reporting."
   children:
     - {slug: accounting-standards/gaap, name: "US GAAP"}
@@ -249,6 +270,7 @@
     - {slug: accounting-standards/cloud, name: "Cloud Accounting"}
 - slug: tax
   name: "Tax"
+  priority: 2
   description: "Rules and planning."
   children:
     - {slug: tax/us-federal, name: "US Federal Tax"}
@@ -261,6 +283,7 @@
     - {slug: tax/tech, name: "Tax Compliance Tech"}
 - slug: audit-assurance
   name: "Audit & Assurance"
+  priority: 3
   description: "Audit methods and oversight."
   children:
     - {slug: audit-assurance/pcaob, name: "PCAOB & Oversight"}
@@ -272,6 +295,7 @@
     - {slug: audit-assurance/controls, name: "Risk & Controls"}
 - slug: strategy-consulting
   name: "Strategy Consulting"
+  priority: 3
   description: "Advisory and industry trends."
   children:
     - {slug: strategy-consulting/strategy, name: "Strategy"}
@@ -283,6 +307,7 @@
     - {slug: strategy-consulting/reports, name: "Industry Reports"}
 - slug: operations
   name: "Operations & Process"
+  priority: 3
   description: "Process and performance."
   children:
     - {slug: operations/lean, name: "Lean & Six Sigma"}

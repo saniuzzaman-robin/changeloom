@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher mark drawing itself in (mirrors LoomMark(animate = true)). -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt">
+    <aapt:attr name="android:drawable">
+        <vector
+            android:width="108dp" android:height="108dp"
+            android:viewportWidth="108" android:viewportHeight="108">
+            <path android:name="delta" android:pathData="M43.33,46.5 L54,28 L76.5,67 L31.5,67 L36.98,57.5" android:strokeColor="#FF818CF8"
+                android:strokeWidth="8" android:strokeLineJoin="round" android:trimPathEnd="0" />
+            <group android:name="weft" android:pivotX="24" android:pivotY="52" android:scaleX="0">
+                <path android:pathData="M60.35,49 L27,49 A3,3 0 0 0 27,55 L60.35,55 Z M75.35,49 L81,49 A3,3 0 0 1 81,55 L75.35,55 Z"
+                    android:fillColor="#FF06B6D4" />
+            </group>
+        </vector>
+    </aapt:attr>
+    <target android:name="delta" android:animation="@animator/splash_delta_draw" />
+    <target android:name="weft" android:animation="@animator/splash_weft_grow" />
+</animated-vector>

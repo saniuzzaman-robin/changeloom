@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	topiccatalog "github.com/saniuzzaman-robin/changeloom/curator/internal/catalog"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/claude"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/config"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/db"
@@ -99,7 +100,7 @@ func (c catalog) also(g Group) []string {
 func toTopic(r db.ListFetchTopicsRow) Topic {
 	return Topic{
 		ID: r.ID, Slug: r.Slug, Name: r.Name, Description: r.Description, ParentSlug: deref(r.ParentSlug),
-		Followers: int(r.Followers), ProfessionUsers: int(r.ProfessionUsers), Views7d: int(r.Views7d),
+		Priority: int(r.Priority), Followers: int(r.Followers), ProfessionUsers: int(r.ProfessionUsers), Views7d: int(r.Views7d),
 		HasChildren: r.HasChildren, Hints: r.Hints, Professions: r.Professions, LastFetchedAt: r.LastFetchedAt,
 	}
 }
@@ -114,7 +115,7 @@ func deref(s *string) string {
 // load reads every topic and the data shared by all calls of a run.
 func (f *Fetcher) load(ctx context.Context) ([]Topic, catalog, error) {
 	q := db.New(f.pool)
-	rows, err := q.ListFetchTopics(ctx)
+	rows, err := q.ListFetchTopics(ctx, topiccatalog.DefaultPriority)
 	if err != nil {
 		return nil, catalog{}, fmt.Errorf("list topics: %w", err)
 	}
@@ -166,13 +167,13 @@ func (f *Fetcher) Run(ctx context.Context) (Summary, error) {
 		}
 	}
 	settings := PlanSettings{
-		TopicsPerCall:   f.cfg.TopicsPerCall,
-		MaxCalls:        f.cfg.MaxCallsPerRun,
-		StoriesPerTopic: f.cfg.StoriesPerTopic,
-		HotMinViews:     f.cfg.HotMinViews,
-		WarmInterval:    f.cfg.WarmInterval,
-		ColdInterval:    f.cfg.ColdInterval,
-		MaxAge:          f.cfg.ItemMaxAge,
+		TopicsPerCall:     f.cfg.TopicsPerCall,
+		MaxCalls:          f.cfg.MaxCallsPerRun,
+		StoriesPerTopic:   f.cfg.StoriesPerTopic,
+		HotMinViews:       f.cfg.HotMinViews,
+		WarmInterval:      f.cfg.WarmInterval,
+		PriorityIntervals: f.cfg.PriorityIntervals,
+		MaxAge:            f.cfg.ItemMaxAge,
 	}
 	groups, deferred := Plan(global, settings, f.now())
 	dealGroups, dealDeferred, err := f.planDeals(ctx, deals, settings)
@@ -259,6 +260,7 @@ func (f *Fetcher) Backfill(ctx context.Context, maxCalls int) (Summary, error) {
 	since := now.Add(-f.cfg.ItemMaxAge)
 	rows, err := db.New(f.pool).ListBackfillTopics(ctx, db.ListBackfillTopicsParams{
 		Since: since, Target: int64(f.cfg.BackfillTarget), MaxRows: int32(maxCalls * f.cfg.BackfillTopicsPerCall), //nolint:gosec // bounded by config
+		DefaultPriority: topiccatalog.DefaultPriority,
 	})
 	if err != nil {
 		return Summary{}, fmt.Errorf("list topics to backfill: %w", err)
@@ -276,7 +278,7 @@ func (f *Fetcher) Backfill(ctx context.Context, maxCalls int) (Summary, error) {
 			slugs[i] = r.Slug
 			g.Topics = append(g.Topics, Topic{
 				ID: r.ID, Slug: r.Slug, Name: r.Name, Description: r.Description, ParentSlug: deref(r.ParentSlug),
-				Hints: r.Hints, Professions: r.Professions,
+				Priority: int(r.Priority), Hints: r.Hints, Professions: r.Professions,
 			})
 		}
 		g.Slug = "backfill:" + strings.Join(slugs, "+")
@@ -368,7 +370,7 @@ func (f *Fetcher) runGroup(ctx context.Context, g Group, cat catalog) (groupResu
 
 	g.Also = cat.also(g)
 	slog.InfoContext(ctx, "fetch call started", "group", g.Slug, "topics", slugs, "since", g.Since.UTC().Format(time.RFC3339), "known_stories", len(known))
-	out, err := f.claude.Run(ctx, claude.Request{Prompt: Prompt(g, known), Schema: Schema(slices.Concat(slugs, g.Also)), Tools: tools})
+	out, err := f.claude.Run(ctx, claude.Request{Prompt: Prompt(f.cfg.PromptStyle, g, known), Schema: Schema(slices.Concat(slugs, g.Also)), Tools: tools})
 	if err != nil {
 		return fail(err)
 	}
@@ -400,7 +402,7 @@ func (f *Fetcher) runGroup(ctx context.Context, g Group, cat catalog) (groupResu
 		hintURLs:   cat.hintURLs,
 		mergeSince: now.Add(-f.cfg.MergeWindow),
 		model:      out.Model,
-		promptVer:  PromptVersion,
+		promptVer:  promptVersion(f.cfg.PromptStyle),
 	})
 	if err != nil {
 		_ = tx.Rollback(context.WithoutCancel(ctx))

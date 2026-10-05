@@ -24,3 +24,8 @@ ON CONFLICT DO NOTHING;
 INSERT INTO topic_hints (topic_id, url)
 VALUES (@topic_id, @url)
 ON CONFLICT DO NOTHING;
+
+-- name: SetTopicPriority :exec
+INSERT INTO topic_priority (topic_id, priority)
+VALUES (@topic_id, @priority)
+ON CONFLICT (topic_id) DO UPDATE SET priority = EXCLUDED.priority;

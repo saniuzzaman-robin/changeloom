@@ -31,7 +31,7 @@ FROM professions p
 LEFT JOIN profession_topics pt ON pt.profession_id = p.id
 LEFT JOIN topics t ON t.id = pt.topic_id
 GROUP BY p.id
-ORDER BY p.position, p.slug;
+ORDER BY p.name, p.slug;
 
 -- name: GetProfessionIDsBySlugs :many
 SELECT id, slug FROM professions WHERE slug = ANY(@slugs::text[]);

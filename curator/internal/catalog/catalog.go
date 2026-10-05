@@ -4,6 +4,7 @@ package catalog
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io/fs"
@@ -26,9 +27,20 @@ type Node struct {
 	// Related are slugs of topics whose stories also suit followers of this topic.
 	Related []string `yaml:"related"`
 	// Hints are source URLs and feeds Claude should check for this topic.
-	Hints    []string `yaml:"hints"`
-	Children []Node   `yaml:"children"`
+	Hints []string `yaml:"hints"`
+	// Priority ranks how much the topic is wanted when fetching, MinPriority (most) to MaxPriority.
+	// Roots must set it; a child left at 0 inherits its root's.
+	Priority int    `yaml:"priority"`
+	Children []Node `yaml:"children"`
 }
+
+// Topic priorities: 1 is fetched first and most often.
+const (
+	MinPriority = 1
+	MaxPriority = 5
+	// DefaultPriority is used for a topic with no stored priority.
+	DefaultPriority = 3
+)
 
 // Profession is a profession users can pick. Topics are root topic slugs in display order.
 type Profession struct {
@@ -165,6 +177,11 @@ func validateTree(nodes []Node, parent string, seen map[string]bool) error {
 		if seen[n.Slug] {
 			return fmt.Errorf("duplicate topic slug %q", n.Slug)
 		}
+		if parent == "" || n.Priority != 0 {
+			if err := CheckPriority(n.Priority); err != nil {
+				return fmt.Errorf("topic %q: %w", n.Slug, err)
+			}
+		}
 		seen[n.Slug] = true
 		if parent != "" && len(n.Children) > 0 {
 			return fmt.Errorf("topic %q has children, but topics nest at most two levels deep", n.Slug)
@@ -187,6 +204,14 @@ func CheckSlug(slug, parent string) error {
 	rest, ok := strings.CutPrefix(slug, parent+"/")
 	if !ok || !slugPart.MatchString(rest) {
 		return fmt.Errorf("topic slug %q must be %q followed by lowercase letters, digits and single hyphens", slug, parent+"/")
+	}
+	return nil
+}
+
+// CheckPriority checks that p is a topic priority, MinPriority to MaxPriority.
+func CheckPriority(p int) error {
+	if p < MinPriority || p > MaxPriority {
+		return fmt.Errorf("priority %d must be %d (highest) to %d", p, MinPriority, MaxPriority)
 	}
 	return nil
 }
@@ -233,13 +258,13 @@ type Result struct {
 }
 
 // Seed writes the catalog into the local DB in one transaction: the topics by slug with their
-// relations and hints, then the professions. Nothing is ever deleted.
+// priorities, relations and hints, then the professions. Nothing is ever deleted.
 func Seed(ctx context.Context, pool *pgxpool.Pool, c Catalog) (Result, error) {
 	var res Result
 	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		q := db.New(tx)
 		ids := map[string]int64{}
-		if err := upsertTopics(ctx, q, c.Topics, nil, ids); err != nil {
+		if err := upsertTopics(ctx, q, c.Topics, nil, 0, ids); err != nil {
 			return err
 		}
 		res.Topics = len(ids)
@@ -288,7 +313,8 @@ func UpsertProfession(ctx context.Context, tx pgx.Tx, p Profession, position int
 	return nil
 }
 
-func upsertTopics(ctx context.Context, q *db.Queries, nodes []Node, parentID *int64, ids map[string]int64) error {
+// upsertTopics upserts nodes and their children. A node without a priority takes parentPriority.
+func upsertTopics(ctx context.Context, q *db.Queries, nodes []Node, parentID *int64, parentPriority int, ids map[string]int64) error {
 	for _, n := range nodes {
 		id, err := q.UpsertTopic(ctx, db.UpsertTopicParams{
 			Slug:        n.Slug,
@@ -300,7 +326,11 @@ func upsertTopics(ctx context.Context, q *db.Queries, nodes []Node, parentID *in
 			return fmt.Errorf("upsert topic %q: %w", n.Slug, err)
 		}
 		ids[n.Slug] = id
-		if err := upsertTopics(ctx, q, n.Children, &id, ids); err != nil {
+		priority := cmp.Or(n.Priority, parentPriority)
+		if err := q.SetTopicPriority(ctx, db.SetTopicPriorityParams{TopicID: id, Priority: int16(priority)}); err != nil { //nolint:gosec // validated to 1..5
+			return fmt.Errorf("set priority of topic %q: %w", n.Slug, err)
+		}
+		if err := upsertTopics(ctx, q, n.Children, &id, priority, ids); err != nil {
 			return err
 		}
 	}

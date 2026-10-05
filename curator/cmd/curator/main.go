@@ -18,8 +18,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/saniuzzaman-robin/changeloom/curator/internal/ai"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/catalog"
-	"github.com/saniuzzaman-robin/changeloom/curator/internal/claude"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/config"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/fetch"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/migrate"
@@ -31,12 +31,6 @@ import (
 
 const connectTimeout = 10 * time.Second
 
-// Unattended runs start at login, before Docker has brought Postgres up, so `run` retries the local connection.
-const (
-	localConnectWait  = 2 * time.Minute
-	localConnectRetry = 5 * time.Second
-)
-
 const usage = `usage: curator <command> [flags]
 
 commands:
@@ -44,9 +38,11 @@ commands:
                                    --remote applies only the backend migrations to the hosted DB
                                    of ENV (staging, the default, or prod): REMOTE_DATABASE_URL_<ENV>
   seed                             load the profession and topic catalog (seed/catalog/) into the local DB
-  fetch                            fetch new stories with Claude into the local DB
-  backfill [--max-calls N]         fill topics that have fewer than CURATOR_BACKFILL_TARGET recent
-                                   stories with Claude (default N: CURATOR_BACKFILL_CALLS_PER_RUN)
+  fetch [--all]                    fetch new stories with Claude into the local DB; --all repeats
+                                   until every due topic has been fetched
+  backfill [--max-calls N] [--all] fill topics that have fewer than CURATOR_BACKFILL_TARGET recent
+                                   stories with Claude (default N: CURATOR_BACKFILL_CALLS_PER_RUN);
+                                   --all repeats until no topic is short
   requests pull [--env ENV]        copy pending topic requests and follower counts from the hosted
                                    DB of ENV (staging, the default, or prod)
   requests group [--dry-run]       turn pending requests into topics with Claude
@@ -54,10 +50,10 @@ commands:
                                    (staging, the default, or prod), then ask its api to notify
   prune [--env ENV]                delete old and unseen stories nobody saved from the hosted DB of
                                    ENV (staging, the default, or prod)
-  run [--if-due]                   requests pull, requests group, fetch, backfill, then sync and
-                                   (weekly) prune, for each env in CURATOR_RUN_ENVS (default prod);
-                                   --if-due skips the run when the last successful fetch was less
-                                   than CURATOR_RUN_MIN_GAP_HOURS ago
+  run [--full]                     requests pull, requests group, fetch, backfill, then sync and
+                                   (daily) prune, for each env in CURATOR_RUN_ENVS (default prod);
+                                   --full is the one-shot version: fetch and backfill repeat until
+                                   every topic is covered, and prune always runs
 
 Configuration comes from the environment; see curator/.env.example.
 `
@@ -73,9 +69,6 @@ func main() {
 		os.Exit(2)
 	case err != nil:
 		slog.Error("curator failed", "err", err)
-		if len(os.Args) > 1 && os.Args[1] == "run" {
-			alertFailure(err)
-		}
 		os.Exit(1)
 	}
 }
@@ -115,20 +108,23 @@ func run(args []string) error {
 	case "requests":
 		return runRequests(ctx, cfg, rest)
 	case "fetch":
-		if err := parse(flag.NewFlagSet("fetch", flag.ContinueOnError), rest); err != nil {
+		fs := flag.NewFlagSet("fetch", flag.ContinueOnError)
+		all := fs.Bool("all", false, "repeat until every due topic has been fetched")
+		if err := parse(fs, rest); err != nil {
 			return err
 		}
-		return runFetch(ctx, cfg)
+		return runFetch(ctx, cfg, *all)
 	case "backfill":
 		fs := flag.NewFlagSet("backfill", flag.ContinueOnError)
-		maxCalls := fs.Int("max-calls", cfg.BackfillCallsPerRun, "most Claude calls to make")
+		maxCalls := fs.Int("max-calls", cfg.BackfillCallsPerRun, "most Claude calls to make per pass")
+		all := fs.Bool("all", false, "repeat passes until no topic is short")
 		if err := parse(fs, rest); err != nil {
 			return err
 		}
 		if *maxCalls < 1 {
 			return fmt.Errorf("%w: backfill --max-calls must be at least 1", errUsage)
 		}
-		return runBackfill(ctx, cfg, *maxCalls)
+		return runBackfill(ctx, cfg, *maxCalls, *all)
 	case "prune":
 		fs := flag.NewFlagSet("prune", flag.ContinueOnError)
 		envName := fs.String("env", string(config.EnvStaging), "hosted environment to prune: staging or prod")
@@ -153,11 +149,11 @@ func run(args []string) error {
 		return runSync(ctx, cfg, env)
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ContinueOnError)
-		ifDue := fs.Bool("if-due", false, "skip the run when the last successful fetch was under CURATOR_RUN_MIN_GAP_HOURS ago")
+		full := fs.Bool("full", false, "repeat fetch and backfill until every topic is covered, and always prune")
 		if err := parse(fs, rest); err != nil {
 			return err
 		}
-		return runAll(ctx, cfg, *ifDue)
+		return runAll(ctx, cfg, *full)
 	default:
 		return fmt.Errorf("%w: unknown command %q", errUsage, cmd)
 	}
@@ -266,7 +262,11 @@ func pullRequests(ctx context.Context, cfg config.Config, local *pgxpool.Pool, e
 }
 
 func runGroup(ctx context.Context, cfg config.Config, local *pgxpool.Pool, dryRun bool) error {
-	res, err := requests.New(local, claude.New(cfg.Claude), cfg).Run(ctx, dryRun)
+	runner, err := ai.New(cfg)
+	if err != nil {
+		return err
+	}
+	res, err := requests.New(local, runner, cfg).Run(ctx, dryRun)
 	if res.Pending > 0 {
 		slog.InfoContext(ctx, "requests grouped", "requests", res.Pending, "new_topics", len(res.Plan.NewTopics),
 			"decisions", len(res.Plan.Decisions), "applied", res.Applied, "cost_usd", res.CostUSD, "account", res.Account)
@@ -284,30 +284,71 @@ func runGroup(ctx context.Context, cfg config.Config, local *pgxpool.Pool, dryRu
 	return nil
 }
 
-func runFetch(ctx context.Context, cfg config.Config) error {
+func runFetch(ctx context.Context, cfg config.Config, all bool) error {
 	pool, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
 
-	sum, err := fetch.New(pool, claude.New(cfg.Claude), cfg).Run(ctx)
-	slog.InfoContext(ctx, "fetch finished", "calls", sum.Calls, "failed", sum.Failed, "added", sum.Added,
-		"merged", sum.Merged, "rejected", sum.Rejected, "deferred_topics", len(sum.Deferred), "cost_usd", sum.CostUSD)
-	return err
+	runner, err := ai.New(cfg)
+	if err != nil {
+		return err
+	}
+	f := fetch.New(pool, runner, cfg)
+	var errs []error
+	for pass := 1; ; pass++ {
+		sum, err := f.Run(ctx)
+		slog.InfoContext(ctx, "fetch finished", "pass", pass, "calls", sum.Calls, "failed", sum.Failed, "added", sum.Added,
+			"merged", sum.Merged, "rejected", sum.Rejected, "deferred_topics", len(sum.Deferred), "cost_usd", sum.CostUSD)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		if !all || len(sum.Deferred) == 0 || noProgress(ctx, sum) {
+			break
+		}
+	}
+	return errors.Join(errs...)
 }
 
-func runBackfill(ctx context.Context, cfg config.Config, maxCalls int) error {
+func runBackfill(ctx context.Context, cfg config.Config, maxCalls int, all bool) error {
 	pool, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
 
-	sum, err := fetch.New(pool, claude.New(cfg.Claude), cfg).Backfill(ctx, maxCalls)
-	slog.InfoContext(ctx, "backfill finished", "calls", sum.Calls, "failed", sum.Failed, "added", sum.Added,
-		"merged", sum.Merged, "rejected", sum.Rejected, "cost_usd", sum.CostUSD)
-	return err
+	runner, err := ai.New(cfg)
+	if err != nil {
+		return err
+	}
+	f := fetch.New(pool, runner, cfg)
+	var errs []error
+	for pass := 1; ; pass++ {
+		sum, err := f.Backfill(ctx, maxCalls)
+		slog.InfoContext(ctx, "backfill finished", "pass", pass, "calls", sum.Calls, "failed", sum.Failed, "added", sum.Added,
+			"merged", sum.Merged, "rejected", sum.Rejected, "cost_usd", sum.CostUSD)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		if !all || sum.Calls == 0 || noProgress(ctx, sum) {
+			break
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// noProgress reports whether a repeating pass should stop: it was cancelled, or every call failed, so
+// another pass would plan the same topics again.
+func noProgress(ctx context.Context, sum fetch.Summary) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	if sum.Calls > 0 && sum.Failed == sum.Calls {
+		slog.WarnContext(ctx, "stopping: every call of the last pass failed")
+		return true
+	}
+	return false
 }
 
 func runPrune(ctx context.Context, cfg config.Config, env config.Env) error {
@@ -329,7 +370,7 @@ func pruneEnv(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env c
 
 	now := time.Now()
 	deleted, err := prune.Run(ctx, remote, prune.Settings{
-		MaxAge: cfg.PruneMaxAge, DealsMaxAge: cfg.DealsMaxAge, Grace: cfg.PruneGrace, MinViewers: cfg.PruneMinViews,
+		MaxAge: cfg.PruneMaxAge,
 	}, now)
 	slog.InfoContext(ctx, "pruned", "env", env, "deleted_stories", deleted)
 	if err != nil {
@@ -381,26 +422,16 @@ func syncEnv(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env co
 	return nil
 }
 
-// runAll is requests pull, requests group, fetch, backfill, then sync and a weekly prune. Pull,
+// runAll is requests pull, requests group, fetch, backfill, then sync and a prune. With full, fetch
+// and backfill repeat until every topic is covered and the prune is not skipped. Pull,
 // sync and prune run for each hosted env with a database URL. A failing step is logged and the run continues where that is safe, so a
 // failed fetch still pushes request decisions; the error returned lists every failed step.
-func runAll(ctx context.Context, cfg config.Config, ifDue bool) error {
-	local, err := openPoolWait(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL, localConnectWait)
+func runAll(ctx context.Context, cfg config.Config, full bool) error {
+	local, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
 	if err != nil {
 		return err
 	}
 	defer local.Close()
-
-	if ifDue {
-		var last *time.Time
-		if err := local.QueryRow(ctx, `SELECT max(started_at) FROM fetch_runs WHERE status = 'succeeded'`).Scan(&last); err != nil {
-			return fmt.Errorf("read the last successful fetch: %w", err)
-		}
-		if last != nil && time.Since(*last) < cfg.RunMinGap {
-			slog.InfoContext(ctx, "skipping run: last successful fetch is recent", "last", *last, "min_gap", cfg.RunMinGap)
-			return nil
-		}
-	}
 
 	var envs []config.Env
 	for _, env := range cfg.RunEnvs {
@@ -428,32 +459,20 @@ func runAll(ctx context.Context, cfg config.Config, ifDue bool) error {
 		step("requests pull "+string(env), func() error { return pullRequests(ctx, cfg, local, env) })
 	}
 	step("requests group", func() error { return runGroup(ctx, cfg, local, false) })
-	step("fetch", func() error { return runFetch(ctx, cfg) })
-	step("backfill", func() error { return runBackfill(ctx, cfg, cfg.BackfillCallsPerRun) })
+	step("fetch", func() error { return runFetch(ctx, cfg, full) })
+	step("backfill", func() error { return runBackfill(ctx, cfg, cfg.BackfillCallsPerRun, full) })
 	for _, env := range envs {
 		step("sync "+string(env), func() error { return syncEnv(ctx, cfg, local, env) })
 	}
 	for _, env := range envs {
-		step("prune "+string(env), func() error { return pruneIfDue(ctx, cfg, local, env) })
+		step("prune "+string(env), func() error {
+			if full {
+				return pruneEnv(ctx, cfg, local, env)
+			}
+			return pruneIfDue(ctx, cfg, local, env)
+		})
 	}
 	return errors.Join(errs...)
-}
-
-// openPoolWait is openPool, retried every localConnectRetry until wait has passed. A missing URL fails at once.
-func openPoolWait(ctx context.Context, key, url string, wait time.Duration) (*pgxpool.Pool, error) {
-	deadline := time.Now().Add(wait)
-	for {
-		pool, err := openPool(ctx, key, url)
-		if err == nil || url == "" || time.Now().Add(localConnectRetry).After(deadline) {
-			return pool, err
-		}
-		slog.Warn("database not reachable yet, retrying", "key", key, "err", err)
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(localConnectRetry):
-		}
-	}
 }
 
 // openPool connects to the database in the env var key and checks it is reachable.

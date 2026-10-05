@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Platform splash: the mark weaves itself in on the dark bg; MainActivity animates it out. -->
+    <!-- Platform splash: the mark weaves itself in on the themed bg; MainActivity animates it out. -->
     <style name="Theme.Changeloom.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/changeloom_bg</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon_animated</item>
         <item name="windowSplashScreenAnimationDuration">900</item>
         <item name="postSplashScreenTheme">@style/Theme.Changeloom</item>
+        <item name="android:windowLightStatusBar">@bool/changeloom_light_bars</item>
+        <item name="android:windowLightNavigationBar">@bool/changeloom_light_bars</item>
     </style>
 </resources>

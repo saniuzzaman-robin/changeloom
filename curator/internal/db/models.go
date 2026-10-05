@@ -132,6 +132,11 @@ type TopicHint struct {
 	Url     string
 }
 
+type TopicPriority struct {
+	TopicID  int64
+	Priority int16
+}
+
 type TopicRelation struct {
 	TopicID   int64
 	RelatedID int64

@@ -93,16 +93,17 @@ fun KindPill(kind: String, modifier: Modifier = Modifier) {
 fun SeverityDot(severity: String?, modifier: Modifier = Modifier, dotSize: Dp = 8.dp) {
     if (severity == null) return
     val color = severityColor(severity)
+    // Kept as State and read only while drawing, so the pulse redraws the dot without recomposing the card.
     val pulse = if (severity == "critical") {
         val t = rememberInfiniteTransition(label = "ping")
-        t.animateFloat(0f, 1f, infiniteRepeatable(tween(1000, easing = LinearEasing), RepeatMode.Restart), label = "pingProgress").value
+        t.animateFloat(0f, 1f, infiniteRepeatable(tween(1000, easing = LinearEasing), RepeatMode.Restart), label = "pingProgress")
     } else {
         null
     }
     val description = stringResource(R.string.severity_label, severity)
     Canvas(modifier.size(dotSize * 2.4f).semantics { contentDescription = description }) {
         val r = dotSize.toPx() / 2
-        if (pulse != null) drawCircle(color.copy(alpha = 0.6f * (1 - pulse)), radius = r * (1 + 1.4f * pulse))
+        pulse?.value?.let { p -> drawCircle(color.copy(alpha = 0.6f * (1 - p)), radius = r * (1 + 1.4f * p)) }
         drawCircle(color, radius = r)
     }
 }

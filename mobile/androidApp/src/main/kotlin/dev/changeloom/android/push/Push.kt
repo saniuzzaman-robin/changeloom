@@ -100,6 +100,7 @@ class ChangeloomMessagingService : FirebaseMessagingService() {
     private val auth: AuthRepository by inject()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    @Suppress("OVERRIDE_DEPRECATION") // still the only token callback in firebase-messaging 25.x
     override fun onNewToken(token: String) {
         if (auth.currentUser.value == null) return // registered after sign-in instead
         scope.launch { registrar.register(token) }

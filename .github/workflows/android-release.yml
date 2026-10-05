@@ -2,8 +2,8 @@ name: Android release
 
 # Staging: on pushes to the staging branch that touch the app, build the signed staging release APK and send it
 # to Firebase App Distribution.
-# Prod: on a v<major>.<minor>.<patch> tag, after the production environment's reviewers approve,
-# build the signed prod AAB and upload it to Play's internal track.
+# Prod: on a release tag, after the production environment's reviewers approve, build the signed prod AAB and
+# upload it to Play: v1.2.3-alpha.4 to closed testing (the "alpha" track), v1.2.3 to production.
 # versionCode is this workflow's run number plus ANDROID_VERSION_CODE_OFFSET, so it only grows.
 # Setup (WIF, service accounts, GitHub environments): deploy/README.md, Continuous deployment.
 on:
@@ -62,6 +62,7 @@ jobs:
             echo "keyPassword=$(esc "$KEY_PASSWORD")"
           } > keystore.properties
       - name: Build
+        id: build
         env:
           API_BASE_URL: ${{ vars.ANDROID_API_BASE_URL }}
           VERSION_CODE_OFFSET: ${{ vars.ANDROID_VERSION_CODE_OFFSET }}
@@ -75,15 +76,19 @@ jobs:
             "-Pchangeloom.versionCode=$((GITHUB_RUN_NUMBER + ${VERSION_CODE_OFFSET:-0}))"
           )
           if [[ $FLAVOR == prod ]]; then
-            [[ $GITHUB_REF_NAME =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]] || { echo "release tags look like v1.2.3, got $GITHUB_REF_NAME"; exit 1; }
+            [[ $GITHUB_REF_NAME =~ ^v([0-9]+\.[0-9]+\.[0-9]+(-alpha\.[0-9]+)?)$ ]] \
+              || { echo "release tags look like v1.2.3 or v1.2.3-alpha.4, got $GITHUB_REF_NAME"; exit 1; }
             props+=("-Pchangeloom.versionName=${BASH_REMATCH[1]}")
+            if [[ -n ${BASH_REMATCH[2]} ]]; then track=alpha; else track=production; fi
+            echo "track=$track" >> "$GITHUB_OUTPUT"
             [[ -n $ADMOB_APP_ID && -n $ADMOB_NATIVE_AD_UNIT_ID ]] || { echo "Set ANDROID_ADMOB_APP_ID and ANDROID_ADMOB_NATIVE_AD_UNIT_ID on the production environment."; exit 1; }
             props+=("-Pchangeloom.prod.admobAppId=$ADMOB_APP_ID" "-Pchangeloom.prod.admobNativeAdUnitId=$ADMOB_NATIVE_AD_UNIT_ID")
             ./gradlew "${props[@]}" :androidApp:bundleProdRelease
           else
-            # Named after the last release: e.g. 1.2.3-staging.45+abc1234 (0.0.0 before the first release).
+            # Named after the last release tag: e.g. 1.2.3-staging.45+abc1234 (0.0.0 before the first release).
+            # versionsort.suffix puts v1.2.3-alpha.4 below v1.2.3.
             git fetch --quiet --force --tags origin
-            tags=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname)
+            tags=$(git -c versionsort.suffix=- tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname)
             last=${tags%%$'\n'*}
             version=${last#v}
             props+=("-Pchangeloom.versionName=${version:-0.0.0}" "-Pchangeloom.stagingBuild=$GITHUB_RUN_NUMBER+${GITHUB_SHA::7}")
@@ -130,13 +135,13 @@ jobs:
           call -X POST "$api/v1/$release:distribute" -H "Content-Type: application/json" \
             -d "$(jq -n --arg groups "$TESTER_GROUPS" '{groupAliases: ($groups | split(",") | map(gsub("^\\s+|\\s+$"; "")))}')" >/dev/null
           echo "Sent $(jq -r '.response.release.displayVersion + " (" + .response.release.buildVersion + ")"' <<<"$result") to $TESTER_GROUPS"
-      - name: Upload to Play (internal track)
+      - name: Upload to Play (closed testing or production)
         if: env.FLAVOR == 'prod'
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
           serviceAccountJson: ${{ steps.auth.outputs.credentials_file_path }}
           packageName: dev.changeloom.android
           releaseFiles: mobile/androidApp/build/outputs/bundle/prodRelease/androidApp-prod-release.aab
-          track: internal
+          track: ${{ steps.build.outputs.track }}
           # "draft" until the app's first release is out of draft in Play Console.
           status: ${{ vars.PLAY_RELEASE_STATUS || 'completed' }}

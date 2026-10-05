@@ -1,5 +1,6 @@
 - slug: clinical-guidelines
   name: "Clinical Guidelines"
+  priority: 2
   description: "Guidelines and evidence from major bodies."
   children:
     - {slug: clinical-guidelines/who, name: "WHO Guidelines"}
@@ -14,6 +15,7 @@
     - {slug: clinical-guidelines/screening, name: "Screening Programs"}
 - slug: drug-approvals-safety
   name: "Drug Approvals & Safety"
+  priority: 2
   description: "New drugs, recalls and warnings."
   children:
     - {slug: drug-approvals-safety/fda, name: "FDA Approvals"}
@@ -29,6 +31,7 @@
     - {slug: drug-approvals-safety/shortages, name: "Drug Shortages"}
 - slug: medical-specialties
   name: "Medical Specialties"
+  priority: 2
   description: "Updates across specialties."
   children:
     - {slug: medical-specialties/cardiology, name: "Cardiology"}
@@ -42,10 +45,11 @@
     - {slug: medical-specialties/dermatology, name: "Dermatology"}
     - {slug: medical-specialties/obgyn, name: "Obstetrics & Gynecology"}
     - {slug: medical-specialties/orthopedics, name: "Orthopedics"}
-    - {slug: medical-specialties/anesthesiology, name: "Anesthesiology"}
+    - {slug: medical-specialties/anesthesiology, name: "Anesthesiology", priority: 3}
     - {slug: medical-specialties/family-medicine, name: "Family Medicine"}
 - slug: medical-research
   name: "Medical Research"
+  priority: 2
   description: "Studies and journals."
   children:
     - {slug: medical-research/top-journals, name: "NEJM & Lancet"}
@@ -60,6 +64,7 @@
     - {slug: medical-research/aging, name: "Aging Research"}
 - slug: health-policy
   name: "Health Policy"
+  priority: 2
   description: "Regulation, funding and systems."
   children:
     - {slug: health-policy/us, name: "US Health Policy"}
@@ -73,6 +78,7 @@
     - {slug: health-policy/equity, name: "Health Equity"}
 - slug: medtech
   name: "Medical Technology"
+  priority: 3
   description: "Devices, AI and digital health."
   children:
     - {slug: medtech/devices, name: "Medical Devices"}
@@ -86,6 +92,7 @@
     - {slug: medtech/clearances, name: "FDA Device Clearances"}
 - slug: nursing-practice
   name: "Nursing Practice"
+  priority: 2
   description: "Bedside practice and specialties."
   children:
     - {slug: nursing-practice/critical-care, name: "Critical Care Nursing"}
@@ -99,6 +106,7 @@
     - {slug: nursing-practice/research, name: "Nursing Research"}
 - slug: patient-safety
   name: "Patient Safety & Quality"
+  priority: 3
   description: "Safety, infection control and quality."
   children:
     - {slug: patient-safety/infection-control, name: "Infection Control"}
@@ -111,6 +119,7 @@
     - {slug: patient-safety/burnout, name: "Burnout & Wellbeing"}
 - slug: mental-health-care
   name: "Mental Health Care"
+  priority: 3
   description: "Treatment approaches and services."
   children:
     - {slug: mental-health-care/depression-anxiety, name: "Depression & Anxiety"}
@@ -124,6 +133,7 @@
     - {slug: mental-health-care/crisis, name: "Crisis Services"}
 - slug: pharmacy-practice
   name: "Pharmacy Practice"
+  priority: 3
   description: "Dispensing, clinical pharmacy and business."
   children:
     - {slug: pharmacy-practice/dispensing, name: "Dispensing & Safety"}
@@ -136,6 +146,7 @@
     - {slug: pharmacy-practice/controlled, name: "Controlled Substances"}
 - slug: dentistry
   name: "Dentistry"
+  priority: 3
   description: "Techniques, materials and specialties."
   children:
     - {slug: dentistry/restorative, name: "Restorative Dentistry"}
@@ -150,6 +161,7 @@
     - {slug: dentistry/cosmetic, name: "Cosmetic Dentistry"}
 - slug: practice-management
   name: "Practice Management"
+  priority: 4
   description: "Running a clinic or practice."
   children:
     - {slug: practice-management/billing, name: "Billing & Coding"}
@@ -161,6 +173,7 @@
     - {slug: practice-management/insurance, name: "Insurance Contracts"}
 - slug: psychology-research
   name: "Psychology Research"
+  priority: 3
   description: "Findings in the field."
   children:
     - {slug: psychology-research/cognitive, name: "Cognitive Psychology"}
@@ -173,6 +186,7 @@
     - {slug: psychology-research/personality, name: "Personality Research"}
 - slug: rehab-sports-med
   name: "Rehab & Sports Medicine"
+  priority: 3
   description: "Injury and recovery."
   children:
     - {slug: rehab-sports-med/orthopedic, name: "Orthopedic Rehab"}
@@ -186,6 +200,7 @@
     - {slug: rehab-sports-med/geriatric, name: "Geriatric Rehab"}
 - slug: veterinary
   name: "Veterinary Medicine"
+  priority: 3
   description: "Companion and farm animals."
   children:
     - {slug: veterinary/small-animal, name: "Small Animal Medicine"}
@@ -199,6 +214,7 @@
     - {slug: veterinary/insurance, name: "Pet Insurance"}
 - slug: animal-science
   name: "Animal Science"
+  priority: 4
   description: "Welfare, breeding and conservation."
   children:
     - {slug: animal-science/welfare, name: "Animal Welfare"}

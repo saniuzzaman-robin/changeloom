@@ -14,8 +14,11 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -39,7 +42,12 @@ private object TokenAuth : AuthRepository {
 private class MemoryCache(var timeline: List<StorySummary> = emptyList()) : StoryCache {
     val stories = mutableMapOf<Long, Story>()
     var followed = emptyList<String>()
-    override suspend fun loadTimeline() = timeline
+    /** When set, [loadTimeline] waits for it, like a slow disk read. */
+    var timelineRead: CompletableDeferred<Unit>? = null
+    override suspend fun loadTimeline(): List<StorySummary> {
+        timelineRead?.await()
+        return timeline
+    }
     override suspend fun saveTimeline(items: List<StorySummary>) { timeline = items }
     override suspend fun loadStory(id: Long) = stories[id]
     override suspend fun saveStory(story: Story) { stories[story.id] = story }
@@ -76,6 +84,19 @@ class TimelineRepositoryTest {
         assertEquals(listOf(1L, 2L, 3L), s.items.map { it.id })
         assertEquals("c1", s.nextCursor)
         assertEquals(3, cache.timeline.size)
+    }
+
+    @Test
+    fun refreshIsRefreshingWhileReadingTheCache() = runTest {
+        val cache = MemoryCache().apply { timelineRead = CompletableDeferred() }
+        val repo = repo(cache) { respond(firstPage, headers = json) }
+        val job = launch { repo.refresh() }
+        runCurrent()
+        // An empty list that isn't refreshing reads as "no stories", so the flag must be set before the cache read.
+        assertTrue(repo.state.value.refreshing)
+        cache.timelineRead?.complete(Unit)
+        job.join()
+        assertFalse(repo.state.value.refreshing)
     }
 
     @Test

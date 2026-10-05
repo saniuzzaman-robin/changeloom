@@ -209,11 +209,16 @@ class TopicPickerViewModel(
                 val cached = cache.loadFollowed()
                 _state.update { if (it.followed.isEmpty()) it.copy(followed = cached) else it }
             }
+            // Nothing cached (a fresh sign-in): fetch the timeline alongside the account so the feed doesn't wait for it.
+            // Launched outside loadJob, so a retry can't cancel it mid-refresh.
+            if (_state.value.followed.isEmpty()) viewModelScope.launch { repo.refresh() }
             try {
                 val (loaded, me) = coroutineScope {
                     val loaded = async { catalog.tree() to catalog.professions() }
-                    val me = async { api.me() }
-                    loaded.await() to me.await()
+                    val me = api.me()
+                    // The account alone decides between the feed and onboarding; only the picker needs the catalog.
+                    _state.update { if (it.followed.isEmpty()) it.copy(followed = me.topics) else it }
+                    loaded.await() to me
                 }
                 val (tree, professions) = loaded
                 val known = professions.mapTo(mutableSetOf()) { it.slug }
@@ -321,7 +326,8 @@ class TimelineViewModel(
     val state: StateFlow<TimelineState> = repo.state
 
     init {
-        refresh()
+        // After a sign-in the topic picker has already started the first refresh.
+        if (!repo.state.value.refreshing) refresh()
         viewModelScope.launch { views.run(VIEW_FLUSH_INTERVAL_MS) }
     }
 
@@ -552,7 +558,10 @@ class ProfileViewModel(
         }
     }
 
-    /** Counts change whenever the user saves or reads a story, so the screen refreshes them each time it is shown. */
+    /**
+     * Counts change whenever the user saves or reads a story, so the screen refreshes them each time it is shown.
+     * The stats and the topic requests load side by side.
+     */
     fun refresh() {
         viewModelScope.launch {
             try {
@@ -565,6 +574,8 @@ class ProfileViewModel(
                 AppLog.failure(TAG_PROFILE, "Couldn't load stats", e)
                 _state.update { it.copy(error = strings.errorText(e, R.string.stats_load_failed)) }
             }
+        }
+        viewModelScope.launch {
             try {
                 val requests = api.topicRequests()
                 _state.update { it.copy(requests = requests) }
