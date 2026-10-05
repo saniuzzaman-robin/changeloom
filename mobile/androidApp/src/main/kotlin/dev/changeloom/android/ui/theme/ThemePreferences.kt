@@ -3,6 +3,7 @@ package dev.changeloom.android.ui.theme
 import android.app.UiModeManager
 import android.content.Context
 import android.os.Build
+import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,7 +15,7 @@ class ThemePreferences(context: Context) {
     val mode: StateFlow<ThemeMode> = _mode.asStateFlow()
 
     fun setMode(mode: ThemeMode) {
-        prefs.edit().putString(KEY_MODE, mode.name).apply()
+        prefs.edit { putString(KEY_MODE, mode.name) }
         _mode.value = mode
     }
 
