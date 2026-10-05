@@ -1,5 +1,6 @@
 - slug: structural-geotech
   name: "Structural & Geotechnical"
+  priority: 3
   description: "Structures and ground engineering."
   children:
     - {slug: structural-geotech/concrete-steel, name: "Concrete & Steel"}
@@ -13,6 +14,7 @@
     - {slug: structural-geotech/software, name: "Structural Software"}
 - slug: transport-infrastructure
   name: "Transport Infrastructure"
+  priority: 3
   description: "Roads, rail and airports."
   children:
     - {slug: transport-infrastructure/highways, name: "Highways"}
@@ -25,6 +27,7 @@
     - {slug: transport-infrastructure/ev-charging, name: "EV Charging Infrastructure"}
 - slug: water-environment
   name: "Water & Environmental Engineering"
+  priority: 4
   description: "Water systems and resilience."
   children:
     - {slug: water-environment/treatment, name: "Water Treatment"}
@@ -37,6 +40,7 @@
     - {slug: water-environment/resilience, name: "Climate Resilience"}
 - slug: construction-tech
   name: "Construction Technology"
+  priority: 3
   description: "Methods and digital tools."
   children:
     - {slug: construction-tech/bim, name: "BIM"}
@@ -49,6 +53,7 @@
     - {slug: construction-tech/safety-tech, name: "Site Safety Tech"}
 - slug: engineering-standards
   name: "Standards & Codes"
+  priority: 4
   description: "Codes, safety and professional practice."
   children:
     - {slug: engineering-standards/building-codes, name: "Building Codes"}
@@ -60,6 +65,7 @@
     - {slug: engineering-standards/codes, name: "Eurocodes & ASCE"}
 - slug: mech-design
   name: "Mechanical Design"
+  priority: 3
   description: "Design, simulation and analysis."
   children:
     - {slug: mech-design/cad, name: "CAD & SolidWorks"}
@@ -72,6 +78,7 @@
     - {slug: mech-design/generative, name: "Generative Design"}
 - slug: manufacturing-tech
   name: "Manufacturing Technology"
+  priority: 3
   description: "Production and Industry 4.0."
   children:
     - {slug: manufacturing-tech/cnc, name: "CNC & Machining"}
@@ -85,6 +92,7 @@
     - {slug: manufacturing-tech/smart-factories, name: "Smart Factories"}
 - slug: robotics-automation
   name: "Robotics & Automation"
+  priority: 2
   description: "Robots, PLCs and control."
   children:
     - {slug: robotics-automation/industrial, name: "Industrial Robots"}
@@ -98,6 +106,7 @@
     - {slug: robotics-automation/warehouse, name: "Warehouse Automation"}
 - slug: energy-systems
   name: "Energy Systems"
+  priority: 3
   description: "Thermal, power and efficiency."
   children:
     - {slug: energy-systems/hvac, name: "HVAC & Refrigeration"}
@@ -110,6 +119,7 @@
     - {slug: energy-systems/nuclear, name: "Nuclear Plants"}
 - slug: power-systems
   name: "Power Systems"
+  priority: 3
   description: "Grid, generation and protection."
   children:
     - {slug: power-systems/smart-grid, name: "Smart Grid"}
@@ -123,6 +133,7 @@
     - {slug: power-systems/utilities, name: "Electric Utilities"}
 - slug: electronics-embedded
   name: "Electronics & Embedded"
+  priority: 3
   description: "Circuits, firmware and IoT."
   children:
     - {slug: electronics-embedded/maker, name: "Arduino & Raspberry Pi"}
@@ -132,11 +143,12 @@
     - {slug: electronics-embedded/iot, name: "IoT"}
     - {slug: electronics-embedded/sensors, name: "Sensors"}
     - {slug: electronics-embedded/fpgas, name: "FPGAs"}
-    - {slug: electronics-embedded/analog, name: "Analog Design"}
+    - {slug: electronics-embedded/analog, name: "Analog Design", priority: 4}
     - {slug: electronics-embedded/wireless, name: "Wireless Protocols"}
-    - {slug: electronics-embedded/embedded-rust, name: "Embedded Rust"}
+    - {slug: electronics-embedded/embedded-rust, name: "Embedded Rust", priority: 4}
 - slug: semiconductors-industry
   name: "Semiconductors"
+  priority: 2
   description: "Chips and fabs."
   children:
     - {slug: semiconductors-industry/foundries, name: "TSMC & Foundries"}
@@ -149,6 +161,7 @@
     - {slug: semiconductors-industry/packaging, name: "Packaging"}
 - slug: architecture-design
   name: "Architecture & Design"
+  priority: 3
   description: "Design practice and trends."
   children:
     - {slug: architecture-design/residential, name: "Residential Design"}
@@ -161,6 +174,7 @@
     - {slug: architecture-design/software, name: "Architecture Software"}
 - slug: urban-planning
   name: "Urban Planning"
+  priority: 3
   description: "Cities and land use."
   children:
     - {slug: urban-planning/zoning, name: "Zoning"}
@@ -173,6 +187,7 @@
     - {slug: urban-planning/megaprojects, name: "Mega-Projects"}
 - slug: sustainable-building
   name: "Sustainable Building"
+  priority: 4
   description: "Green design and performance."
   children:
     - {slug: sustainable-building/certifications, name: "LEED & BREEAM"}
@@ -184,6 +199,7 @@
     - {slug: sustainable-building/comfort, name: "Daylight & Comfort"}
 - slug: aerospace
   name: "Aerospace"
+  priority: 3
   description: "Aircraft and propulsion."
   children:
     - {slug: aerospace/commercial, name: "Commercial Aircraft"}

@@ -1,77 +1,82 @@
 - slug: frontend
   name: "Frontend"
+  priority: 1
   description: "Browsers, UI frameworks and web platform changes."
   children:
     - {slug: frontend/react, name: "React"}
     - {slug: frontend/nextjs, name: "Next.js"}
-    - {slug: frontend/angular, name: "Angular"}
-    - {slug: frontend/vue, name: "Vue"}
-    - {slug: frontend/svelte, name: "Svelte"}
-    - {slug: frontend/solid, name: "Solid"}
-    - {slug: frontend/astro, name: "Astro"}
-    - {slug: frontend/remix, name: "Remix"}
+    - {slug: frontend/angular, name: "Angular", priority: 2}
+    - {slug: frontend/vue, name: "Vue", priority: 2}
+    - {slug: frontend/svelte, name: "Svelte", priority: 2}
+    - {slug: frontend/solid, name: "Solid", priority: 3}
+    - {slug: frontend/astro, name: "Astro", priority: 3}
+    - {slug: frontend/remix, name: "Remix", priority: 3}
     - slug: frontend/typescript
       name: "TypeScript"
       hints: [https://devblogs.microsoft.com/typescript/feed/]
     - {slug: frontend/css, name: "CSS & Layout"}
-    - {slug: frontend/tailwind-css, name: "Tailwind CSS"}
-    - {slug: frontend/web-components, name: "Web Components"}
+    - {slug: frontend/tailwind-css, name: "Tailwind CSS", priority: 2}
+    - {slug: frontend/web-components, name: "Web Components", priority: 3}
     - {slug: frontend/browsers, name: "Browsers"}
-    - {slug: frontend/web-performance, name: "Web Performance"}
-    - {slug: frontend/bundlers, name: "Bundlers & Build Tools"}
-    - {slug: frontend/state-management, name: "State Management"}
-    - {slug: frontend/frontend-testing, name: "Testing Frontend"}
-    - {slug: frontend/webassembly, name: "WebAssembly"}
-    - {slug: frontend/pwas, name: "PWAs"}
+    - {slug: frontend/web-performance, name: "Web Performance", priority: 2}
+    - {slug: frontend/bundlers, name: "Bundlers & Build Tools", priority: 2}
+    - {slug: frontend/state-management, name: "State Management", priority: 3}
+    - {slug: frontend/frontend-testing, name: "Testing Frontend", priority: 2}
+    - {slug: frontend/webassembly, name: "WebAssembly", priority: 3}
+    - {slug: frontend/pwas, name: "PWAs", priority: 3}
 - slug: backend
   name: "Backend"
+  priority: 1
   description: "Server frameworks, APIs and runtimes."
   children:
     - slug: backend/nodejs
       name: "Node.js"
       hints: [https://nodejs.org/en/feed/blog.xml]
-    - {slug: backend/deno-bun, name: "Deno & Bun"}
-    - {slug: backend/django, name: "Django"}
-    - {slug: backend/fastapi, name: "FastAPI"}
-    - {slug: backend/flask, name: "Flask"}
-    - {slug: backend/spring-boot, name: "Spring Boot"}
-    - {slug: backend/rails, name: "Ruby on Rails"}
-    - {slug: backend/laravel, name: "Laravel"}
-    - {slug: backend/aspnet, name: "ASP.NET"}
-    - {slug: backend/express-nestjs, name: "Express & NestJS"}
-    - {slug: backend/graphql, name: "GraphQL"}
-    - {slug: backend/grpc, name: "gRPC"}
-    - {slug: backend/rest-openapi, name: "REST & OpenAPI"}
-    - {slug: backend/microservices, name: "Microservices"}
-    - {slug: backend/queues, name: "Message Queues"}
-    - {slug: backend/caching, name: "Caching"}
-    - {slug: backend/serverless, name: "Serverless"}
+    - {slug: backend/deno-bun, name: "Deno & Bun", priority: 2}
+    - {slug: backend/django, name: "Django", priority: 2}
+    - {slug: backend/fastapi, name: "FastAPI", priority: 2}
+    - {slug: backend/flask, name: "Flask", priority: 3}
+    - {slug: backend/spring-boot, name: "Spring Boot", priority: 2}
+    - {slug: backend/rails, name: "Ruby on Rails", priority: 3}
+    - {slug: backend/laravel, name: "Laravel", priority: 3}
+    - {slug: backend/aspnet, name: "ASP.NET", priority: 2}
+    - {slug: backend/express-nestjs, name: "Express & NestJS", priority: 2}
+    - {slug: backend/graphql, name: "GraphQL", priority: 2}
+    - {slug: backend/grpc, name: "gRPC", priority: 3}
+    - {slug: backend/rest-openapi, name: "REST & OpenAPI", priority: 2}
+    - {slug: backend/microservices, name: "Microservices", priority: 2}
+    - {slug: backend/queues, name: "Message Queues", priority: 3}
+    - {slug: backend/caching, name: "Caching", priority: 3}
+    - {slug: backend/serverless, name: "Serverless", priority: 2}
 - slug: mobile
   name: "Mobile"
+  priority: 2
   description: "Mobile platforms, SDKs and cross-platform frameworks."
   children:
     - slug: mobile/android
       name: "Android"
+      priority: 1
       hints: [https://android-developers.googleblog.com/feeds/posts/default]
-    - {slug: mobile/ios, name: "iOS"}
+    - {slug: mobile/ios, name: "iOS", priority: 1}
     - {slug: mobile/jetpack-compose, name: "Jetpack Compose"}
     - {slug: mobile/swiftui, name: "SwiftUI"}
     - {slug: mobile/flutter, name: "Flutter"}
     - {slug: mobile/react-native, name: "React Native"}
     - {slug: mobile/kmp, name: "Kotlin Multiplatform"}
-    - {slug: mobile/maui, name: ".NET MAUI"}
+    - {slug: mobile/maui, name: ".NET MAUI", priority: 3}
     - {slug: mobile/store-policy, name: "App Store & Play Policy"}
     - {slug: mobile/mobile-testing, name: "Mobile Testing"}
     - {slug: mobile/mobile-performance, name: "Mobile Performance"}
     - {slug: mobile/wearables, name: "Wearables"}
 - slug: languages
   name: "Programming Languages"
+  priority: 2
   description: "Language releases, proposals and toolchains."
   children:
     - slug: languages/go
       name: "Go"
       hints: [https://go.dev/blog/feed.atom]
-    - {slug: languages/python, name: "Python"}
+    - {slug: languages/python, name: "Python", priority: 1}
     - {slug: languages/javascript, name: "JavaScript"}
     - slug: languages/typescript
       name: "TypeScript"
@@ -89,15 +94,16 @@
     - {slug: languages/c, name: "C"}
     - {slug: languages/php, name: "PHP"}
     - {slug: languages/ruby, name: "Ruby"}
-    - {slug: languages/scala, name: "Scala"}
-    - {slug: languages/elixir, name: "Elixir"}
-    - {slug: languages/dart, name: "Dart"}
-    - {slug: languages/zig, name: "Zig"}
-    - {slug: languages/haskell, name: "Haskell"}
+    - {slug: languages/scala, name: "Scala", priority: 3}
+    - {slug: languages/elixir, name: "Elixir", priority: 3}
+    - {slug: languages/dart, name: "Dart", priority: 3}
+    - {slug: languages/zig, name: "Zig", priority: 3}
+    - {slug: languages/haskell, name: "Haskell", priority: 3}
     - {slug: languages/sql, name: "SQL"}
     - {slug: languages/shell, name: "Shell & Bash"}
 - slug: devops-cloud
   name: "DevOps & Cloud"
+  priority: 1
   description: "Cloud providers, containers and delivery pipelines."
   children:
     - {slug: devops-cloud/aws, name: "AWS"}
@@ -107,17 +113,18 @@
       name: "Kubernetes"
       hints: [https://kubernetes.io/feed.xml]
     - {slug: devops-cloud/docker, name: "Docker"}
-    - {slug: devops-cloud/terraform, name: "Terraform & IaC"}
-    - {slug: devops-cloud/ci-cd, name: "CI/CD"}
-    - {slug: devops-cloud/github-actions, name: "GitHub Actions"}
-    - {slug: devops-cloud/gitops, name: "Helm & GitOps"}
-    - {slug: devops-cloud/service-mesh, name: "Service Mesh"}
-    - {slug: devops-cloud/edge, name: "Cloudflare & Edge"}
-    - {slug: devops-cloud/platform-engineering, name: "Platform Engineering"}
-    - {slug: devops-cloud/finops, name: "FinOps"}
-    - {slug: devops-cloud/serverless-platforms, name: "Serverless Platforms"}
+    - {slug: devops-cloud/terraform, name: "Terraform & IaC", priority: 2}
+    - {slug: devops-cloud/ci-cd, name: "CI/CD", priority: 2}
+    - {slug: devops-cloud/github-actions, name: "GitHub Actions", priority: 2}
+    - {slug: devops-cloud/gitops, name: "Helm & GitOps", priority: 3}
+    - {slug: devops-cloud/service-mesh, name: "Service Mesh", priority: 3}
+    - {slug: devops-cloud/edge, name: "Cloudflare & Edge", priority: 3}
+    - {slug: devops-cloud/platform-engineering, name: "Platform Engineering", priority: 2}
+    - {slug: devops-cloud/finops, name: "FinOps", priority: 3}
+    - {slug: devops-cloud/serverless-platforms, name: "Serverless Platforms", priority: 2}
 - slug: databases
   name: "Databases"
+  priority: 2
   description: "Database engines, drivers and managed data services."
   children:
     - {slug: databases/postgresql, name: "PostgreSQL"}
@@ -126,14 +133,15 @@
     - {slug: databases/mongodb, name: "MongoDB"}
     - {slug: databases/sqlite, name: "SQLite"}
     - {slug: databases/search-engines, name: "Elasticsearch & OpenSearch"}
-    - {slug: databases/nosql-wide, name: "Cassandra & DynamoDB"}
-    - {slug: databases/clickhouse, name: "ClickHouse"}
+    - {slug: databases/nosql-wide, name: "Cassandra & DynamoDB", priority: 3}
+    - {slug: databases/clickhouse, name: "ClickHouse", priority: 3}
     - {slug: databases/vector-dbs, name: "Vector Databases"}
     - {slug: databases/warehouses, name: "Data Warehouses"}
     - {slug: databases/orms, name: "ORMs & Migrations"}
     - {slug: databases/database-performance, name: "Database Performance"}
 - slug: devtools
   name: "Developer Tools"
+  priority: 2
   description: "Editors, version control and developer productivity."
   children:
     - {slug: devtools/github, name: "GitHub"}
@@ -142,7 +150,7 @@
     - {slug: devtools/vscode, name: "VS Code"}
     - {slug: devtools/jetbrains, name: "JetBrains IDEs"}
     - {slug: devtools/terminal, name: "Neovim & Terminal"}
-    - {slug: devtools/ai-coding, name: "AI Coding Assistants"}
+    - {slug: devtools/ai-coding, name: "AI Coding Assistants", priority: 1}
     - {slug: devtools/package-managers, name: "Package Managers"}
     - {slug: devtools/monorepos, name: "Monorepos"}
     - {slug: devtools/code-review, name: "Code Review"}
@@ -150,6 +158,7 @@
     - {slug: devtools/api-tooling, name: "API Tooling"}
 - slug: security
   name: "Security"
+  priority: 1
   description: "Vulnerabilities, advisories and security incidents."
   children:
     - slug: security/advisories
@@ -159,34 +168,36 @@
     - {slug: security/incidents, name: "Incidents & Breaches"}
     - {slug: security/ransomware, name: "Ransomware"}
     - {slug: security/zero-days, name: "Zero-Days"}
-    - {slug: security/cloud-security, name: "Cloud Security"}
-    - {slug: security/identity, name: "Identity & Auth"}
-    - {slug: security/cryptography, name: "Cryptography"}
-    - {slug: security/network-security, name: "Network Security"}
-    - {slug: security/mobile-security, name: "Mobile Security"}
-    - {slug: security/bug-bounties, name: "Bug Bounties"}
+    - {slug: security/cloud-security, name: "Cloud Security", priority: 2}
+    - {slug: security/identity, name: "Identity & Auth", priority: 2}
+    - {slug: security/cryptography, name: "Cryptography", priority: 3}
+    - {slug: security/network-security, name: "Network Security", priority: 2}
+    - {slug: security/mobile-security, name: "Mobile Security", priority: 2}
+    - {slug: security/bug-bounties, name: "Bug Bounties", priority: 3}
 - slug: ai-ml
   name: "AI & ML"
+  priority: 1
   description: "Model releases, AI APIs and ML frameworks."
   children:
     - {slug: ai-ml/models, name: "Models & APIs"}
     - {slug: ai-ml/llms, name: "LLMs"}
     - {slug: ai-ml/open-models, name: "Open-Weight Models"}
     - {slug: ai-ml/agents, name: "Agents & MCP"}
-    - {slug: ai-ml/rag, name: "RAG & Embeddings"}
-    - {slug: ai-ml/prompt-engineering, name: "Prompt Engineering"}
-    - {slug: ai-ml/frameworks, name: "ML Frameworks"}
-    - {slug: ai-ml/pytorch, name: "PyTorch"}
-    - {slug: ai-ml/computer-vision, name: "Computer Vision"}
-    - {slug: ai-ml/speech, name: "Speech & Audio AI"}
+    - {slug: ai-ml/rag, name: "RAG & Embeddings", priority: 2}
+    - {slug: ai-ml/prompt-engineering, name: "Prompt Engineering", priority: 2}
+    - {slug: ai-ml/frameworks, name: "ML Frameworks", priority: 2}
+    - {slug: ai-ml/pytorch, name: "PyTorch", priority: 2}
+    - {slug: ai-ml/computer-vision, name: "Computer Vision", priority: 2}
+    - {slug: ai-ml/speech, name: "Speech & Audio AI", priority: 2}
     - {slug: ai-ml/gen-media, name: "Generative Images & Video"}
-    - {slug: ai-ml/safety, name: "AI Safety & Alignment"}
+    - {slug: ai-ml/safety, name: "AI Safety & Alignment", priority: 2}
     - {slug: ai-ml/ai-regulation, name: "AI Regulation"}
-    - {slug: ai-ml/evals, name: "Evaluations & Benchmarks"}
-    - {slug: ai-ml/fine-tuning, name: "Fine-Tuning"}
-    - {slug: ai-ml/on-device, name: "On-Device AI"}
+    - {slug: ai-ml/evals, name: "Evaluations & Benchmarks", priority: 2}
+    - {slug: ai-ml/fine-tuning, name: "Fine-Tuning", priority: 2}
+    - {slug: ai-ml/on-device, name: "On-Device AI", priority: 2}
 - slug: data-analytics
   name: "Data & Analytics"
+  priority: 2
   description: "Analysis, statistics and BI tooling."
   children:
     - {slug: data-analytics/dataframes, name: "Pandas & Polars"}
@@ -201,6 +212,7 @@
     - {slug: data-analytics/spreadsheets, name: "Excel & Sheets"}
 - slug: data-engineering
   name: "Data Engineering"
+  priority: 2
   description: "Pipelines, streaming and data platforms."
   children:
     - {slug: data-engineering/spark, name: "Apache Spark"}
@@ -213,14 +225,15 @@
     - {slug: data-engineering/databricks, name: "Databricks"}
     - {slug: data-engineering/data-quality, name: "Data Quality"}
     - {slug: data-engineering/governance, name: "Data Governance"}
-    - {slug: data-engineering/feature-stores, name: "Feature Stores"}
+    - {slug: data-engineering/feature-stores, name: "Feature Stores", priority: 3}
 - slug: gpu-hardware
   name: "AI Hardware"
+  priority: 2
   description: "GPUs, accelerators and inference infrastructure."
   children:
-    - {slug: gpu-hardware/nvidia, name: "NVIDIA"}
+    - {slug: gpu-hardware/nvidia, name: "NVIDIA", priority: 1}
     - {slug: gpu-hardware/amd, name: "AMD Instinct"}
-    - {slug: gpu-hardware/tpus, name: "TPUs"}
+    - {slug: gpu-hardware/tpus, name: "TPUs", priority: 3}
     - {slug: gpu-hardware/cuda, name: "CUDA"}
     - {slug: gpu-hardware/inference, name: "Inference Serving"}
     - {slug: gpu-hardware/quantization, name: "Quantization"}
@@ -228,6 +241,7 @@
     - {slug: gpu-hardware/chips, name: "AI Chips & Supply"}
 - slug: appsec
   name: "Application Security"
+  priority: 2
   description: "Secure coding, testing and web vulnerabilities."
   children:
     - {slug: appsec/owasp, name: "OWASP"}
@@ -241,6 +255,7 @@
     - {slug: appsec/browser-security, name: "Browser Security"}
 - slug: threat-intel
   name: "Threat Intelligence"
+  priority: 2
   description: "Threat actors, campaigns and detection."
   children:
     - {slug: threat-intel/apt, name: "APT Groups"}
@@ -253,6 +268,7 @@
     - {slug: threat-intel/dark-web, name: "Dark Web"}
 - slug: compliance-privacy
   name: "Compliance & Privacy"
+  priority: 3
   description: "Security standards, privacy law and audits."
   children:
     - {slug: compliance-privacy/gdpr, name: "GDPR"}
@@ -265,12 +281,13 @@
     - {slug: compliance-privacy/risk, name: "Risk Management"}
 - slug: sysadmin
   name: "Systems Administration"
+  priority: 3
   description: "Servers, operating systems and endpoint management."
   children:
-    - {slug: sysadmin/linux, name: "Linux"}
+    - {slug: sysadmin/linux, name: "Linux", priority: 2}
     - {slug: sysadmin/windows-server, name: "Windows Server"}
-    - {slug: sysadmin/macos-mgmt, name: "macOS Management"}
-    - {slug: sysadmin/directory, name: "Active Directory & Entra"}
+    - {slug: sysadmin/macos-mgmt, name: "macOS Management", priority: 4}
+    - {slug: sysadmin/directory, name: "Active Directory & Entra", priority: 4}
     - {slug: sysadmin/virtualization, name: "Virtualization"}
     - {slug: sysadmin/backup, name: "Backup & Recovery"}
     - {slug: sysadmin/m365, name: "Microsoft 365"}
@@ -278,19 +295,21 @@
     - {slug: sysadmin/automation, name: "Bash & PowerShell Automation"}
 - slug: networking
   name: "Networking"
+  priority: 3
   description: "Network protocols, hardware and connectivity."
   children:
     - {slug: networking/cisco, name: "Cisco"}
     - {slug: networking/wifi, name: "Wi-Fi"}
     - {slug: networking/5g, name: "5G & Telecom"}
     - {slug: networking/dns, name: "DNS"}
-    - {slug: networking/bgp, name: "BGP & Internet Routing"}
+    - {slug: networking/bgp, name: "BGP & Internet Routing", priority: 4}
     - {slug: networking/sdwan, name: "SD-WAN & SASE"}
-    - {slug: networking/quic, name: "HTTP/3 & QUIC"}
+    - {slug: networking/quic, name: "HTTP/3 & QUIC", priority: 4}
     - {slug: networking/load-balancers, name: "Load Balancers"}
     - {slug: networking/vpn, name: "VPN & Zero Trust Access"}
 - slug: observability
   name: "Observability"
+  priority: 3
   description: "Monitoring, logging, tracing and reliability."
   children:
     - {slug: observability/prometheus-grafana, name: "Prometheus & Grafana"}
@@ -304,6 +323,7 @@
     - {slug: observability/cost, name: "Cost Monitoring"}
 - slug: product-craft
   name: "Product Management"
+  priority: 2
   description: "Strategy, discovery and delivery."
   children:
     - {slug: product-craft/strategy, name: "Product Strategy"}
@@ -318,6 +338,7 @@
     - {slug: product-craft/stakeholders, name: "Stakeholder Communication"}
 - slug: product-analytics
   name: "Product Analytics"
+  priority: 3
   description: "Metrics, experimentation and instrumentation."
   children:
     - {slug: product-analytics/metrics, name: "Product Metrics"}
@@ -329,19 +350,21 @@
     - {slug: product-analytics/privacy-analytics, name: "Privacy-Safe Analytics"}
 - slug: startups
   name: "Startups"
+  priority: 1
   description: "Funding, launches and building companies."
   children:
     - {slug: startups/vc, name: "Venture Capital"}
-    - {slug: startups/seed, name: "Seed & Pre-Seed"}
-    - {slug: startups/ycombinator, name: "Y Combinator"}
-    - {slug: startups/indie, name: "Indie Hacking"}
-    - {slug: startups/saas-metrics, name: "SaaS Metrics"}
+    - {slug: startups/seed, name: "Seed & Pre-Seed", priority: 2}
+    - {slug: startups/ycombinator, name: "Y Combinator", priority: 2}
+    - {slug: startups/indie, name: "Indie Hacking", priority: 2}
+    - {slug: startups/saas-metrics, name: "SaaS Metrics", priority: 3}
     - {slug: startups/acquisitions, name: "Acquisitions"}
-    - {slug: startups/ipos, name: "IPOs"}
+    - {slug: startups/ipos, name: "IPOs", priority: 2}
     - {slug: startups/layoffs, name: "Startup Layoffs"}
-    - {slug: startups/founder-stories, name: "Founder Stories"}
+    - {slug: startups/founder-stories, name: "Founder Stories", priority: 2}
 - slug: ux-design
   name: "UX & Interaction Design"
+  priority: 2
   description: "Usability, research and interaction patterns."
   children:
     - {slug: ux-design/research, name: "UX Research"}
@@ -356,19 +379,21 @@
     - {slug: ux-design/service-design, name: "Service Design"}
 - slug: design-tools
   name: "Design Tools"
+  priority: 3
   description: "Software and workflows for designers."
   children:
-    - {slug: design-tools/figma, name: "Figma"}
-    - {slug: design-tools/sketch, name: "Sketch"}
+    - {slug: design-tools/figma, name: "Figma", priority: 2}
+    - {slug: design-tools/sketch, name: "Sketch", priority: 4}
     - {slug: design-tools/adobe, name: "Adobe Creative Cloud"}
     - {slug: design-tools/framer, name: "Framer"}
-    - {slug: design-tools/penpot, name: "Penpot"}
+    - {slug: design-tools/penpot, name: "Penpot", priority: 4}
     - {slug: design-tools/prototyping, name: "Prototyping"}
     - {slug: design-tools/handoff, name: "Design Handoff"}
     - {slug: design-tools/resources, name: "Icon & Font Resources"}
     - {slug: design-tools/ai-design, name: "AI Design Tools"}
 - slug: accessibility
   name: "Accessibility"
+  priority: 3
   description: "Inclusive design, standards and assistive tech."
   children:
     - {slug: accessibility/wcag, name: "WCAG"}
@@ -381,19 +406,21 @@
     - {slug: accessibility/testing, name: "Accessibility Testing"}
 - slug: game-engines
   name: "Game Engines"
+  priority: 3
   description: "Engines and middleware."
   children:
-    - {slug: game-engines/unity, name: "Unity"}
-    - {slug: game-engines/unreal, name: "Unreal Engine"}
+    - {slug: game-engines/unity, name: "Unity", priority: 2}
+    - {slug: game-engines/unreal, name: "Unreal Engine", priority: 2}
     - {slug: game-engines/godot, name: "Godot"}
-    - {slug: game-engines/bevy, name: "Bevy"}
-    - {slug: game-engines/gamemaker, name: "GameMaker"}
+    - {slug: game-engines/bevy, name: "Bevy", priority: 4}
+    - {slug: game-engines/gamemaker, name: "GameMaker", priority: 4}
     - {slug: game-engines/roblox, name: "Roblox Studio"}
     - {slug: game-engines/web-games, name: "Phaser & Web Games"}
     - {slug: game-engines/middleware, name: "Physics & Middleware"}
     - {slug: game-engines/licensing, name: "Engine Licensing"}
 - slug: game-programming
   name: "Game Programming"
+  priority: 3
   description: "Gameplay, graphics and performance."
   children:
     - {slug: game-programming/rendering, name: "Rendering & Shaders"}
@@ -407,6 +434,7 @@
     - {slug: game-programming/modding, name: "Modding"}
 - slug: game-art
   name: "Game Art & Audio"
+  priority: 4
   description: "Assets, animation and sound for games."
   children:
     - {slug: game-art/3d-modeling, name: "3D Modeling"}
@@ -419,6 +447,7 @@
     - {slug: game-art/technical-art, name: "Technical Art"}
 - slug: game-industry
   name: "Game Industry"
+  priority: 3
   description: "Publishing, platforms and business."
   children:
     - {slug: game-industry/steam, name: "Steam"}

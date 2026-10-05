@@ -87,8 +87,10 @@ type Config struct {
 	// WarmInterval is the least time between fetches of a topic that is followed or serves a user's
 	// profession but is not hot (CURATOR_WARM_INTERVAL_HOURS).
 	WarmInterval time.Duration
-	// ColdInterval is the same for a topic nobody follows or sees (CURATOR_COLD_INTERVAL_HOURS).
-	ColdInterval time.Duration
+	// PriorityIntervals[p-1] is the least time between fetches of a priority p topic nobody follows
+	// or sees; a warm topic uses it too when it is shorter than WarmInterval
+	// (CURATOR_PRIORITY_INTERVAL_HOURS, five comma-separated hours for priorities 1 to 5).
+	PriorityIntervals [5]time.Duration
 	// StoriesPerTopic is the most stories asked for per topic in one fetch call
 	// (CURATOR_STORIES_PER_TOPIC).
 	StoriesPerTopic int
@@ -238,7 +240,7 @@ func Load() (Config, error) {
 		MergeWindow:        time.Duration(envInt(&errs, "CURATOR_MERGE_WINDOW_DAYS", 14)) * 24 * time.Hour,
 		HotMinViews:        envInt(&errs, "CURATOR_HOT_MIN_VIEWS", 1),
 		WarmInterval:       time.Duration(envInt(&errs, "CURATOR_WARM_INTERVAL_HOURS", 24)) * time.Hour,
-		ColdInterval:       time.Duration(envInt(&errs, "CURATOR_COLD_INTERVAL_HOURS", 168)) * time.Hour,
+		PriorityIntervals:  envHours(&errs, "CURATOR_PRIORITY_INTERVAL_HOURS", [5]int{48, 96, 168, 336, 672}),
 		StoriesPerTopic:    envInt(&errs, "CURATOR_STORIES_PER_TOPIC", 5),
 		Concurrency:        envInt(&errs, "CURATOR_CONCURRENCY", 2),
 
@@ -317,6 +319,34 @@ func envInt(errs *[]error, key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// envHours reads exactly five comma-separated positive hour counts, appending to errs when they are
+// invalid.
+func envHours(errs *[]error, key string, fallback [5]int) [5]time.Duration {
+	var out [5]time.Duration
+	for i, h := range fallback {
+		out[i] = time.Duration(h) * time.Hour
+	}
+	raw := getenv(key, "")
+	if raw == "" {
+		return out
+	}
+	parts := strings.Split(raw, ",")
+	if len(parts) != len(out) {
+		*errs = append(*errs, fmt.Errorf("%s must be %d comma-separated positive integers, got %q", key, len(out), raw))
+		return out
+	}
+	var parsed [5]time.Duration
+	for i, p := range parts {
+		n, err := strconv.Atoi(strings.TrimSpace(p))
+		if err != nil || n < 1 {
+			*errs = append(*errs, fmt.Errorf("%s must be %d comma-separated positive integers, got %q", key, len(out), raw))
+			return out
+		}
+		parsed[i] = time.Duration(n) * time.Hour
+	}
+	return parsed
 }
 
 // claudeConfigDir returns CURATOR_CLAUDE_CONFIG_DIR, defaulting to ~/.claude-personal.

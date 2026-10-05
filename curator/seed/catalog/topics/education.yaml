@@ -1,5 +1,6 @@
 - slug: teaching-practice
   name: "Teaching Practice"
+  priority: 2
   description: "Classroom methods and management."
   children:
     - {slug: teaching-practice/lesson-planning, name: "Lesson Planning"}
@@ -14,6 +15,7 @@
     - {slug: teaching-practice/workload, name: "Substitute & Workload"}
 - slug: curriculum-subjects
   name: "Curriculum & Subjects"
+  priority: 3
   description: "Subject teaching updates."
   children:
     - {slug: curriculum-subjects/math, name: "Math Teaching"}
@@ -27,6 +29,7 @@
     - {slug: curriculum-subjects/standards, name: "Standards & Curriculum Changes"}
 - slug: edtech
   name: "EdTech"
+  priority: 2
   description: "Learning tools and platforms."
   children:
     - {slug: edtech/lms, name: "Google Classroom & LMS"}
@@ -39,6 +42,7 @@
     - {slug: edtech/privacy, name: "Student Data Privacy"}
 - slug: education-policy
   name: "Education Policy"
+  priority: 3
   description: "Funding, standards and reform."
   children:
     - {slug: education-policy/funding, name: "School Funding"}
@@ -51,6 +55,7 @@
     - {slug: education-policy/rankings, name: "International Education Rankings"}
 - slug: student-wellbeing
   name: "Student Wellbeing"
+  priority: 3
   description: "Safety, behavior and mental health."
   children:
     - {slug: student-wellbeing/bullying, name: "Bullying"}
@@ -62,6 +67,7 @@
     - {slug: student-wellbeing/inclusion, name: "Inclusion"}
 - slug: academic-life
   name: "Academic Life"
+  priority: 3
   description: "Publishing, teaching and careers."
   children:
     - {slug: academic-life/peer-review, name: "Peer Review"}
@@ -76,6 +82,7 @@
     - {slug: academic-life/teaching, name: "Teaching in Higher Ed"}
 - slug: higher-ed-policy
   name: "Higher Education Policy"
+  priority: 3
   description: "Universities and funding."
   children:
     - {slug: higher-ed-policy/funding, name: "University Funding"}
@@ -88,6 +95,7 @@
     - {slug: higher-ed-policy/ai, name: "AI in Academia"}
 - slug: study-skills
   name: "Study Skills"
+  priority: 2
   description: "Learning effectively."
   children:
     - {slug: study-skills/notes, name: "Note-Taking"}
@@ -100,19 +108,21 @@
     - {slug: study-skills/ai, name: "AI for Studying"}
 - slug: exams-admissions
   name: "Exams & Admissions"
+  priority: 1
   description: "Tests and applications."
   children:
     - {slug: exams-admissions/sat-act, name: "SAT & ACT"}
-    - {slug: exams-admissions/english-tests, name: "IELTS & TOEFL"}
-    - {slug: exams-admissions/grad-tests, name: "GRE & GMAT"}
-    - {slug: exams-admissions/a-levels-ib, name: "A-Levels & IB"}
+    - {slug: exams-admissions/english-tests, name: "IELTS & TOEFL", priority: 2}
+    - {slug: exams-admissions/grad-tests, name: "GRE & GMAT", priority: 2}
+    - {slug: exams-admissions/a-levels-ib, name: "A-Levels & IB", priority: 2}
     - {slug: exams-admissions/india-exams, name: "Entrance Exams India"}
     - {slug: exams-admissions/applications, name: "College Applications"}
     - {slug: exams-admissions/scholarships, name: "Scholarships"}
     - {slug: exams-admissions/study-abroad, name: "Study Abroad"}
-    - {slug: exams-admissions/professional-exams, name: "Medical & Law Entrance"}
+    - {slug: exams-admissions/professional-exams, name: "Medical & Law Entrance", priority: 2}
 - slug: student-life
   name: "Student Life"
+  priority: 2
   description: "Campus, housing and money."
   children:
     - {slug: student-life/budgeting, name: "Student Budgeting"}
@@ -124,6 +134,7 @@
     - {slug: student-life/clubs, name: "Clubs & Societies"}
 - slug: careers-early
   name: "Early Career"
+  priority: 2
   description: "Internships and first jobs."
   children:
     - {slug: careers-early/internships, name: "Internships"}

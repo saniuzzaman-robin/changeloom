@@ -46,6 +46,8 @@ type NewTopic struct {
 	Hints       []string `json:"hints"`
 	// Professions are slugs of the professions a new root topic serves; empty for a child.
 	Professions []string `json:"professions"`
+	// Priority ranks the topic for fetching, catalog.MinPriority (highest) to catalog.MaxPriority.
+	Priority int `json:"priority"`
 }
 
 // Decision resolves one inbox request.
@@ -98,7 +100,7 @@ func (g *Grouper) Run(ctx context.Context, dryRun bool) (Result, error) {
 		slog.InfoContext(ctx, "no pending topic requests")
 		return Result{}, nil
 	}
-	rows, err := q.ListFetchTopics(ctx)
+	rows, err := q.ListFetchTopics(ctx, catalog.DefaultPriority)
 	if err != nil {
 		return Result{}, fmt.Errorf("list topics: %w", err)
 	}
@@ -189,6 +191,9 @@ func (g *Grouper) apply(ctx context.Context, p Plan) error {
 				if err != nil {
 					return fmt.Errorf("create topic %q: %w", t.Slug, err)
 				}
+				if err := q.SetTopicPriority(ctx, db.SetTopicPriorityParams{TopicID: id, Priority: int16(t.Priority)}); err != nil { //nolint:gosec // validated to 1..5 by ParseOutput
+					return fmt.Errorf("set priority of %q: %w", t.Slug, err)
+				}
 				ids[t.Slug] = id
 			}
 		}
@@ -268,6 +273,9 @@ func ParseOutput(raw []byte, existing map[string]string, professions map[string]
 		}
 		if err := catalog.CheckSlug(t.Slug, t.ParentSlug); err != nil {
 			bad("%v", err)
+		}
+		if err := catalog.CheckPriority(t.Priority); err != nil {
+			bad("new topic %q: %v", t.Slug, err)
 		}
 		added[t.Slug] = t.ParentSlug
 	}

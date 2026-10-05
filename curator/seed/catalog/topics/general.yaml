@@ -1,21 +1,23 @@
 - slug: world-politics
   name: "World Politics"
+  priority: 1
   description: "International relations and global institutions."
   children:
     - {slug: world-politics/un, name: "United Nations"}
     - {slug: world-politics/nato, name: "NATO"}
-    - {slug: world-politics/g7-g20, name: "G7 & G20"}
+    - {slug: world-politics/g7-g20, name: "G7 & G20", priority: 2}
     - {slug: world-politics/eu, name: "European Union"}
-    - {slug: world-politics/brics, name: "BRICS"}
+    - {slug: world-politics/brics, name: "BRICS", priority: 2}
     - {slug: world-politics/sanctions, name: "Sanctions"}
     - {slug: world-politics/trade-wars, name: "Trade Wars & Tariffs"}
-    - {slug: world-politics/international-law, name: "International Law"}
+    - {slug: world-politics/international-law, name: "International Law", priority: 2}
     - {slug: world-politics/nuclear, name: "Nuclear Policy"}
-    - {slug: world-politics/summits, name: "Summits"}
-    - {slug: world-politics/human-rights, name: "Human Rights"}
+    - {slug: world-politics/summits, name: "Summits", priority: 2}
+    - {slug: world-politics/human-rights, name: "Human Rights", priority: 2}
     - {slug: world-politics/migration, name: "Migration & Refugees"}
 - slug: us-politics
   name: "US Politics"
+  priority: 1
   description: "American government, elections and policy."
   children:
     - {slug: us-politics/elections, name: "US Elections"}
@@ -24,11 +26,12 @@
     - {slug: us-politics/supreme-court, name: "Supreme Court"}
     - {slug: us-politics/foreign-policy, name: "US Foreign Policy"}
     - {slug: us-politics/immigration, name: "Immigration Policy"}
-    - {slug: us-politics/budget, name: "Federal Budget"}
-    - {slug: us-politics/states, name: "State Politics"}
+    - {slug: us-politics/budget, name: "Federal Budget", priority: 2}
+    - {slug: us-politics/states, name: "State Politics", priority: 2}
     - {slug: us-politics/defense, name: "US Defense"}
 - slug: europe-politics
   name: "Europe & UK Politics"
+  priority: 2
   description: "European governments and the EU."
   children:
     - {slug: europe-politics/uk, name: "UK Politics"}
@@ -42,10 +45,11 @@
     - {slug: europe-politics/elections, name: "European Elections"}
 - slug: asia-politics
   name: "Asia-Pacific Politics"
+  priority: 2
   description: "Governments and regional affairs."
   children:
-    - {slug: asia-politics/china, name: "China"}
-    - {slug: asia-politics/india, name: "India"}
+    - {slug: asia-politics/china, name: "China", priority: 1}
+    - {slug: asia-politics/india, name: "India", priority: 1}
     - {slug: asia-politics/japan, name: "Japan"}
     - {slug: asia-politics/south-korea, name: "South Korea"}
     - {slug: asia-politics/taiwan, name: "Taiwan"}
@@ -55,10 +59,11 @@
     - {slug: asia-politics/central-asia, name: "Central Asia"}
 - slug: middle-east
   name: "Middle East & Africa"
+  priority: 2
   description: "Regional politics and security."
   children:
-    - {slug: middle-east/israel-palestine, name: "Israel & Palestine"}
-    - {slug: middle-east/iran, name: "Iran"}
+    - {slug: middle-east/israel-palestine, name: "Israel & Palestine", priority: 1}
+    - {slug: middle-east/iran, name: "Iran", priority: 1}
     - {slug: middle-east/gulf, name: "Gulf States"}
     - {slug: middle-east/turkey, name: "Turkey"}
     - {slug: middle-east/north-africa, name: "Egypt & North Africa"}
@@ -67,18 +72,20 @@
     - {slug: middle-east/syria-iraq, name: "Syria & Iraq"}
 - slug: conflicts
   name: "Wars & Conflicts"
+  priority: 1
   description: "Active conflicts and peace efforts."
   children:
     - {slug: conflicts/ukraine, name: "Russia-Ukraine War"}
     - {slug: conflicts/gaza, name: "Gaza War"}
-    - {slug: conflicts/sudan, name: "Sudan Conflict"}
-    - {slug: conflicts/myanmar, name: "Myanmar"}
+    - {slug: conflicts/sudan, name: "Sudan Conflict", priority: 2}
+    - {slug: conflicts/myanmar, name: "Myanmar", priority: 2}
     - {slug: conflicts/peace-talks, name: "Peace Talks"}
-    - {slug: conflicts/weapons, name: "Defense & Weapons"}
+    - {slug: conflicts/weapons, name: "Defense & Weapons", priority: 2}
     - {slug: conflicts/terrorism, name: "Terrorism"}
     - {slug: conflicts/humanitarian, name: "Humanitarian Crises"}
 - slug: diplomacy
   name: "Diplomacy & Leaders"
+  priority: 3
   description: "Leaders, treaties and statecraft."
   children:
     - {slug: diplomacy/visits, name: "Head-of-State Visits"}
@@ -90,21 +97,23 @@
     - {slug: diplomacy/global-south, name: "Global South"}
 - slug: global-economy
   name: "Global Economy"
+  priority: 1
   description: "Macro economy and trade."
   children:
     - {slug: global-economy/central-banks, name: "Central Banks"}
     - {slug: global-economy/inflation, name: "Inflation & Rates"}
     - {slug: global-economy/energy-markets, name: "Oil & Energy Markets"}
     - {slug: global-economy/supply-chains, name: "Supply Chains"}
-    - {slug: global-economy/imf-world-bank, name: "IMF & World Bank"}
-    - {slug: global-economy/emerging-markets, name: "Emerging Markets"}
-    - {slug: global-economy/labor, name: "Jobs & Labor Data"}
+    - {slug: global-economy/imf-world-bank, name: "IMF & World Bank", priority: 2}
+    - {slug: global-economy/emerging-markets, name: "Emerging Markets", priority: 2}
+    - {slug: global-economy/labor, name: "Jobs & Labor Data", priority: 2}
     - {slug: global-economy/recessions, name: "Recessions"}
 - slug: pc-gaming
   name: "PC Gaming"
+  priority: 2
   description: "PC releases, stores and mods."
   children:
-    - {slug: pc-gaming/steam, name: "Steam"}
+    - {slug: pc-gaming/steam, name: "Steam", priority: 1}
     - {slug: pc-gaming/epic-gog, name: "Epic & GOG"}
     - {slug: pc-gaming/releases, name: "PC Game Releases"}
     - {slug: pc-gaming/mods, name: "Mods"}
@@ -112,15 +121,16 @@
     - {slug: pc-gaming/strategy, name: "Strategy & 4X"}
     - {slug: pc-gaming/rpgs, name: "RPGs"}
     - {slug: pc-gaming/shooters, name: "Shooters"}
-    - {slug: pc-gaming/simulation, name: "Simulation Games"}
-    - {slug: pc-gaming/roguelikes, name: "Roguelikes"}
+    - {slug: pc-gaming/simulation, name: "Simulation Games", priority: 3}
+    - {slug: pc-gaming/roguelikes, name: "Roguelikes", priority: 3}
 - slug: console-gaming
   name: "Console Gaming"
+  priority: 2
   description: "PlayStation, Xbox and Nintendo."
   children:
-    - {slug: console-gaming/playstation, name: "PlayStation"}
+    - {slug: console-gaming/playstation, name: "PlayStation", priority: 1}
     - {slug: console-gaming/xbox, name: "Xbox"}
-    - {slug: console-gaming/switch, name: "Nintendo Switch"}
+    - {slug: console-gaming/switch, name: "Nintendo Switch", priority: 1}
     - {slug: console-gaming/subscriptions, name: "Game Pass & PS Plus"}
     - {slug: console-gaming/exclusives, name: "Exclusives"}
     - {slug: console-gaming/handhelds, name: "Handheld PCs"}
@@ -128,16 +138,18 @@
     - {slug: console-gaming/hardware, name: "Console Hardware"}
 - slug: mobile-gaming
   name: "Mobile Gaming"
+  priority: 2
   description: "Phone and tablet games."
   children:
     - {slug: mobile-gaming/gacha, name: "Gacha Games"}
     - {slug: mobile-gaming/mobile-esports, name: "Mobile Esports"}
-    - {slug: mobile-gaming/hoyoverse, name: "Genshin & HoYoverse"}
+    - {slug: mobile-gaming/hoyoverse, name: "Genshin & HoYoverse", priority: 3}
     - {slug: mobile-gaming/releases, name: "Mobile Releases"}
     - {slug: mobile-gaming/cloud, name: "Cloud Gaming"}
     - {slug: mobile-gaming/free-to-play, name: "Free-to-Play"}
 - slug: esports
   name: "Esports"
+  priority: 3
   description: "Competitive gaming and tournaments."
   children:
     - {slug: esports/lol, name: "League of Legends"}
@@ -151,21 +163,23 @@
     - {slug: esports/tactical-shooters, name: "Overwatch & Rainbow Six"}
 - slug: game-releases
   name: "Game Releases & Reviews"
+  priority: 1
   description: "New games, trailers and ratings."
   children:
     - {slug: game-releases/release-dates, name: "Release Dates"}
     - {slug: game-releases/reviews, name: "Reviews"}
     - {slug: game-releases/showcases, name: "Trailers & Showcases"}
-    - {slug: game-releases/awards, name: "Game Awards"}
+    - {slug: game-releases/awards, name: "Game Awards", priority: 2}
     - {slug: game-releases/delays, name: "Game Delays"}
-    - {slug: game-releases/remakes, name: "Remakes & Remasters"}
-    - {slug: game-releases/deals, name: "Free Games & Deals"}
-    - {slug: game-releases/controversies, name: "Gaming Controversies"}
+    - {slug: game-releases/remakes, name: "Remakes & Remasters", priority: 2}
+    - {slug: game-releases/deals, name: "Free Games & Deals", priority: 2}
+    - {slug: game-releases/controversies, name: "Gaming Controversies", priority: 2}
 - slug: gaming-hardware
   name: "Gaming Hardware"
+  priority: 3
   description: "GPUs, consoles and peripherals."
   children:
-    - {slug: gaming-hardware/gpus, name: "Graphics Cards"}
+    - {slug: gaming-hardware/gpus, name: "Graphics Cards", priority: 2}
     - {slug: gaming-hardware/laptops, name: "Gaming Laptops"}
     - {slug: gaming-hardware/peripherals, name: "Controllers & Peripherals"}
     - {slug: gaming-hardware/vr-ar, name: "VR & AR"}
@@ -174,6 +188,7 @@
     - {slug: gaming-hardware/handhelds, name: "Handheld Consoles"}
 - slug: football-soccer
   name: "Football (Soccer)"
+  priority: 1
   description: "Clubs, leagues and transfers."
   children:
     - {slug: football-soccer/premier-league, name: "Premier League"}
@@ -182,30 +197,32 @@
     - {slug: football-soccer/serie-a-bundesliga, name: "Serie A & Bundesliga"}
     - {slug: football-soccer/world-cup, name: "World Cup"}
     - {slug: football-soccer/transfers, name: "Transfers"}
-    - {slug: football-soccer/mls, name: "MLS"}
-    - {slug: football-soccer/womens, name: "Women's Football"}
-    - {slug: football-soccer/national-teams, name: "National Teams"}
-    - {slug: football-soccer/tactics, name: "Tactics"}
+    - {slug: football-soccer/mls, name: "MLS", priority: 2}
+    - {slug: football-soccer/womens, name: "Women's Football", priority: 2}
+    - {slug: football-soccer/national-teams, name: "National Teams", priority: 2}
+    - {slug: football-soccer/tactics, name: "Tactics", priority: 2}
 - slug: us-sports
   name: "US Sports"
+  priority: 1
   description: "NFL, NBA, MLB and NHL."
   children:
     - {slug: us-sports/nfl, name: "NFL"}
     - {slug: us-sports/nba, name: "NBA"}
     - {slug: us-sports/mlb, name: "MLB"}
-    - {slug: us-sports/nhl, name: "NHL"}
+    - {slug: us-sports/nhl, name: "NHL", priority: 2}
     - {slug: us-sports/college-football, name: "College Football"}
     - {slug: us-sports/march-madness, name: "March Madness"}
-    - {slug: us-sports/wnba, name: "WNBA"}
-    - {slug: us-sports/fantasy, name: "Fantasy Sports"}
-    - {slug: us-sports/betting, name: "Sports Betting"}
+    - {slug: us-sports/wnba, name: "WNBA", priority: 2}
+    - {slug: us-sports/fantasy, name: "Fantasy Sports", priority: 2}
+    - {slug: us-sports/betting, name: "Sports Betting", priority: 2}
 - slug: cricket
   name: "Cricket"
+  priority: 2
   description: "Test, ODI and T20 cricket."
   children:
-    - {slug: cricket/ipl, name: "IPL"}
+    - {slug: cricket/ipl, name: "IPL", priority: 1}
     - {slug: cricket/tests, name: "Test Cricket"}
-    - {slug: cricket/t20-world-cup, name: "T20 World Cup"}
+    - {slug: cricket/t20-world-cup, name: "T20 World Cup", priority: 1}
     - {slug: cricket/odi, name: "ODI & World Cup"}
     - {slug: cricket/india, name: "India Cricket"}
     - {slug: cricket/pakistan, name: "Pakistan Cricket"}
@@ -215,41 +232,45 @@
     - {slug: cricket/leagues, name: "Big Bash & Leagues"}
 - slug: tennis-golf
   name: "Tennis & Golf"
+  priority: 2
   description: "Grand Slams and majors."
   children:
     - {slug: tennis-golf/atp, name: "ATP Tour"}
     - {slug: tennis-golf/wta, name: "WTA Tour"}
-    - {slug: tennis-golf/grand-slams, name: "Grand Slams"}
+    - {slug: tennis-golf/grand-slams, name: "Grand Slams", priority: 1}
     - {slug: tennis-golf/pga, name: "PGA Tour"}
     - {slug: tennis-golf/liv, name: "LIV Golf"}
     - {slug: tennis-golf/majors, name: "The Majors"}
     - {slug: tennis-golf/rankings, name: "Rankings"}
 - slug: motorsport
   name: "Motorsport"
+  priority: 2
   description: "Racing series and teams."
   children:
-    - {slug: motorsport/f1, name: "Formula 1"}
+    - {slug: motorsport/f1, name: "Formula 1", priority: 1}
     - {slug: motorsport/motogp, name: "MotoGP"}
     - {slug: motorsport/nascar-indycar, name: "NASCAR & IndyCar"}
-    - {slug: motorsport/rally, name: "Rally & WRC"}
-    - {slug: motorsport/formula-e, name: "Formula E"}
-    - {slug: motorsport/endurance, name: "Le Mans & Endurance"}
+    - {slug: motorsport/rally, name: "Rally & WRC", priority: 3}
+    - {slug: motorsport/formula-e, name: "Formula E", priority: 3}
+    - {slug: motorsport/endurance, name: "Le Mans & Endurance", priority: 3}
     - {slug: motorsport/driver-market, name: "Driver Market"}
 - slug: combat-sports
   name: "Combat Sports"
+  priority: 3
   description: "Fights and fighters."
   children:
-    - {slug: combat-sports/ufc, name: "UFC & MMA"}
-    - {slug: combat-sports/boxing, name: "Boxing"}
+    - {slug: combat-sports/ufc, name: "UFC & MMA", priority: 2}
+    - {slug: combat-sports/boxing, name: "Boxing", priority: 2}
     - {slug: combat-sports/wwe, name: "WWE & Wrestling"}
     - {slug: combat-sports/martial-arts, name: "Judo & Karate"}
     - {slug: combat-sports/fight-cards, name: "Fight Cards"}
     - {slug: combat-sports/rankings, name: "Fighter Rankings"}
 - slug: olympics
   name: "Olympics & Athletics"
+  priority: 3
   description: "Games, track and field and more."
   children:
-    - {slug: olympics/olympic-games, name: "Olympic Games"}
+    - {slug: olympics/olympic-games, name: "Olympic Games", priority: 2}
     - {slug: olympics/athletics, name: "Athletics"}
     - {slug: olympics/swimming, name: "Swimming"}
     - {slug: olympics/gymnastics, name: "Gymnastics"}
@@ -259,33 +280,36 @@
     - {slug: olympics/cycling, name: "Cycling"}
 - slug: movies
   name: "Movies"
+  priority: 1
   description: "Releases, box office and reviews."
   children:
     - {slug: movies/releases, name: "New Releases"}
     - {slug: movies/box-office, name: "Box Office"}
     - {slug: movies/hollywood, name: "Hollywood"}
     - {slug: movies/bollywood, name: "Bollywood"}
-    - {slug: movies/korean-cinema, name: "Hallyu & Korean Cinema"}
-    - {slug: movies/festivals, name: "Film Festivals"}
+    - {slug: movies/korean-cinema, name: "Hallyu & Korean Cinema", priority: 2}
+    - {slug: movies/festivals, name: "Film Festivals", priority: 2}
     - {slug: movies/franchises, name: "Franchises & Sequels"}
     - {slug: movies/reviews, name: "Reviews & Ratings"}
-    - {slug: movies/talent, name: "Directors & Actors"}
-    - {slug: movies/horror, name: "Horror & Thriller"}
+    - {slug: movies/talent, name: "Directors & Actors", priority: 2}
+    - {slug: movies/horror, name: "Horror & Thriller", priority: 2}
 - slug: tv-streaming
   name: "TV & Streaming"
+  priority: 1
   description: "Series and platforms."
   children:
     - {slug: tv-streaming/netflix, name: "Netflix"}
     - {slug: tv-streaming/disney, name: "Disney+ & Marvel"}
     - {slug: tv-streaming/hbo, name: "HBO & Max"}
     - {slug: tv-streaming/prime, name: "Amazon Prime Video"}
-    - {slug: tv-streaming/apple-tv, name: "Apple TV+"}
-    - {slug: tv-streaming/reality, name: "Reality TV"}
-    - {slug: tv-streaming/industry, name: "Streaming Industry"}
-    - {slug: tv-streaming/documentaries, name: "Documentaries"}
+    - {slug: tv-streaming/apple-tv, name: "Apple TV+", priority: 2}
+    - {slug: tv-streaming/reality, name: "Reality TV", priority: 2}
+    - {slug: tv-streaming/industry, name: "Streaming Industry", priority: 2}
+    - {slug: tv-streaming/documentaries, name: "Documentaries", priority: 2}
     - {slug: tv-streaming/renewals, name: "Cancellations & Renewals"}
 - slug: anime-comics
   name: "Anime, Manga & Comics"
+  priority: 2
   description: "Japanese and Western pop media."
   children:
     - {slug: anime-comics/anime, name: "Anime Releases"}
@@ -294,12 +318,13 @@
     - {slug: anime-comics/webtoons, name: "Webtoons"}
     - {slug: anime-comics/conventions, name: "Conventions"}
     - {slug: anime-comics/ghibli, name: "Studio Ghibli"}
-    - {slug: anime-comics/light-novels, name: "Light Novels"}
+    - {slug: anime-comics/light-novels, name: "Light Novels", priority: 3}
 - slug: celebrity-pop
   name: "Celebrity & Pop Culture"
+  priority: 2
   description: "Public figures and trends."
   children:
-    - {slug: celebrity-pop/celebrity, name: "Celebrity News"}
+    - {slug: celebrity-pop/celebrity, name: "Celebrity News", priority: 1}
     - {slug: celebrity-pop/royals, name: "Royals"}
     - {slug: celebrity-pop/creators, name: "Social Media Stars"}
     - {slug: celebrity-pop/fashion, name: "Fashion Events"}
@@ -307,9 +332,10 @@
     - {slug: celebrity-pop/memes, name: "Memes"}
 - slug: awards
   name: "Awards Season"
+  priority: 3
   description: "Ceremonies and nominations."
   children:
-    - {slug: awards/oscars, name: "Oscars"}
+    - {slug: awards/oscars, name: "Oscars", priority: 2}
     - {slug: awards/emmys, name: "Emmys"}
     - {slug: awards/grammys, name: "Grammys"}
     - {slug: awards/golden-globes, name: "Golden Globes"}
@@ -318,6 +344,7 @@
     - {slug: awards/predictions, name: "Nominations & Predictions"}
 - slug: music-releases
   name: "New Music"
+  priority: 2
   description: "Albums, singles and charts."
   children:
     - {slug: music-releases/pop, name: "Pop"}
@@ -332,6 +359,7 @@
     - {slug: music-releases/reviews, name: "Album Reviews"}
 - slug: concerts-festivals
   name: "Concerts & Festivals"
+  priority: 3
   description: "Tours and live events."
   children:
     - {slug: concerts-festivals/tours, name: "World Tours"}
@@ -342,6 +370,7 @@
     - {slug: concerts-festivals/economics, name: "Touring Economics"}
 - slug: music-industry
   name: "Music Industry"
+  priority: 3
   description: "Labels, streaming and rights."
   children:
     - {slug: music-industry/streaming, name: "Spotify & Streaming"}
@@ -353,6 +382,7 @@
     - {slug: music-industry/vinyl, name: "Vinyl & Physical"}
 - slug: k-pop-global
   name: "K-Pop & Global Pop"
+  priority: 3
   description: "Idols, groups and global scenes."
   children:
     - {slug: k-pop-global/comebacks, name: "K-Pop Comebacks"}
@@ -365,20 +395,22 @@
     - {slug: k-pop-global/idol-industry, name: "Idol Industry"}
 - slug: stock-markets
   name: "Stock Markets"
+  priority: 1
   description: "Indexes, earnings and IPOs."
   children:
     - {slug: stock-markets/us-indexes, name: "S&P 500 & Nasdaq"}
     - {slug: stock-markets/earnings, name: "Earnings"}
     - {slug: stock-markets/ipos, name: "IPOs"}
-    - {slug: stock-markets/asia, name: "Asian Markets"}
-    - {slug: stock-markets/europe, name: "European Markets"}
+    - {slug: stock-markets/asia, name: "Asian Markets", priority: 2}
+    - {slug: stock-markets/europe, name: "European Markets", priority: 2}
     - {slug: stock-markets/tech-stocks, name: "Tech Stocks"}
-    - {slug: stock-markets/dividends, name: "Dividends"}
+    - {slug: stock-markets/dividends, name: "Dividends", priority: 2}
     - {slug: stock-markets/etfs, name: "ETFs & Index Funds"}
     - {slug: stock-markets/analysis, name: "Market Analysis"}
-    - {slug: stock-markets/short-sellers, name: "Short Sellers"}
+    - {slug: stock-markets/short-sellers, name: "Short Sellers", priority: 2}
 - slug: personal-finance
   name: "Personal Finance"
+  priority: 2
   description: "Saving, credit and taxes."
   children:
     - {slug: personal-finance/saving, name: "Saving & Budgeting"}
@@ -391,20 +423,22 @@
     - {slug: personal-finance/scams, name: "Scams & Fraud"}
 - slug: crypto
   name: "Crypto & Web3"
+  priority: 1
   description: "Digital assets and blockchains."
   children:
     - {slug: crypto/bitcoin, name: "Bitcoin"}
     - {slug: crypto/ethereum, name: "Ethereum"}
-    - {slug: crypto/altcoins, name: "Altcoins"}
+    - {slug: crypto/altcoins, name: "Altcoins", priority: 2}
     - {slug: crypto/stablecoins, name: "Stablecoins"}
-    - {slug: crypto/defi, name: "DeFi"}
+    - {slug: crypto/defi, name: "DeFi", priority: 2}
     - {slug: crypto/regulation, name: "Crypto Regulation"}
-    - {slug: crypto/nfts, name: "NFTs"}
+    - {slug: crypto/nfts, name: "NFTs", priority: 2}
     - {slug: crypto/exchanges, name: "Exchanges"}
-    - {slug: crypto/hacks, name: "Hacks & Exploits"}
+    - {slug: crypto/hacks, name: "Hacks & Exploits", priority: 2}
     - {slug: crypto/bitcoin-etfs, name: "Bitcoin ETFs"}
 - slug: commodities-forex
   name: "Commodities & Forex"
+  priority: 2
   description: "Currencies, metals and energy."
   children:
     - {slug: commodities-forex/metals, name: "Gold & Silver"}
@@ -416,6 +450,7 @@
     - {slug: commodities-forex/emerging-fx, name: "Emerging Currencies"}
 - slug: real-estate-investing
   name: "Real Estate Investing"
+  priority: 3
   description: "Property markets and REITs."
   children:
     - {slug: real-estate-investing/housing, name: "Housing Market"}
@@ -427,20 +462,22 @@
     - {slug: real-estate-investing/prices, name: "Home Prices"}
 - slug: gadgets
   name: "Gadgets"
+  priority: 1
   description: "Phones, laptops and wearables."
   children:
     - {slug: gadgets/iphone, name: "iPhone"}
     - {slug: gadgets/android, name: "Android Phones"}
     - {slug: gadgets/laptops, name: "Laptops & PCs"}
     - {slug: gadgets/smartwatches, name: "Smartwatches"}
-    - {slug: gadgets/audio, name: "Headphones & Audio"}
-    - {slug: gadgets/cameras, name: "Cameras"}
-    - {slug: gadgets/tablets, name: "Tablets"}
-    - {slug: gadgets/smart-home, name: "Smart Home"}
+    - {slug: gadgets/audio, name: "Headphones & Audio", priority: 2}
+    - {slug: gadgets/cameras, name: "Cameras", priority: 2}
+    - {slug: gadgets/tablets, name: "Tablets", priority: 2}
+    - {slug: gadgets/smart-home, name: "Smart Home", priority: 2}
     - {slug: gadgets/chips, name: "Chips & Processors"}
     - {slug: gadgets/reviews, name: "Product Reviews"}
 - slug: big-tech
   name: "Big Tech"
+  priority: 1
   description: "The largest tech companies."
   children:
     - {slug: big-tech/apple, name: "Apple"}
@@ -448,16 +485,17 @@
     - {slug: big-tech/microsoft, name: "Microsoft"}
     - {slug: big-tech/amazon, name: "Amazon"}
     - {slug: big-tech/meta, name: "Meta"}
-    - {slug: big-tech/tesla, name: "Tesla"}
+    - {slug: big-tech/tesla, name: "Tesla", priority: 2}
     - {slug: big-tech/ai-labs, name: "OpenAI & AI Labs"}
     - {slug: big-tech/antitrust, name: "Antitrust"}
     - {slug: big-tech/layoffs, name: "Tech Layoffs"}
-    - {slug: big-tech/social, name: "Social Platforms"}
+    - {slug: big-tech/social, name: "Social Platforms", priority: 2}
 - slug: space-tech
   name: "Space Exploration"
+  priority: 2
   description: "Launches, missions and the space industry."
   children:
-    - {slug: space-tech/spacex, name: "SpaceX"}
+    - {slug: space-tech/spacex, name: "SpaceX", priority: 1}
     - {slug: space-tech/nasa, name: "NASA"}
     - {slug: space-tech/agencies, name: "ESA & Others"}
     - {slug: space-tech/moon-mars, name: "Moon & Mars"}
@@ -468,6 +506,7 @@
     - {slug: space-tech/asia-space, name: "India & China Space"}
 - slug: electric-vehicles
   name: "Cars & EVs"
+  priority: 2
   description: "Vehicles, charging and mobility."
   children:
     - {slug: electric-vehicles/evs, name: "Electric Vehicles"}
@@ -481,18 +520,20 @@
     - {slug: electric-vehicles/motorbikes, name: "Motorbikes"}
 - slug: consumer-ai
   name: "AI for Everyone"
+  priority: 1
   description: "AI products and their effect on daily life."
   children:
     - {slug: consumer-ai/chatgpt, name: "ChatGPT"}
     - {slug: consumer-ai/gemini, name: "Gemini & Google AI"}
     - {slug: consumer-ai/claude, name: "Claude"}
-    - {slug: consumer-ai/media-tools, name: "AI Image & Video Tools"}
+    - {slug: consumer-ai/media-tools, name: "AI Image & Video Tools", priority: 2}
     - {slug: consumer-ai/at-work, name: "AI at Work"}
-    - {slug: consumer-ai/in-schools, name: "AI in Schools"}
-    - {slug: consumer-ai/deepfakes, name: "Deepfakes & Misinformation"}
+    - {slug: consumer-ai/in-schools, name: "AI in Schools", priority: 2}
+    - {slug: consumer-ai/deepfakes, name: "Deepfakes & Misinformation", priority: 2}
     - {slug: consumer-ai/jobs, name: "AI Jobs Debate"}
 - slug: internet-culture
   name: "Internet & Social Media"
+  priority: 2
   description: "Platforms, creators and online trends."
   children:
     - {slug: internet-culture/tiktok, name: "TikTok"}
@@ -506,6 +547,7 @@
     - {slug: internet-culture/viral, name: "Viral Trends"}
 - slug: space-astronomy
   name: "Space & Astronomy"
+  priority: 2
   description: "The universe and how we study it."
   children:
     - {slug: space-astronomy/exoplanets, name: "Exoplanets"}
@@ -518,6 +560,7 @@
     - {slug: space-astronomy/asteroids, name: "Asteroids & Comets"}
 - slug: climate-nature
   name: "Climate & Nature"
+  priority: 2
   description: "Environment and wildlife."
   children:
     - {slug: climate-nature/climate, name: "Climate Change"}
@@ -531,6 +574,7 @@
     - {slug: climate-nature/disasters, name: "Disasters"}
 - slug: discoveries
   name: "Discoveries & Research"
+  priority: 2
   description: "Findings across science."
   children:
     - {slug: discoveries/physics, name: "Physics Discoveries"}
@@ -543,6 +587,7 @@
     - {slug: discoveries/quantum, name: "Quantum"}
 - slug: health-news
   name: "Health News"
+  priority: 2
   description: "Medicine and public health."
   children:
     - {slug: health-news/public-health, name: "Public Health"}
@@ -555,6 +600,7 @@
     - {slug: health-news/nutrition, name: "Nutrition Science"}
 - slug: destinations
   name: "Destinations"
+  priority: 3
   description: "Where to go."
   children:
     - {slug: destinations/europe, name: "Europe Travel"}
@@ -568,6 +614,7 @@
     - {slug: destinations/hidden-gems, name: "Hidden Gems"}
 - slug: airlines-airports
   name: "Airlines & Airports"
+  priority: 3
   description: "Flights and aviation news."
   children:
     - {slug: airlines-airports/airlines, name: "Airline News"}
@@ -580,6 +627,7 @@
     - {slug: airlines-airports/rail, name: "Trains & Rail"}
 - slug: visas-rules
   name: "Visas & Entry Rules"
+  priority: 3
   description: "Borders, permits and documents."
   children:
     - {slug: visas-rules/visas, name: "Visa Changes"}
@@ -591,6 +639,7 @@
     - {slug: visas-rules/remote-work, name: "Remote Work Abroad"}
 - slug: travel-deals
   name: "Travel Deals & Tips"
+  priority: 3
   description: "Saving money and planning."
   children:
     - {slug: travel-deals/flights, name: "Flight Deals"}
@@ -602,6 +651,7 @@
     - {slug: travel-deals/planning, name: "Trip Planning"}
 - slug: cooking
   name: "Cooking & Recipes"
+  priority: 3
   description: "Home cooking trends."
   children:
     - {slug: cooking/recipes, name: "Recipes"}
@@ -614,6 +664,7 @@
     - {slug: cooking/techniques, name: "Chef Techniques"}
 - slug: restaurants
   name: "Restaurants & Dining"
+  priority: 3
   description: "Dining news and guides."
   children:
     - {slug: restaurants/awards, name: "Michelin & Awards"}
@@ -625,6 +676,7 @@
     - {slug: restaurants/reviews, name: "Reviews"}
 - slug: food-industry
   name: "Food Industry"
+  priority: 4
   description: "Supply, safety and trends."
   children:
     - {slug: food-industry/prices, name: "Food Prices"}
@@ -636,6 +688,7 @@
     - {slug: food-industry/sustainability, name: "Sustainability"}
 - slug: drinks
   name: "Coffee, Tea & Drinks"
+  priority: 4
   description: "Beverages and drink culture."
   children:
     - {slug: drinks/coffee, name: "Coffee"}
@@ -647,6 +700,7 @@
     - {slug: drinks/cafes, name: "Cafes"}
 - slug: training
   name: "Training & Exercise"
+  priority: 2
   description: "Workouts and sport science."
   children:
     - {slug: training/strength, name: "Strength Training"}
@@ -659,6 +713,7 @@
     - {slug: training/science, name: "Fitness Science"}
 - slug: nutrition-diet
   name: "Nutrition & Diet"
+  priority: 2
   description: "Eating well."
   children:
     - {slug: nutrition-diet/weight-loss, name: "Weight Loss"}
@@ -671,6 +726,7 @@
     - {slug: nutrition-diet/weight-loss-drugs, name: "Weight-Loss Drugs"}
 - slug: mental-wellness
   name: "Mental Wellness"
+  priority: 3
   description: "Mind and mood."
   children:
     - {slug: mental-wellness/mindfulness, name: "Meditation & Mindfulness"}
@@ -682,6 +738,7 @@
     - {slug: mental-wellness/work-life, name: "Work-Life Balance"}
 - slug: wearables-health
   name: "Health Tech"
+  priority: 3
   description: "Wearables and trackers."
   children:
     - {slug: wearables-health/watches, name: "Apple Watch & Fitbit"}
@@ -692,6 +749,7 @@
     - {slug: wearables-health/telehealth, name: "Telehealth"}
 - slug: parenting
   name: "Parenting"
+  priority: 2
   description: "Raising kids at every age."
   children:
     - {slug: parenting/pregnancy, name: "Pregnancy"}
@@ -704,6 +762,7 @@
     - {slug: parenting/budget, name: "Family Budget"}
 - slug: kids-education
   name: "Kids' Education"
+  priority: 3
   description: "Schools and learning."
   children:
     - {slug: kids-education/policy, name: "School Policy"}
@@ -715,6 +774,7 @@
     - {slug: kids-education/exams, name: "Exams & Testing"}
 - slug: family-health
   name: "Family Health"
+  priority: 3
   description: "Children's and household health."
   children:
     - {slug: family-health/pediatrics, name: "Pediatric Health"}
@@ -725,6 +785,7 @@
     - {slug: family-health/mental-health, name: "Mental Health of Kids"}
 - slug: kids-tech
   name: "Kids & Technology"
+  priority: 3
   description: "Screens, games and online safety."
   children:
     - {slug: kids-tech/screen-time, name: "Screen Time"}

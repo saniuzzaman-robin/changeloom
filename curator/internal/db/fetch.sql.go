@@ -215,6 +215,7 @@ SELECT t.id,
     t.name,
     t.description,
     p.slug AS parent_slug,
+    COALESCE(tp.priority, $1::integer)::integer AS priority,
     COALESCE((SELECT array_agg(h.url ORDER BY h.url) FROM topic_hints h WHERE h.topic_id = t.id), '{}')::text[] AS hints,
     COALESCE((
         SELECT array_agg(pr.name ORDER BY pr.position, pr.name)
@@ -223,27 +224,30 @@ SELECT t.id,
     ), '{}')::text[] AS professions
 FROM topics t
 LEFT JOIN topics p ON p.id = t.parent_id
+LEFT JOIN topic_priority tp ON tp.topic_id = t.id
 WHERE NOT EXISTS (SELECT 1 FROM topics c WHERE c.parent_id = t.id)
     -- Deals are fetched per country, never in a backfill.
     AND t.slug <> 'deals' AND t.slug NOT LIKE 'deals/%'
     AND (
         SELECT count(*) FROM story_topics st JOIN stories sv ON sv.id = st.story_id
-        WHERE st.topic_id = t.id AND sv.published_at >= $1
-    ) < $2::bigint
+        WHERE st.topic_id = t.id AND sv.published_at >= $2
+    ) < $3::bigint
     AND NOT EXISTS (
         SELECT 1 FROM fetch_runs fr
         WHERE fr.status = 'succeeded' AND fr.group_slug LIKE 'backfill:%'
-            AND fr.started_at >= $1 AND fr.topic_ids @> ARRAY[t.id]
+            AND fr.started_at >= $2 AND fr.topic_ids @> ARRAY[t.id]
     )
-ORDER BY COALESCE((SELECT sum(ts.followers + ts.profession_users + ts.views_7d) FROM topic_stats ts WHERE ts.topic_id = t.id), 0) DESC,
+ORDER BY COALESCE(tp.priority, $1::integer),
+    COALESCE((SELECT sum(ts.followers + ts.profession_users + ts.views_7d) FROM topic_stats ts WHERE ts.topic_id = t.id), 0) DESC,
     t.slug
-LIMIT $3
+LIMIT $4
 `
 
 type ListBackfillTopicsParams struct {
-	Since   time.Time
-	Target  int64
-	MaxRows int32
+	DefaultPriority int32
+	Since           time.Time
+	Target          int64
+	MaxRows         int32
 }
 
 type ListBackfillTopicsRow struct {
@@ -252,15 +256,22 @@ type ListBackfillTopicsRow struct {
 	Name        string
 	Description string
 	ParentSlug  *string
+	Priority    int32
 	Hints       []string
 	Professions []string
 }
 
-// Leaf topics with fewer than @target stories published since @since, most wanted first. A topic
-// already covered by a successful backfill call since @since is skipped, so topics with little
-// real news are not asked about again and again.
+// Leaf topics with fewer than @target stories published since @since, the highest priority
+// (@default_priority when it has none) first, then the most wanted. A topic already covered by a
+// successful backfill call since @since is skipped, so topics with little real news are not asked
+// about again and again.
 func (q *Queries) ListBackfillTopics(ctx context.Context, arg ListBackfillTopicsParams) ([]ListBackfillTopicsRow, error) {
-	rows, err := q.db.Query(ctx, listBackfillTopics, arg.Since, arg.Target, arg.MaxRows)
+	rows, err := q.db.Query(ctx, listBackfillTopics,
+		arg.DefaultPriority,
+		arg.Since,
+		arg.Target,
+		arg.MaxRows,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -274,6 +285,7 @@ func (q *Queries) ListBackfillTopics(ctx context.Context, arg ListBackfillTopics
 			&i.Name,
 			&i.Description,
 			&i.ParentSlug,
+			&i.Priority,
 			&i.Hints,
 			&i.Professions,
 		); err != nil {
@@ -327,6 +339,7 @@ SELECT t.id,
     t.name,
     t.description,
     p.slug AS parent_slug,
+    COALESCE(tp.priority, $1::integer)::integer AS priority,
     COALESCE((SELECT sum(s.followers) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS followers,
     COALESCE((SELECT sum(s.profession_users) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS profession_users,
     COALESCE((SELECT sum(s.views_7d) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS views_7d,
@@ -344,6 +357,7 @@ SELECT t.id,
     ), 'epoch')::timestamptz AS last_fetched_at
 FROM topics t
 LEFT JOIN topics p ON p.id = t.parent_id
+LEFT JOIN topic_priority tp ON tp.topic_id = t.id
 ORDER BY t.slug
 `
 
@@ -353,6 +367,7 @@ type ListFetchTopicsRow struct {
 	Name            string
 	Description     string
 	ParentSlug      *string
+	Priority        int32
 	Followers       int32
 	ProfessionUsers int32
 	Views7d         int32
@@ -362,11 +377,11 @@ type ListFetchTopicsRow struct {
 	LastFetchedAt   time.Time
 }
 
-// Every topic with what fetch planning needs: its parent, hints, demand (summed over the hosted
-// envs), the professions its root serves, whether it has children and when a fetch call covering
-// it last succeeded.
-func (q *Queries) ListFetchTopics(ctx context.Context) ([]ListFetchTopicsRow, error) {
-	rows, err := q.db.Query(ctx, listFetchTopics)
+// Every topic with what fetch planning needs: its parent, priority (@default_priority when it has
+// none), hints, demand (summed over the hosted envs), the professions its root serves, whether it
+// has children and when a fetch call covering it last succeeded.
+func (q *Queries) ListFetchTopics(ctx context.Context, defaultPriority int32) ([]ListFetchTopicsRow, error) {
+	rows, err := q.db.Query(ctx, listFetchTopics, defaultPriority)
 	if err != nil {
 		return nil, err
 	}
@@ -380,6 +395,7 @@ func (q *Queries) ListFetchTopics(ctx context.Context) ([]ListFetchTopicsRow, er
 			&i.Name,
 			&i.Description,
 			&i.ParentSlug,
+			&i.Priority,
 			&i.Followers,
 			&i.ProfessionUsers,
 			&i.Views7d,
