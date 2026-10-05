@@ -5,11 +5,11 @@
         <vector
             android:width="108dp" android:height="108dp"
             android:viewportWidth="108" android:viewportHeight="108">
-            <path android:name="delta" android:pathData="M43.33,46.5 L54,28 L76.5,67 L31.5,67 L36.98,57.5" android:strokeColor="#FF818CF8"
+            <path android:name="delta" android:pathData="M43.33,46.5 L54,28 L76.5,67 L31.5,67 L36.98,57.5" android:strokeColor="#FF4F46E5"
                 android:strokeWidth="8" android:strokeLineJoin="round" android:trimPathEnd="0" />
             <group android:name="weft" android:pivotX="24" android:pivotY="52" android:scaleX="0">
                 <path android:pathData="M60.35,49 L27,49 A3,3 0 0 0 27,55 L60.35,55 Z M75.35,49 L81,49 A3,3 0 0 1 81,55 L75.35,55 Z"
-                    android:fillColor="#FF06B6D4" />
+                    android:fillColor="#FF0284C7" />
             </group>
         </vector>
     </aapt:attr>

@@ -141,12 +141,7 @@ gcloud services enable monitoring.googleapis.com logging.googleapis.com cloudtra
    - 5xx responses
    - p95 latency
    - instances at `MAX_INSTANCES`
-   - no `notify received` log line for 12h, which means the curator stopped. This policy needs its
-     log-based metric, so create the metric first.
    ```sh
-   gcloud logging metrics create notify_received --project "$P" \
-     --description "POST /internal/notify calls from the curator" \
-     --log-filter "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"$CLOUD_RUN_SERVICE\" AND jsonPayload.message=\"notify received\""
    mkdir -p /tmp/changeloom-monitoring
    for f in deploy/monitoring/*.yaml; do
      out=/tmp/changeloom-monitoring/$(basename "$f")
@@ -154,7 +149,6 @@ gcloud services enable monitoring.googleapis.com logging.googleapis.com cloudtra
      gcloud monitoring policies create --project "$P" --notification-channels "$CHANNEL" --policy-from-file "$out"
    done
    ```
-   The 12h absence alert also fires while the curator is intentionally off; snooze it then.
 5. **Error Reporting.** The api's error logs show up there automatically. Turn on notifications in the
    console: Error Reporting → Configure notifications → `$CHANNEL`.
 6. **Billing budget.** Alerts the billing account's admins by email at 50%, 90% and 100% of the
@@ -171,12 +165,9 @@ The topic catalog (`curator/seed/catalog/`) and the keys below are tuned in `cur
 
 - **Loading a changed catalog.** `make curator-migrate curator-seed` (local DB), then `make migrate-remote DEPLOY_ENV=<env>`, then `make curator-sync DEPLOY_ENV=<env>` (`curator sync --env <env>` from `curator/` only works with `curator/.env` exported, which breaks on unquoted `&` in URLs; make parses it fine). The old software-only topics were dropped, so reset the dev and staging DBs once before the first seed.
 - **Backfill.** `curator backfill [--max-calls N]` fills leaf topics with fewer than `CURATOR_BACKFILL_TARGET` recent stories, `CURATOR_BACKFILL_TOPICS_PER_CALL` topics per Claude call. Run it repeatedly on first setup; each call uses subscription quota. `curator run` also makes `CURATOR_BACKFILL_CALLS_PER_RUN` calls per run.
-- **Fetch frequency.** Hot topics (at least `CURATOR_HOT_MIN_VIEWS` distinct viewers in 7 days) are fetched every run; warm ones (followed, or serving a user's profession) every `CURATOR_WARM_INTERVAL_HOURS`; cold ones every `CURATOR_COLD_INTERVAL_HOURS`. Views come from the app's feed impressions.
+- **Fetch frequency.** Hot topics (at least `CURATOR_HOT_MIN_VIEWS` distinct viewers in 7 days) are fetched every run; warm ones (followed, or serving a user's profession) every `CURATOR_WARM_INTERVAL_HOURS`, or their priority's interval when shorter; cold ones every `CURATOR_PRIORITY_INTERVAL_HOURS` entry for their topic priority (1 highest to 5). Within a tier, higher-priority topics go first. Views come from the app's feed impressions.
 - **Prune** (keeps Neon under its 1 GB limit). `curator run` prunes each hosted DB every `CURATOR_PRUNE_INTERVAL_DAYS`; run `curator prune --env <env>` by hand to force it. Saved stories are never deleted. Unsaved stories are deleted when published over `CURATOR_PRUNE_MAX_AGE_DAYS` ago.
-- The launchd job runs `curator run --if-due` four times a day (02:00, 08:00, 14:00, 20:00) and at login. launchd runs a job missed during sleep when the Mac wakes; after a shutdown the login run covers it, and `--if-due` skips any run when the last successful fetch was under `CURATOR_RUN_MIN_GAP_HOURS` ago. `run` only touches the envs in `CURATOR_RUN_ENVS` (default `prod`, so staging is never synced by the job; use `curator sync --env staging` by hand). The job runs Claude with the `claude-personal` profile (`CLAUDE_CONFIG_DIR=~/.claude-personal`; set `CLAUDE_CONFIG_DIR` in `curator/.env` to override), and that profile must be logged in. Reinstall the plist with the sed command in its header to pick this up.
-
-When `curator run` fails on the Mac, it also shows a macOS notification and exits non-zero. Details
-are in `~/Library/Logs/changeloom-curator.log`.
+- `curator run` only touches the envs in `CURATOR_RUN_ENVS` (default `prod`, so staging is never synced by it; use `curator sync --env staging` by hand).
 
 ## Android app
 
@@ -292,8 +283,10 @@ them (see Continuous deployment). Play rejects a `versionCode` it has seen befor
   - **Staging:** pushes to `staging` that touch `mobile/` build the signed staging APK and send it to
     Firebase App Distribution. Its `versionName` is the last release plus the build, e.g.
     `1.2.3-staging.45+abc1234` (run 45, commit abc1234; `0.0.0-staging…` before the first release).
-  - **Prod:** a `v1.2.3` tag (after approval) builds the signed prod AAB with `versionName` 1.2.3 and
-    uploads it to Play's internal track. Promote it in Play Console.
+  - **Prod:** a release tag (after approval) builds the signed prod AAB with the tag's `versionName` and
+    uploads it to Play: `v1.2.3-alpha.4` to closed testing (the default closed track, `alpha`), `v1.2.3`
+    to production. `PLAY_RELEASE_STATUS` (default `completed`) applies to both; `draft` leaves the
+    release for you to roll out in Play Console.
   - `versionCode` is the workflow's run number plus the optional repo variable
     `ANDROID_VERSION_CODE_OFFSET`. Set the offset above any `versionCode` you uploaded by hand.
 - **Cutting a release:** `make release` lists the commits since the last `v*` tag and proposes the next
@@ -301,6 +294,9 @@ them (see Continuous deployment). Play rejects a `versionCode` it has seen befor
   `BREAKING CHANGE:` → major). After you confirm, it tags `main` and pushes the tag, which starts the prod
   release above. It refuses unless `main` is clean and matches `origin/main`. `make release DRY_RUN=1` only
   shows the proposal; `make release VERSION=1.4.0` picks the number yourself (it must be above the last).
+  `make release PRE=alpha` tags a closed-testing build instead: `v1.4.0-alpha.1`, then `-alpha.2` and so on
+  for the same version. A later `make release` releases that version (`v1.4.0`) to production, even from
+  the same commit. First alpha: `make release VERSION=1.0.0 PRE=alpha`.
 
 The workflows reach GCP through Workload Identity Federation, so there are no service account keys.
 **One-time setup, per env.** These commands change IAM and create resources; read them, then run them
@@ -392,5 +388,5 @@ GitHub environment: `staging`, or `production` for prod.
 
 1. Staging: merge to `staging`. The workflows deploy the api and send the app to testers. Run the
    curator's `sync --env staging` and test.
-2. Prod: merge `staging` into `main` (deploys the api after approval), then push a `v<x.y.z>` tag for the app, and promote
-   the internal release in Play Console.
+2. Prod: merge `staging` into `main` (deploys the api after approval), then `make release PRE=alpha` for a
+   closed-testing build of the app, and `make release` to ship that version to production.

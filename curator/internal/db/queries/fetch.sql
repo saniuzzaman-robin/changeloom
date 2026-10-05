@@ -1,12 +1,13 @@
 -- name: ListFetchTopics :many
--- Every topic with what fetch planning needs: its parent, hints, demand (summed over the hosted
--- envs), the professions its root serves, whether it has children and when a fetch call covering
--- it last succeeded.
+-- Every topic with what fetch planning needs: its parent, priority (@default_priority when it has
+-- none), hints, demand (summed over the hosted envs), the professions its root serves, whether it
+-- has children and when a fetch call covering it last succeeded.
 SELECT t.id,
     t.slug,
     t.name,
     t.description,
     p.slug AS parent_slug,
+    COALESCE(tp.priority, @default_priority::integer)::integer AS priority,
     COALESCE((SELECT sum(s.followers) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS followers,
     COALESCE((SELECT sum(s.profession_users) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS profession_users,
     COALESCE((SELECT sum(s.views_7d) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS views_7d,
@@ -24,6 +25,7 @@ SELECT t.id,
     ), 'epoch')::timestamptz AS last_fetched_at
 FROM topics t
 LEFT JOIN topics p ON p.id = t.parent_id
+LEFT JOIN topic_priority tp ON tp.topic_id = t.id
 ORDER BY t.slug;
 
 -- name: ListCountryFetches :many
@@ -54,14 +56,16 @@ JOIN topics a ON a.id = r.topic_id
 JOIN topics b ON b.id = r.related_id;
 
 -- name: ListBackfillTopics :many
--- Leaf topics with fewer than @target stories published since @since, most wanted first. A topic
--- already covered by a successful backfill call since @since is skipped, so topics with little
--- real news are not asked about again and again.
+-- Leaf topics with fewer than @target stories published since @since, the highest priority
+-- (@default_priority when it has none) first, then the most wanted. A topic already covered by a
+-- successful backfill call since @since is skipped, so topics with little real news are not asked
+-- about again and again.
 SELECT t.id,
     t.slug,
     t.name,
     t.description,
     p.slug AS parent_slug,
+    COALESCE(tp.priority, @default_priority::integer)::integer AS priority,
     COALESCE((SELECT array_agg(h.url ORDER BY h.url) FROM topic_hints h WHERE h.topic_id = t.id), '{}')::text[] AS hints,
     COALESCE((
         SELECT array_agg(pr.name ORDER BY pr.position, pr.name)
@@ -70,6 +74,7 @@ SELECT t.id,
     ), '{}')::text[] AS professions
 FROM topics t
 LEFT JOIN topics p ON p.id = t.parent_id
+LEFT JOIN topic_priority tp ON tp.topic_id = t.id
 WHERE NOT EXISTS (SELECT 1 FROM topics c WHERE c.parent_id = t.id)
     -- Deals are fetched per country, never in a backfill.
     AND t.slug <> 'deals' AND t.slug NOT LIKE 'deals/%'
@@ -82,7 +87,8 @@ WHERE NOT EXISTS (SELECT 1 FROM topics c WHERE c.parent_id = t.id)
         WHERE fr.status = 'succeeded' AND fr.group_slug LIKE 'backfill:%'
             AND fr.started_at >= @since AND fr.topic_ids @> ARRAY[t.id]
     )
-ORDER BY COALESCE((SELECT sum(ts.followers + ts.profession_users + ts.views_7d) FROM topic_stats ts WHERE ts.topic_id = t.id), 0) DESC,
+ORDER BY COALESCE(tp.priority, @default_priority::integer),
+    COALESCE((SELECT sum(ts.followers + ts.profession_users + ts.views_7d) FROM topic_stats ts WHERE ts.topic_id = t.id), 0) DESC,
     t.slug
 LIMIT @max_rows;
 

@@ -777,10 +777,10 @@ func TestTopicsIncludeProfessions(t *testing.T) {
 	if code := e.do(http.MethodGet, "/v1/topics", aliceToken, nil, &got); code != http.StatusOK {
 		t.Fatalf("topics: status %d", code)
 	}
-	if len(got.Professions) != 2 || got.Professions[0].Slug != "software-engineer" || got.Professions[1].Slug != "data-scientist" {
-		t.Fatalf("professions = %+v, want software-engineer then data-scientist", got.Professions)
+	if len(got.Professions) != 2 || got.Professions[0].Slug != "data-scientist" || got.Professions[1].Slug != "software-engineer" {
+		t.Fatalf("professions = %+v, want data-scientist then software-engineer (alphabetical)", got.Professions)
 	}
-	if want := []string{"web", "mobile", "cloud", "languages", "devtools"}; !slices.Equal(got.Professions[0].Topics, want) {
+	if want := []string{"web", "mobile", "cloud", "languages", "devtools"}; !slices.Equal(got.Professions[1].Topics, want) {
 		t.Fatalf("software-engineer topics = %v, want %v", got.Professions[0].Topics, want)
 	}
 }

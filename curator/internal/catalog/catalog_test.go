@@ -1,6 +1,7 @@
 package catalog_test
 
 import (
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -27,25 +28,28 @@ func TestParseRejects(t *testing.T) {
 		{"missing name", `[{slug: a}]`, "needs both slug and name"},
 		{"bad root slug", `[{slug: A_b, name: A}]`, "root topic slug"},
 		{"root with slash", `[{slug: a/b, name: A}]`, "root topic slug"},
-		{"child without parent prefix", `[{slug: a, name: A, children: [{slug: b/c, name: C}]}]`, `must be "a/"`},
-		{"child with two segments", `[{slug: a, name: A, children: [{slug: a/b/c, name: C}]}]`, `must be "a/"`},
-		{"duplicate", `[{slug: a, name: A}, {slug: a, name: B}]`, "duplicate topic slug"},
-		{"too deep", `[{slug: a, name: A, children: [{slug: a/b, name: B, children: [{slug: a/b-c, name: C}]}]}]`, "at most two levels"},
-		{"unknown related", `[{slug: a, name: A, related: [b]}]`, `related topic "b" is not in the catalog`},
-		{"self related", `[{slug: a, name: A, related: [a]}]`, "lists itself"},
-		{"relative hint", `[{slug: a, name: A, hints: [/feed.xml]}]`, "absolute http(s) URL"},
-		{"non-http hint", `[{slug: a, name: A, hints: ["ftp://example.com/x"]}]`, "absolute http(s) URL"},
+		{"child without parent prefix", `[{slug: a, name: A, priority: 3, children: [{slug: b/c, name: C}]}]`, `must be "a/"`},
+		{"child with two segments", `[{slug: a, name: A, priority: 3, children: [{slug: a/b/c, name: C}]}]`, `must be "a/"`},
+		{"duplicate", `[{slug: a, name: A, priority: 3}, {slug: a, name: B}]`, "duplicate topic slug"},
+		{"too deep", `[{slug: a, name: A, priority: 3, children: [{slug: a/b, name: B, children: [{slug: a/b-c, name: C}]}]}]`, "at most two levels"},
+		{"unknown related", `[{slug: a, name: A, priority: 3, related: [b]}]`, `related topic "b" is not in the catalog`},
+		{"self related", `[{slug: a, name: A, priority: 3, related: [a]}]`, "lists itself"},
+		{"relative hint", `[{slug: a, name: A, priority: 3, hints: [/feed.xml]}]`, "absolute http(s) URL"},
+		{"non-http hint", `[{slug: a, name: A, priority: 3, hints: ["ftp://example.com/x"]}]`, "absolute http(s) URL"},
 		{"profession unknown topic", `professions: [{slug: p, name: P, topics: [zz]}]
-topics: [{slug: a, name: A}]`, "not a root topic"},
+topics: [{slug: a, name: A, priority: 3}]`, "not a root topic"},
 		{"profession child topic", `professions: [{slug: p, name: P, topics: [a, a/x]}]
-topics: [{slug: a, name: A, children: [{slug: a/x, name: X}]}]`, "not a root topic"},
+topics: [{slug: a, name: A, priority: 3, children: [{slug: a/x, name: X}]}]`, "not a root topic"},
 		{"profession duplicate", `professions: [{slug: p, name: P, topics: [a]}, {slug: p, name: Q, topics: [a]}]
-topics: [{slug: a, name: A}]`, "duplicate profession"},
+topics: [{slug: a, name: A, priority: 3}]`, "duplicate profession"},
 		{"profession bad slug", `professions: [{slug: P_1, name: P, topics: [a]}]
-topics: [{slug: a, name: A}]`, "profession slug"},
+topics: [{slug: a, name: A, priority: 3}]`, "profession slug"},
 		{"unmapped root", `professions: [{slug: p, name: P, topics: [a]}]
-topics: [{slug: a, name: A}, {slug: b, name: B}]`, `root topic "b" belongs to no profession`},
-		{"unknown key", `[{slug: a, name: A, hint: [https://example.com]}]`, "field hint not found"},
+topics: [{slug: a, name: A, priority: 3}, {slug: b, name: B, priority: 3}]`, `root topic "b" belongs to no profession`},
+		{"root without priority", `[{slug: z, name: Z}]`, `topic "z": priority 0 must be 1 (highest) to 5`},
+		{"root priority too high", `[{slug: z, name: Z, priority: 6}]`, `topic "z": priority 6`},
+		{"child priority out of range", `[{slug: z, name: Z, priority: 2, children: [{slug: z/x, name: X, priority: -1}]}]`, `topic "z/x": priority -1`},
+		{"unknown key", `[{slug: a, name: A, priority: 3, hint: [https://example.com]}]`, "field hint not found"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -68,12 +72,14 @@ professions:
 topics:
   - slug: a
     name: A
+    priority: 2
     children:
       - {slug: a/x, name: X, related: [b/y], hints: [https://example.com/x.xml]}
   - slug: b
     name: B
+    priority: 4
     children:
-      - {slug: b/y, name: Y, related: [a/x]}
+      - {slug: b/y, name: Y, priority: 1, related: [a/x]}
 `
 
 func TestSeed(t *testing.T) {
@@ -105,6 +111,31 @@ func TestSeed(t *testing.T) {
 		t.Fatalf("parent of a/x = %q, want a", parent)
 	}
 
+	priorities := func() map[string]int {
+		t.Helper()
+		rows, err := pool.Query(ctx, `SELECT t.slug, p.priority FROM topic_priority p JOIN topics t ON t.id = p.topic_id`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]int{}
+		for rows.Next() {
+			var slug string
+			var p int
+			if err := rows.Scan(&slug, &p); err != nil {
+				t.Fatal(err)
+			}
+			got[slug] = p
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	// a/x inherits its root's priority; b/y sets its own.
+	if got, want := priorities(), map[string]int{"a": 2, "a/x": 2, "b": 4, "b/y": 1}; !maps.Equal(got, want) {
+		t.Fatalf("priorities = %v, want %v", got, want)
+	}
+
 	updatedAt := func(slug string) time.Time {
 		t.Helper()
 		var ts time.Time
@@ -131,7 +162,7 @@ func TestSeed(t *testing.T) {
 	// profession's topic list is replaced.
 	renamed, err := catalog.Parse([]byte(`
 professions: [{slug: p, name: P, topics: [a]}]
-topics: [{slug: a, name: A, children: [{slug: a/x, name: X2}]}]`))
+topics: [{slug: a, name: A, priority: 3, children: [{slug: a/x, name: X2}]}]`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,6 +171,10 @@ topics: [{slug: a, name: A, children: [{slug: a/x, name: X2}]}]`))
 	}
 	if got := updatedAt("a/x"); !got.After(before) {
 		t.Fatalf("renamed topic updated_at = %v, want after %v", got, before)
+	}
+	// A reseed replaces catalog priorities and leaves topics missing from the catalog alone.
+	if got, want := priorities(), map[string]int{"a": 3, "a/x": 3, "b": 4, "b/y": 1}; !maps.Equal(got, want) {
+		t.Fatalf("priorities after reseed = %v, want %v", got, want)
 	}
 	var topics, relations int
 	if err := pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM topics), (SELECT count(*) FROM topic_relations)`).Scan(&topics, &relations); err != nil {

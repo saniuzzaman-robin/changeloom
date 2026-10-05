@@ -20,9 +20,10 @@ professions:
 topics:
   - slug: databases
     name: Databases
+    priority: 3
     children:
       - {slug: databases/postgres, name: PostgreSQL, related: [security]}
-  - {slug: security, name: Security}
+  - {slug: security, name: Security, priority: 3}
 `
 
 func exec(t *testing.T, pool *pgxpool.Pool, sql string, args ...any) {

@@ -14,6 +14,7 @@ import (
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/catalog"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/claude"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/config"
+	"github.com/saniuzzaman-robin/changeloom/curator/internal/db"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/dbtest"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/fetch"
 )
@@ -50,9 +51,10 @@ professions:
 topics:
   - slug: languages
     name: Languages
+    priority: 3
     children:
       - {slug: languages/go, name: Go, hints: [https://go.dev/blog/feed.atom]}
-  - {slug: security, name: Security}
+  - {slug: security, name: Security, priority: 3}
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -81,8 +83,9 @@ func testConfig() config.Config {
 	return config.Config{
 		MaxCallsPerRun: 5, TopicsPerCall: 5, ItemMaxAge: 14 * 24 * time.Hour,
 		MergeWindow: 14 * 24 * time.Hour, StoriesPerTopic: 5, Concurrency: 1,
-		HotMinViews: 1, WarmInterval: 24 * time.Hour, ColdInterval: 168 * time.Hour,
-		BackfillTarget: 20, BackfillTopicsPerCall: 2,
+		HotMinViews: 1, WarmInterval: 24 * time.Hour,
+		PriorityIntervals: [5]time.Duration{48 * time.Hour, 96 * time.Hour, 168 * time.Hour, 336 * time.Hour, 672 * time.Hour},
+		BackfillTarget:    20, BackfillTopicsPerCall: 2,
 		DealsMaxCountries: 5, DealsMaxCallsPerRun: 4, DealsMaxAge: 7 * 24 * time.Hour,
 	}
 }
@@ -175,6 +178,30 @@ func TestFetchStoresAndMerges(t *testing.T) {
 	}
 }
 
+func TestFetchCompactPrompt(t *testing.T) {
+	pool := setup(t)
+	ctx := t.Context()
+
+	fake := &fakeClaude{responses: []any{map[string]any{"stories": []any{
+		story("Go 1.27", "https://go.dev/blog/go1.27", time.Now().Add(-time.Hour), nil),
+	}}}}
+	cfg := testConfig()
+	cfg.PromptStyle = config.PromptCompact
+	if _, err := fetch.New(pool, fake, cfg).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	p := fake.prompts[0]
+	if !strings.Contains(p, "## Steps") || !strings.Contains(p, "Do not put dates in queries") || !strings.Contains(p, "hints: https://go.dev/blog/feed.atom") {
+		t.Errorf("compact prompt lacks steps, query rule or hints:\n%s", p)
+	}
+	if strings.Contains(p, "## Deals") {
+		t.Errorf("compact prompt has the deals section without deal topics:\n%s", p)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM stories WHERE prompt_version = $1`, fetch.PromptVersionCompact); n != 1 {
+		t.Errorf("compact stories = %d", n)
+	}
+}
+
 func TestFetchRecordsFailure(t *testing.T) {
 	pool := setup(t)
 	fake := &fakeClaude{responses: []any{errors.New("claude call failed (error_max_turns)")}}
@@ -230,6 +257,54 @@ func TestBackfill(t *testing.T) {
 	if sum, err = f.Backfill(ctx, 5); err != nil || sum.Calls != 0 {
 		t.Fatalf("third backfill: %+v, %v", sum, err)
 	}
+}
+
+func TestBackfillOrdersByPriority(t *testing.T) {
+	ctx := t.Context()
+	exec := func(t *testing.T, pool *pgxpool.Pool, sql string) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, sql); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	backfillOne := func(t *testing.T, pool *pgxpool.Pool) string {
+		t.Helper()
+		cfg := testConfig()
+		cfg.BackfillTopicsPerCall = 1
+		fake := &fakeClaude{responses: []any{map[string]any{"stories": []any{}}}}
+		if sum, err := fetch.New(pool, fake, cfg).Backfill(ctx, 1); err != nil || sum.Calls != 1 {
+			t.Fatalf("backfill: %+v, %v", sum, err)
+		}
+		return fake.prompts[0]
+	}
+
+	t.Run("higher priority first", func(t *testing.T) {
+		pool := setup(t)
+		exec(t, pool, `UPDATE topic_priority SET priority = 1 WHERE topic_id = (SELECT id FROM topics WHERE slug = 'security')`)
+		// security (1) goes before languages/go (3), although go sorts first by slug.
+		if p := backfillOne(t, pool); !strings.Contains(p, "- security:") || strings.Contains(p, "- languages/go:") {
+			t.Errorf("prompt:\n%s", p)
+		}
+	})
+
+	t.Run("no priority row counts as the default", func(t *testing.T) {
+		pool := setup(t)
+		exec(t, pool, `DELETE FROM topic_priority WHERE topic_id = (SELECT id FROM topics WHERE slug = 'languages/go')`)
+		exec(t, pool, `UPDATE topic_priority SET priority = 4 WHERE topic_id = (SELECT id FROM topics WHERE slug = 'security')`)
+		rows, err := db.New(pool).ListFetchTopics(ctx, catalog.DefaultPriority)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range rows {
+			if r.Slug == "languages/go" && r.Priority != catalog.DefaultPriority {
+				t.Errorf("languages/go priority = %d, want the default %d", r.Priority, catalog.DefaultPriority)
+			}
+		}
+		// languages/go (default 3) goes before security (4) rather than being dropped or put last.
+		if p := backfillOne(t, pool); !strings.Contains(p, "- languages/go:") || strings.Contains(p, "- security:") {
+			t.Errorf("prompt:\n%s", p)
+		}
+	})
 }
 
 func TestBackfillSkipsFilledTopics(t *testing.T) {
@@ -311,6 +386,7 @@ professions:
 topics:
   - slug: deals
     name: Deals
+    priority: 3
     children:
       - {slug: deals/laptops, name: Laptop Deals}
 `))

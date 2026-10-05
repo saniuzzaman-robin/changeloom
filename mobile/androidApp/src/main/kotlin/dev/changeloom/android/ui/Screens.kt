@@ -1,6 +1,16 @@
 package dev.changeloom.android.ui
 
 import android.os.Bundle
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
@@ -8,9 +18,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.HasDefaultViewModelProviderFactory
 import androidx.lifecycle.Lifecycle
@@ -34,6 +48,7 @@ import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.changeloom.android.telemetry.TrackScreen
 import dev.changeloom.android.ui.components.LoomMark
+import dev.changeloom.android.ui.theme.expoTween
 import org.koin.androidx.compose.koinViewModel
 
 /**
@@ -50,27 +65,66 @@ fun AppRoot(
 ) {
     val sessions: SessionViewModels = viewModel()
     val session = remember(userId) { sessions.ownerFor(userId) }
-    if (userId == null) {
-        SideEffect(onContentReady)
-        TrackScreen("sign_in")
-        SignInScreen()
-        return
+    val activityOwner = checkNotNull(LocalViewModelStoreOwner.current) { "AppRoot needs a ViewModelStoreOwner" }
+    var signInShown by rememberSaveable { mutableStateOf(false) }
+    val vm: TopicPickerViewModel? = if (userId != null) koinViewModel(viewModelStoreOwner = session) else null
+    val state = vm?.state?.collectAsStateWithLifecycle()?.value
+    val screen = when {
+        state == null -> RootScreen.SignIn
+        state.followed.isNotEmpty() -> RootScreen.Main
+        state.loading -> RootScreen.Loading
+        else -> RootScreen.Onboarding
     }
-    CompositionLocalProvider(LocalViewModelStoreOwner provides session) {
-        val vm: TopicPickerViewModel = koinViewModel()
-        val state by vm.state.collectAsStateWithLifecycle()
-        when {
-            state.followed.isNotEmpty() -> {
-                SideEffect(onContentReady)
-                MainScreen(openStoryId, onOpenStoryHandled)
-            }
-            state.loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { LoomMark(Modifier.size(64.dp)) }
-            else -> {
-                SideEffect(onContentReady)
-                TrackScreen("onboarding")
-                TopicPickerScreen(TopicPickerMode.Onboarding, onExit = onSignOut, vm = vm)
+    // Each target carries its own store owner, so a screen fading out keeps its ViewModels instead of picking up
+    // the next session's (or, for sign-in, leaving the activity's store).
+    val target = RootTarget(screen, if (userId == null) activityOwner else session, vm)
+    AnimatedContent(
+        target,
+        transitionSpec = { fadeIn(expoTween()) togetherWith fadeOut(expoTween()) },
+        contentKey = { it.screen },
+        label = "root",
+    ) { t ->
+        CompositionLocalProvider(LocalViewModelStoreOwner provides t.owner) {
+            when (t.screen) {
+                RootScreen.SignIn -> {
+                    SideEffect(onContentReady)
+                    SideEffect { signInShown = true }
+                    TrackScreen("sign_in")
+                    SignInScreen()
+                }
+                RootScreen.Main -> {
+                    SideEffect(onContentReady)
+                    MainScreen(openStoryId, onOpenStoryHandled)
+                }
+                RootScreen.Loading -> LoadingMark(weave = signInShown)
+                RootScreen.Onboarding -> {
+                    SideEffect(onContentReady)
+                    TrackScreen("onboarding")
+                    TopicPickerScreen(TopicPickerMode.Onboarding, onExit = onSignOut, vm = checkNotNull(t.vm))
+                }
             }
         }
+    }
+}
+
+private enum class RootScreen { SignIn, Loading, Main, Onboarding }
+
+private data class RootTarget(val screen: RootScreen, val owner: ViewModelStoreOwner, val vm: TopicPickerViewModel?)
+
+/**
+ * The launch splash's mark at the splash's size, so the handover doesn't jump, breathing slowly while the account
+ * loads. It weaves in only when [weave] (after signing in); after a cold start the splash has already woven it.
+ */
+@Composable
+private fun LoadingMark(weave: Boolean) {
+    val alpha = rememberInfiniteTransition(label = "loadingBreathe").animateFloat(
+        1f,
+        BREATHE_MIN_ALPHA,
+        infiniteRepeatable(tween(BREATHE_HALF_MS, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "loadingAlpha",
+    )
+    Box(Modifier.fillMaxSize(), Alignment.Center) {
+        LoomMark(Modifier.size(SPLASH_MARK_SIZE).graphicsLayer { this.alpha = alpha.value }, animate = weave)
     }
 }
 
@@ -101,6 +155,11 @@ class SessionViewModels(private val saved: SavedStateHandle) : ViewModel() {
 
 private const val KEY_SESSION_USER = "session_user"
 private const val KEY_SESSION_STATE = "session_state"
+
+// The splash icon is 288dp for the 108-unit launcher viewport; LoomMark spans CROP_SIZE = 84 units: 288 × 84 / 108.
+private val SPLASH_MARK_SIZE = 224.dp
+private const val BREATHE_MIN_ALPHA = 0.55f
+private const val BREATHE_HALF_MS = 800
 
 /**
  * One account's ViewModel store with its own saved state, restored from [restored]. Koin reads the creation extras,

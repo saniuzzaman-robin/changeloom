@@ -48,6 +48,22 @@ func (q *Queries) AddTopicRelation(ctx context.Context, arg AddTopicRelationPara
 	return result.RowsAffected(), nil
 }
 
+const setTopicPriority = `-- name: SetTopicPriority :exec
+INSERT INTO topic_priority (topic_id, priority)
+VALUES ($1, $2)
+ON CONFLICT (topic_id) DO UPDATE SET priority = EXCLUDED.priority
+`
+
+type SetTopicPriorityParams struct {
+	TopicID  int64
+	Priority int16
+}
+
+func (q *Queries) SetTopicPriority(ctx context.Context, arg SetTopicPriorityParams) error {
+	_, err := q.db.Exec(ctx, setTopicPriority, arg.TopicID, arg.Priority)
+	return err
+}
+
 const upsertTopic = `-- name: UpsertTopic :one
 INSERT INTO topics (slug, name, parent_id, description)
 VALUES ($1, $2, $3, $4)

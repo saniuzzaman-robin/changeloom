@@ -1,5 +1,6 @@
 - slug: writing-craft
   name: "Writing Craft"
+  priority: 3
   description: "Fiction, nonfiction and technique."
   children:
     - {slug: writing-craft/fiction, name: "Fiction"}
@@ -13,6 +14,7 @@
     - {slug: writing-craft/ai, name: "AI & Writing"}
 - slug: publishing
   name: "Publishing"
+  priority: 3
   description: "Books and the book trade."
   children:
     - {slug: publishing/traditional, name: "Traditional Publishing"}
@@ -25,6 +27,7 @@
     - {slug: publishing/translation, name: "Translation"}
 - slug: journalism
   name: "Journalism"
+  priority: 3
   description: "Reporting and newsroom practice."
   children:
     - {slug: journalism/investigative, name: "Investigative Reporting"}
@@ -38,6 +41,7 @@
     - {slug: journalism/freelance, name: "Freelance Journalism"}
 - slug: media-business
   name: "Media Business"
+  priority: 3
   description: "News and media economics."
   children:
     - {slug: media-business/subscriptions, name: "Subscriptions & Paywalls"}
@@ -49,6 +53,7 @@
     - {slug: media-business/advertising, name: "Advertising Revenue"}
 - slug: photography-gear
   name: "Photography Gear"
+  priority: 3
   description: "Cameras and lenses."
   children:
     - {slug: photography-gear/mirrorless, name: "Mirrorless Cameras"}
@@ -62,6 +67,7 @@
     - {slug: photography-gear/reviews, name: "Gear Reviews"}
 - slug: photography-craft
   name: "Photography Craft"
+  priority: 3
   description: "Technique and editing."
   children:
     - {slug: photography-craft/portrait, name: "Portrait"}
@@ -75,6 +81,7 @@
     - {slug: photography-craft/retouching, name: "Color & Retouching"}
 - slug: photo-business
   name: "Photo Business"
+  priority: 4
   description: "Clients, licensing and rights."
   children:
     - {slug: photo-business/pricing, name: "Pricing & Contracts"}
@@ -86,6 +93,7 @@
     - {slug: photo-business/social, name: "Social Media for Photographers"}
 - slug: video-production
   name: "Video Production"
+  priority: 2
   description: "Shooting and editing video."
   children:
     - {slug: video-production/cameras, name: "Cinema Cameras"}
@@ -98,6 +106,7 @@
     - {slug: video-production/short-form, name: "Short-Form Production"}
 - slug: post-production
   name: "Post-Production"
+  priority: 4
   description: "Editing, color and VFX."
   children:
     - {slug: post-production/resolve, name: "DaVinci Resolve"}
@@ -110,6 +119,7 @@
     - {slug: post-production/subtitles, name: "Subtitling"}
 - slug: film-industry
   name: "Film Industry"
+  priority: 3
   description: "Production and distribution."
   children:
     - {slug: film-industry/indie, name: "Independent Film"}
@@ -122,6 +132,7 @@
     - {slug: film-industry/cinematography, name: "Cinematography"}
 - slug: music-production
   name: "Music Production"
+  priority: 3
   description: "Recording and mixing."
   children:
     - {slug: music-production/daws, name: "DAWs"}
@@ -135,6 +146,7 @@
     - {slug: music-production/live-sound, name: "Live Sound"}
 - slug: instruments
   name: "Instruments & Playing"
+  priority: 4
   description: "Learning and gear."
   children:
     - {slug: instruments/guitar, name: "Guitar"}
@@ -148,6 +160,7 @@
     - {slug: instruments/practice, name: "Practice Techniques"}
 - slug: art-techniques
   name: "Art Techniques"
+  priority: 4
   description: "Traditional media and skill."
   children:
     - {slug: art-techniques/drawing, name: "Drawing"}
@@ -160,6 +173,7 @@
     - {slug: art-techniques/education, name: "Art Education"}
 - slug: digital-art
   name: "Digital Art & Illustration"
+  priority: 3
   description: "Tools and trends."
   children:
     - {slug: digital-art/procreate, name: "Procreate"}
@@ -172,6 +186,7 @@
     - {slug: digital-art/comics, name: "Comics & Webcomics"}
 - slug: art-market
   name: "Art Market"
+  priority: 4
   description: "Galleries, auctions and exhibitions."
   children:
     - {slug: art-market/auctions, name: "Auctions"}
@@ -184,6 +199,7 @@
     - {slug: art-market/emerging, name: "Emerging Artists"}
 - slug: creator-platforms
   name: "Creator Platforms"
+  priority: 2
   description: "Where creators publish."
   children:
     - {slug: creator-platforms/youtube, name: "YouTube"}
@@ -196,6 +212,7 @@
     - {slug: creator-platforms/new-platforms, name: "New Platforms"}
 - slug: creator-business
   name: "Creator Business"
+  priority: 3
   description: "Monetization and growth."
   children:
     - {slug: creator-business/brand-deals, name: "Brand Deals"}

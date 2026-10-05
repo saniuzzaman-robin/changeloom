@@ -5,21 +5,22 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import dev.changeloom.android.R
 import dev.changeloom.android.play.AppPreferences
-import dev.changeloom.android.ui.components.TextAction
-import dev.changeloom.android.ui.theme.ChangeloomTheme
-import dev.changeloom.android.ui.theme.Radius
+import dev.changeloom.android.ui.components.ChangeloomDialog
+import dev.changeloom.android.ui.components.DialogConfirmButton
+import dev.changeloom.android.ui.components.SecondaryButton
 import org.koin.compose.koinInject
 
 /**
@@ -44,16 +45,14 @@ fun NotificationRationale(prefs: AppPreferences = koinInject()) {
         show = false
         if (allow) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
-    val c = ChangeloomTheme.colors
-    AlertDialog(
-        onDismissRequest = { answered(false) },
-        confirmButton = { TextAction(stringResource(R.string.notifications_allow), onClick = { answered(true) }) },
-        dismissButton = { TextAction(stringResource(R.string.not_now), onClick = { answered(false) }, color = c.fgMuted) },
-        title = { Text(stringResource(R.string.notifications_rationale_title)) },
-        text = { Text(stringResource(R.string.notifications_rationale_body)) },
-        shape = Radius.xxl,
-        containerColor = c.elevated,
-        titleContentColor = c.fg,
-        textContentColor = c.fgMuted,
+    ChangeloomDialog(
+        onDismiss = { answered(false) },
+        title = stringResource(R.string.notifications_rationale_title),
+        message = stringResource(R.string.notifications_rationale_body),
+        icon = Icons.Rounded.Notifications,
+        actions = {
+            SecondaryButton(stringResource(R.string.not_now), onClick = { answered(false) }, dense = true, modifier = Modifier.weight(1f))
+            DialogConfirmButton(stringResource(R.string.notifications_allow), onClick = { answered(true) }, modifier = Modifier.weight(1f))
+        },
     )
 }

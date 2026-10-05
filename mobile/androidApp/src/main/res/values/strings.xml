@@ -156,7 +156,7 @@
 
     <!-- Search and saved -->
     <string name="search_title">Find any change</string>
-    <string name="search_placeholder">Search releases, CVEs, deprecations…</string>
+    <string name="search_placeholder">Search any update, rule or change…</string>
     <string name="search_suggestions">Try searching for</string>
     <string name="search_empty_title">No stories match</string>
     <string name="search_empty_body">Try a library name, a version number or a broader keyword.</string>
@@ -184,7 +184,6 @@
     <string name="professions_eyebrow">Your profession</string>
     <string name="professions_empty_title">No professions match</string>
     <string name="professions_empty_body">Try a broader term, or skip this step.</string>
-    <string name="professions_limit">You can pick up to %1$d professions.</string>
     <string name="professions_selected">%1$d chosen</string>
     <string name="professions_next">Next</string>
     <string name="professions_skip">Skip</string>
@@ -194,7 +193,7 @@
     <string name="edit_country">Change country</string>
     <string name="country_none">Not set. Deals are hidden until you choose one.</string>
     <string name="country_title">Your country</string>
-    <string name="country_body">Deal stories are shown for this country.</string>
+    <string name="country_search">Search countries</string>
     <string name="country_save_failed">Couldn\'t save your country. Try again.</string>
     <string name="more_areas">More areas</string>
     <string name="suggested_areas">Suggested for you</string>
@@ -218,7 +217,7 @@
     <!-- Topic requests -->
     <string name="request_title">Request a topic</string>
     <string name="request_body">Can\'t find what you want to follow? Tell us and we\'ll add it.</string>
-    <string name="request_placeholder">e.g. Rust, Kubernetes, Figma</string>
+    <string name="request_placeholder">e.g. a tool, law, product or field</string>
     <string name="request_send">Send request</string>
     <string name="request_list_title">Your requests</string>
     <string name="request_added">Added</string>

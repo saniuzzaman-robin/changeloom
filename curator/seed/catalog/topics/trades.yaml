@@ -1,5 +1,6 @@
 - slug: construction-trades
   name: "Building Trades"
+  priority: 3
   description: "Carpentry, masonry and finishing."
   children:
     - {slug: construction-trades/carpentry, name: "Carpentry"}
@@ -13,6 +14,7 @@
     - {slug: construction-trades/renovation, name: "Renovation Trends"}
 - slug: site-safety
   name: "Workplace Safety"
+  priority: 4
   description: "Hazards, rules and incidents."
   children:
     - {slug: site-safety/osha, name: "OSHA & Safety Rules"}
@@ -25,6 +27,7 @@
     - {slug: site-safety/culture, name: "Safety Culture"}
 - slug: real-estate-industry
   name: "Real Estate Industry"
+  priority: 2
   description: "Property sales and development."
   children:
     - {slug: real-estate-industry/home-sales, name: "Home Sales"}
@@ -36,6 +39,7 @@
     - {slug: real-estate-industry/brokerages, name: "Brokerages"}
 - slug: skilled-trades-craft
   name: "Electrical & Plumbing"
+  priority: 3
   description: "Installation and codes."
   children:
     - {slug: skilled-trades-craft/electrical-code, name: "Electrical Code"}
@@ -48,6 +52,7 @@
     - {slug: skilled-trades-craft/licensing, name: "Licensing"}
 - slug: tools-equipment
   name: "Tools & Equipment"
+  priority: 4
   description: "Reviews and releases."
   children:
     - {slug: tools-equipment/power-tools, name: "Power Tools"}
@@ -58,6 +63,7 @@
     - {slug: tools-equipment/brands, name: "Tool Brands"}
 - slug: auto-repair
   name: "Auto Repair & Diagnostics"
+  priority: 3
   description: "Servicing and fault finding."
   children:
     - {slug: auto-repair/engine, name: "Engine Repair"}
@@ -70,6 +76,7 @@
     - {slug: auto-repair/parts, name: "Parts & Aftermarket"}
 - slug: crops-farming
   name: "Crops & Farming"
+  priority: 3
   description: "Growing practices."
   children:
     - {slug: crops-farming/grains, name: "Grains"}
@@ -83,6 +90,7 @@
     - {slug: crops-farming/seeds, name: "Seeds & Breeding"}
 - slug: livestock-ag
   name: "Livestock"
+  priority: 4
   description: "Animals and husbandry."
   children:
     - {slug: livestock-ag/cattle-dairy, name: "Cattle & Dairy"}
@@ -95,6 +103,7 @@
     - {slug: livestock-ag/aquaculture, name: "Aquaculture"}
 - slug: agtech
   name: "AgTech"
+  priority: 4
   description: "Technology on the farm."
   children:
     - {slug: agtech/precision, name: "Precision Agriculture"}
@@ -107,6 +116,7 @@
     - {slug: agtech/gene-edited, name: "Gene-Edited Crops"}
 - slug: ag-markets-policy
   name: "Ag Markets & Policy"
+  priority: 3
   description: "Prices, trade and subsidies."
   children:
     - {slug: ag-markets-policy/prices, name: "Commodity Prices"}
@@ -119,6 +129,7 @@
     - {slug: ag-markets-policy/finance, name: "Farm Finance"}
 - slug: trucking-fleet
   name: "Trucking & Fleets"
+  priority: 4
   description: "Road freight."
   children:
     - {slug: trucking-fleet/drivers, name: "Truck Drivers & Jobs"}
@@ -131,6 +142,7 @@
     - {slug: trucking-fleet/borders, name: "Border Crossings"}
 - slug: shipping-maritime
   name: "Shipping & Maritime"
+  priority: 4
   description: "Ports and vessels."
   children:
     - {slug: shipping-maritime/containers, name: "Container Shipping"}
@@ -143,6 +155,7 @@
     - {slug: shipping-maritime/seafarers, name: "Seafarers"}
 - slug: flight-ops
   name: "Flight Operations"
+  priority: 3
   description: "Piloting and operations."
   children:
     - {slug: flight-ops/training, name: "Pilot Training"}
@@ -156,6 +169,7 @@
     - {slug: flight-ops/drones, name: "Drones"}
 - slug: aviation-regulation
   name: "Aviation Regulation & Safety"
+  priority: 4
   description: "Rules and investigations."
   children:
     - {slug: aviation-regulation/faa, name: "FAA"}
@@ -167,6 +181,7 @@
     - {slug: aviation-regulation/incidents, name: "Safety Incidents"}
 - slug: hotels-lodging
   name: "Hotels & Lodging"
+  priority: 3
   description: "Properties and brands."
   children:
     - {slug: hotels-lodging/chains, name: "Hotel Chains"}
@@ -178,6 +193,7 @@
     - {slug: hotels-lodging/occupancy, name: "Occupancy Trends"}
 - slug: hospitality-ops
   name: "Hospitality Operations"
+  priority: 4
   description: "Staff, service and standards."
   children:
     - {slug: hospitality-ops/service, name: "Front Desk & Service"}
@@ -189,6 +205,7 @@
     - {slug: hospitality-ops/wages, name: "Tipping & Wages"}
 - slug: mortgages-lending
   name: "Mortgages & Lending"
+  priority: 2
   description: "Financing property."
   children:
     - {slug: mortgages-lending/rates, name: "Mortgage Rates"}
@@ -200,6 +217,7 @@
     - {slug: mortgages-lending/programs, name: "Government Programs"}
 - slug: property-tech
   name: "PropTech"
+  priority: 3
   description: "Technology for property."
   children:
     - {slug: property-tech/listings, name: "Listing Platforms"}

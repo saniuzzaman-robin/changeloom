@@ -70,7 +70,7 @@ internal fun SearchScreen(onOpen: (Long) -> Unit, contentPadding: PaddingValues,
     val picker: TopicPickerViewModel = koinViewModel()
     val pickerState by picker.state.collectAsStateWithLifecycle()
     val tree = pickerState.selection?.tree
-    // The user's own tools first, then a few generic ideas.
+    // The user's own topics first, then a few ideas that apply to any profession.
     val suggestions = remember(tree, pickerState.followed) {
         val followed = tree?.let { t -> pickerState.followed.flatMap { t.leavesUnder(it) }.mapNotNull { t.topic(it)?.name } }.orEmpty()
         (followed + SEARCH_IDEAS).distinct().take(MAX_SUGGESTIONS)
@@ -336,6 +336,6 @@ private fun SavedEmptyDark() = ChangeloomTheme(ThemeMode.Dark) {
     Box(Modifier.background(ChangeloomTheme.colors.bg)) { SavedPreview(PagerState(loaded = true)) }
 }
 
-private val SEARCH_IDEAS = listOf("security", "breaking change", "deprecated")
+private val SEARCH_IDEAS = listOf("new regulation", "price change", "recall", "policy update", "new guidelines", "security", "breaking change", "deprecated")
 private const val MAX_SUGGESTIONS = 10
 

@@ -1,13 +1,11 @@
 package dev.changeloom.android.push
 
-import android.Manifest
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import androidx.core.content.ContextCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -80,8 +78,9 @@ class DailyDigestWorker(context: Context, params: WorkerParameters) : CoroutineW
         return Result.success()
     }
 
-    private fun canNotify() = ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS) ==
-        PackageManager.PERMISSION_GRANTED
+    // Covers both the Android 13+ permission and notifications switched off in settings; the permission alone
+    // doesn't exist before 13, where checking it always fails.
+    private fun canNotify() = NotificationManagerCompat.from(applicationContext).areNotificationsEnabled()
 
     private fun post(items: List<StorySummary>) {
         val stories = digestStories(items)

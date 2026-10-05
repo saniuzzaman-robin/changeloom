@@ -219,7 +219,9 @@ fun MainScreen(openStoryId: Long? = null, onOpenStoryHandled: () -> Unit = {}) {
     var tab by rememberSaveable { mutableStateOf(Tab.Feed) }
     val shell = rememberSaveableStateHolder()
     val picker: TopicPickerViewModel = koinViewModel()
-    val tree = picker.state.collectAsStateWithLifecycle().value.selection?.tree
+    // Derived, so picker edits (each toggle, each search keystroke) don't recompose the whole screen.
+    val pickerState = picker.state.collectAsStateWithLifecycle()
+    val tree by remember { derivedStateOf { pickerState.value.selection?.tree } }
     val topicName = remember(tree) { { slug: String -> tree?.topic(slug)?.name ?: slug.substringAfterLast('/') } }
 
     LaunchedEffect(openStoryId) {
@@ -274,7 +276,9 @@ private fun Shell(tab: Tab, onTab: (Tab) -> Unit, onOpen: (Long) -> Unit, onEdit
     // The same photo the Profile tab shows; ProfileViewModel loads it once per sign-in.
     val photo = profile.photo.collectAsStateWithLifecycle().value
     val photoImage = remember(photo) { photo?.asImageBitmap() }
-    val hasUnread = timeline.state.collectAsStateWithLifecycle().value.items.any { !it.isRead }
+    // Derived, so refresh and paging updates recompose the shell only when the tab bar's badge changes.
+    val timelineState = timeline.state.collectAsStateWithLifecycle()
+    val hasUnread by remember { derivedStateOf { timelineState.value.items.any { !it.isRead } } }
     // Only the feed keeps its scroll position across tab switches: leaving another tab drops its saved UI state, so
     // it opens at the top next time. Opening a story isn't a switch, so lists keep their place behind it.
     var shownTab by remember { mutableStateOf(tab) }
@@ -904,20 +908,32 @@ internal fun firstNameOf(email: String): String? =
 /** "just now", "5m ago", "3h ago", "2d ago", then a short date. Falls back to the raw date if the timestamp won't parse. */
 @Composable
 internal fun relativeTime(publishedAt: String, now: Instant = Instant.now()): String {
-    val then = try {
-        Instant.parse(publishedAt)
-    } catch (e: DateTimeParseException) {
-        return publishedAt.take(DATE_LENGTH)
-    }
+    val then = remember(publishedAt) {
+        try {
+            Instant.parse(publishedAt)
+        } catch (e: DateTimeParseException) {
+            null
+        }
+    } ?: return publishedAt.take(DATE_LENGTH)
     val age = Duration.between(then, now)
     return when {
         age.toMinutes() < 1 -> stringResource(R.string.time_just_now)
         age.toHours() < 1 -> stringResource(R.string.time_minutes_ago, age.toMinutes())
         age.toDays() < 1 -> stringResource(R.string.time_hours_ago, age.toHours())
         age.toDays() < WEEK_DAYS -> stringResource(R.string.time_days_ago, age.toDays())
-        else -> localizedPattern("MMMd").format(then.atZone(ZoneId.systemDefault()))
+        else -> shortDate().format(then.atZone(ZoneId.systemDefault()))
     }
 }
+
+/** The "MMMd" format for the current locale, built once per locale: every older card needs it, and the lookup is slow. */
+private fun shortDate(): DateTimeFormatter {
+    val locale = Locale.getDefault()
+    shortDateCache?.let { (cachedLocale, format) -> if (cachedLocale == locale) return format }
+    return localizedPattern("MMMd").also { shortDateCache = locale to it }
+}
+
+/** Only touched from composition, on the main thread. */
+private var shortDateCache: Pair<Locale, DateTimeFormatter>? = null
 
 internal fun previewStories(now: Instant = Instant.now()): List<StorySummary> = listOf(
     StorySummary(

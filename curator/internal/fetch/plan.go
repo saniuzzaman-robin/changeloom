@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	topiccatalog "github.com/saniuzzaman-robin/changeloom/curator/internal/catalog"
 )
 
 // Topic is a topic as fetch planning sees it.
@@ -15,6 +17,8 @@ type Topic struct {
 	Description string
 	// ParentSlug is empty for root topics.
 	ParentSlug string
+	// Priority is the topic's fetch priority, topiccatalog.MinPriority (highest) to MaxPriority.
+	Priority int
 	// Demand pulled from the hosted DBs: followers, users whose profession maps to the topic's
 	// root, and distinct viewers of its stories in the last week.
 	Followers       int
@@ -50,12 +54,12 @@ type PlanSettings struct {
 	MaxCalls      int
 	// StoriesPerTopic is copied to each group.
 	StoriesPerTopic int
-	// HotMinViews is the recent viewers that make a topic hot; WarmInterval and ColdInterval are
-	// the least time between fetches of warm and cold topics.
-	HotMinViews  int
-	WarmInterval time.Duration
-	ColdInterval time.Duration
-	MaxAge       time.Duration
+	// HotMinViews is the recent viewers that make a topic hot; WarmInterval is the least time
+	// between fetches of a warm topic, and PriorityIntervals[p-1] that of a cold topic of priority p.
+	HotMinViews       int
+	WarmInterval      time.Duration
+	PriorityIntervals [topiccatalog.MaxPriority]time.Duration
+	MaxAge            time.Duration
 }
 
 // tier ranks how much a topic is wanted; lower is fetched first.
@@ -71,19 +75,22 @@ const (
 )
 
 type family struct {
-	key    string
-	topics []Topic
-	tier   tier
-	oldest time.Time
+	key      string
+	topics   []Topic
+	tier     tier
+	priority int
+	oldest   time.Time
 }
 
 // Plan picks the topics due for a fetch and packs them into at most s.MaxCalls groups of at most
 // s.TopicsPerCall topics. Only leaf topics are fetched; a parent's stories come from its
 // children. A topic's demand is its own plus its parent's. A hot topic (s.HotMinViews recent
 // viewers) is always due; a warm one (followers or profession users) when it has not been fetched
-// for s.WarmInterval; a cold one for s.ColdInterval. Siblings stay together; hot families come
-// first, then warm, then cold, each the least recently fetched first. It returns the due topics
-// that did not fit as deferred.
+// for s.WarmInterval or its priority's interval, whichever is shorter; a cold one for its
+// priority's interval. A priority outside topiccatalog.MinPriority to MaxPriority counts as
+// DefaultPriority. Siblings stay together and a family takes the best priority of its due topics.
+// Hot families come first, then warm, then cold; within a tier the highest priority first, then
+// the least recently fetched. It returns the due topics that did not fit as deferred.
 func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferred []string) {
 	bySlug := make(map[string]Topic, len(topics))
 	for _, t := range topics {
@@ -97,15 +104,19 @@ func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferr
 			continue
 		}
 		parent := bySlug[t.ParentSlug]
+		p := t.Priority
+		if p < topiccatalog.MinPriority || p > topiccatalog.MaxPriority {
+			p = topiccatalog.DefaultPriority
+		}
 		var tr tier
 		var interval time.Duration
 		switch {
 		case t.Views7d+parent.Views7d >= s.HotMinViews:
 			tr = tierHot
 		case t.Followers+parent.Followers+t.ProfessionUsers+parent.ProfessionUsers > 0:
-			tr, interval = tierWarm, s.WarmInterval
+			tr, interval = tierWarm, min(s.WarmInterval, s.PriorityIntervals[p-1])
 		default:
-			tr, interval = tierCold, s.ColdInterval
+			tr, interval = tierCold, s.PriorityIntervals[p-1]
 		}
 		if now.Sub(t.LastFetchedAt) < interval {
 			continue
@@ -113,12 +124,13 @@ func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferr
 		key := cmp.Or(t.ParentSlug, t.Slug)
 		f := byKey[key]
 		if f == nil {
-			f = &family{key: key, tier: tr, oldest: t.LastFetchedAt}
+			f = &family{key: key, tier: tr, priority: p, oldest: t.LastFetchedAt}
 			byKey[key] = f
 			families = append(families, f)
 		}
 		f.topics = append(f.topics, t)
 		f.tier = min(f.tier, tr)
+		f.priority = min(f.priority, p)
 		if t.LastFetchedAt.Before(f.oldest) {
 			f.oldest = t.LastFetchedAt
 		}
@@ -126,6 +138,7 @@ func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferr
 	slices.SortFunc(families, func(a, b *family) int {
 		return cmp.Or(
 			cmp.Compare(a.tier, b.tier),
+			cmp.Compare(a.priority, b.priority),
 			a.oldest.Compare(b.oldest),
 			cmp.Compare(a.key, b.key),
 		)
