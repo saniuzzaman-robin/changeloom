@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Window theme behind Compose: matches the dark `bg` token so launch has no white flash. -->
+    <!-- Window theme behind Compose: matches the `bg` token (light by default, dark in values-night) so launch has no white flash. -->
     <style name="Theme.Changeloom" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/changeloom_bg</item>
         <item name="android:colorBackground">@color/changeloom_bg</item>
@@ -14,5 +14,6 @@
         <item name="postSplashScreenTheme">@style/Theme.Changeloom</item>
     </style>
 
-    <color name="changeloom_bg">#FF070709</color>
+    <color name="changeloom_bg">#FFF8FAFC</color>
+    <bool name="changeloom_light_bars">true</bool>
 </resources>

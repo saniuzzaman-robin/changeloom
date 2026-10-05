@@ -35,6 +35,7 @@ import dev.changeloom.android.telemetry.Analytics
 import dev.changeloom.android.ui.AppRoot
 import dev.changeloom.android.ui.theme.ChangeloomTheme
 import dev.changeloom.android.ui.theme.ThemePreferences
+import dev.changeloom.android.ui.theme.applyNightMode
 import dev.changeloom.android.ui.theme.isDark
 import dev.changeloom.shared.auth.AuthRepository
 import dev.changeloom.shared.data.TimelineRepository
@@ -44,11 +45,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 
-private const val SPLASH_EXIT_MS = 500L
+private const val SPLASH_EXIT_MS = 300L
 private const val SPLASH_EXIT_SCALE = 1.15f
-
-/** The weave's length (windowSplashScreenAnimationDuration); the exit never waits longer than this for it. */
-private const val SPLASH_ICON_MAX_WAIT_MS = 900L
 
 /** Longest the splash waits for the first screen; after that the in-app loading mark shows instead. */
 private const val SPLASH_MAX_MS = 1_500L
@@ -85,6 +83,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             val mode by themePreferences.mode.collectAsState()
             val dark = mode.isDark()
+            // Also on every start, so a choice made before this existed reaches the next launch's splash.
+            LaunchedEffect(mode) { applyNightMode(mode) }
             DisposableEffect(dark) {
                 val bars = if (dark) {
                     SystemBarStyle.dark(Color.TRANSPARENT)
@@ -133,19 +133,15 @@ class MainActivity : ComponentActivity() {
         consent.gather(this)
     }
 
-    /** Lets the splash mark finish weaving (API 31+), then lifts it away: a slight zoom while the splash fades out. */
+    /** Lifts the splash away as soon as the first screen is in view: a slight zoom while the splash fades out. */
     private fun animateSplashExit(splash: SplashScreen) {
         splash.setOnExitAnimationListener { provider ->
-            // Both are 0 when the icon doesn't animate (before API 31). Capped, so an odd start time never holds the
-            // splash over a ready app.
-            val end = provider.iconAnimationStartMillis + provider.iconAnimationDurationMillis
-            val delay = (end - System.currentTimeMillis()).coerceIn(0L, SPLASH_ICON_MAX_WAIT_MS)
             val easing = AnimationUtils.loadInterpolator(this, R.interpolator.ease_out_expo)
             // The icon fades itself: on API 31+ it is drawn in its own surface, which the splash view's fade doesn't
             // reach, so it would otherwise stay on top of the app until the splash is removed.
             provider.iconView.animate().alpha(0f).scaleX(SPLASH_EXIT_SCALE).scaleY(SPLASH_EXIT_SCALE)
-                .setStartDelay(delay).setDuration(SPLASH_EXIT_MS).setInterpolator(easing).start()
-            provider.view.animate().alpha(0f).setStartDelay(delay).setDuration(SPLASH_EXIT_MS).setInterpolator(easing)
+                .setDuration(SPLASH_EXIT_MS).setInterpolator(easing).start()
+            provider.view.animate().alpha(0f).setDuration(SPLASH_EXIT_MS).setInterpolator(easing)
                 .withEndAction(provider::remove).start()
         }
     }
