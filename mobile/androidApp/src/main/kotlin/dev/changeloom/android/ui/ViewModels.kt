@@ -558,7 +558,10 @@ class ProfileViewModel(
         }
     }
 
-    /** Counts change whenever the user saves or reads a story, so the screen refreshes them each time it is shown. */
+    /**
+     * Counts change whenever the user saves or reads a story, so the screen refreshes them each time it is shown.
+     * The stats and the topic requests load side by side.
+     */
     fun refresh() {
         viewModelScope.launch {
             try {
@@ -571,6 +574,8 @@ class ProfileViewModel(
                 AppLog.failure(TAG_PROFILE, "Couldn't load stats", e)
                 _state.update { it.copy(error = strings.errorText(e, R.string.stats_load_failed)) }
             }
+        }
+        viewModelScope.launch {
             try {
                 val requests = api.topicRequests()
                 _state.update { it.copy(requests = requests) }

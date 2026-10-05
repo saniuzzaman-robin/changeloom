@@ -28,11 +28,15 @@ internal fun matchTier(match: String?): Int = when (match) {
 }
 
 /** Timeline order: unread first, then match tier, then newest first, then highest id — same as the server. */
-internal val timelineOrder: Comparator<StorySummary> =
-    compareBy<StorySummary> { it.isRead }
-        .thenBy { matchTier(it.match) }
-        .thenByDescending { Instant.parse(it.publishedAt) }
-        .thenByDescending { it.id }
+private val timelineOrder: Comparator<Pair<StorySummary, Instant>> =
+    compareBy<Pair<StorySummary, Instant>> { it.first.isRead }
+        .thenBy { matchTier(it.first.match) }
+        .thenByDescending { it.second }
+        .thenByDescending { it.first.id }
+
+/** Sorts in timeline order, parsing each timestamp once rather than on every comparison. */
+internal fun List<StorySummary>.sortedForTimeline(): List<StorySummary> =
+    map { it to Instant.parse(it.publishedAt) }.sortedWith(timelineOrder).map { it.first }
 
 class TimelineRepository(private val api: ChangeloomApi, private val cache: StoryCache) {
     private val _state = MutableStateFlow(TimelineState())
@@ -98,7 +102,7 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
         } catch (e: Exception) {
             _state.update { s ->
                 s.copy(
-                    items = s.items.map { if (it.id == id) before else it }.sortedWith(timelineOrder),
+                    items = s.items.map { if (it.id == id) before else it }.sortedForTimeline(),
                     error = userMessage(e, "Couldn't update the read state"),
                 )
             }
@@ -143,7 +147,7 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
 
     private fun applyRead(id: Long, read: Boolean) = _state.update { s ->
         s.copy(items = s.items.map { if (it.id == id) it.copy(isRead = read, readAt = if (read) it.readAt else null) else it }
-            .sortedWith(timelineOrder))
+            .sortedForTimeline())
     }
 
     /** Drops in-memory and cached data (on sign-out, so the next user never sees it). */

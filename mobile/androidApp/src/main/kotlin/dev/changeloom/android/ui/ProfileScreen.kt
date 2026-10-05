@@ -84,6 +84,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.credentials.exceptions.GetCredentialCancellationException
@@ -530,7 +531,7 @@ private fun ThemeSwitch(mode: ThemeMode, onChange: (ThemeMode) -> Unit) {
         val indicator by animateDpAsState(segment * mode.ordinal, expoTween(Durations.SLOW), label = "themeIndicator")
         Box(
             Modifier
-                .offset(x = indicator)
+                .offset { IntOffset(indicator.roundToPx(), 0) }
                 .width(segment)
                 .height(SEGMENT_HEIGHT)
                 .clip(Radius.pill)
