@@ -31,12 +31,6 @@ import (
 
 const connectTimeout = 10 * time.Second
 
-// Unattended runs start at login, before Docker has brought Postgres up, so `run` retries the local connection.
-const (
-	localConnectWait  = 2 * time.Minute
-	localConnectRetry = 5 * time.Second
-)
-
 const usage = `usage: curator <command> [flags]
 
 commands:
@@ -56,12 +50,10 @@ commands:
                                    (staging, the default, or prod), then ask its api to notify
   prune [--env ENV]                delete old and unseen stories nobody saved from the hosted DB of
                                    ENV (staging, the default, or prod)
-  run [--if-due | --full]          requests pull, requests group, fetch, backfill, then sync and
+  run [--full]                     requests pull, requests group, fetch, backfill, then sync and
                                    (daily) prune, for each env in CURATOR_RUN_ENVS (default prod);
-                                   --if-due skips the run when the last successful fetch was less
-                                   than CURATOR_RUN_MIN_GAP_HOURS ago; --full is the one-shot
-                                   version: fetch and backfill repeat until every topic is covered,
-                                   and prune always runs
+                                   --full is the one-shot version: fetch and backfill repeat until
+                                   every topic is covered, and prune always runs
 
 Configuration comes from the environment; see curator/.env.example.
 `
@@ -77,9 +69,6 @@ func main() {
 		os.Exit(2)
 	case err != nil:
 		slog.Error("curator failed", "err", err)
-		if len(os.Args) > 1 && os.Args[1] == "run" {
-			alertFailure(err)
-		}
 		os.Exit(1)
 	}
 }
@@ -160,15 +149,11 @@ func run(args []string) error {
 		return runSync(ctx, cfg, env)
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ContinueOnError)
-		ifDue := fs.Bool("if-due", false, "skip the run when the last successful fetch was under CURATOR_RUN_MIN_GAP_HOURS ago")
 		full := fs.Bool("full", false, "repeat fetch and backfill until every topic is covered, and always prune")
 		if err := parse(fs, rest); err != nil {
 			return err
 		}
-		if *ifDue && *full {
-			return fmt.Errorf("%w: run --if-due and --full cannot be combined", errUsage)
-		}
-		return runAll(ctx, cfg, *ifDue, *full)
+		return runAll(ctx, cfg, *full)
 	default:
 		return fmt.Errorf("%w: unknown command %q", errUsage, cmd)
 	}
@@ -441,23 +426,12 @@ func syncEnv(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env co
 // and backfill repeat until every topic is covered and the prune is not skipped. Pull,
 // sync and prune run for each hosted env with a database URL. A failing step is logged and the run continues where that is safe, so a
 // failed fetch still pushes request decisions; the error returned lists every failed step.
-func runAll(ctx context.Context, cfg config.Config, ifDue, full bool) error {
-	local, err := openPoolWait(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL, localConnectWait)
+func runAll(ctx context.Context, cfg config.Config, full bool) error {
+	local, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
 	if err != nil {
 		return err
 	}
 	defer local.Close()
-
-	if ifDue {
-		var last *time.Time
-		if err := local.QueryRow(ctx, `SELECT max(started_at) FROM fetch_runs WHERE status = 'succeeded'`).Scan(&last); err != nil {
-			return fmt.Errorf("read the last successful fetch: %w", err)
-		}
-		if last != nil && time.Since(*last) < cfg.RunMinGap {
-			slog.InfoContext(ctx, "skipping run: last successful fetch is recent", "last", *last, "min_gap", cfg.RunMinGap)
-			return nil
-		}
-	}
 
 	var envs []config.Env
 	for _, env := range cfg.RunEnvs {
@@ -499,23 +473,6 @@ func runAll(ctx context.Context, cfg config.Config, ifDue, full bool) error {
 		})
 	}
 	return errors.Join(errs...)
-}
-
-// openPoolWait is openPool, retried every localConnectRetry until wait has passed. A missing URL fails at once.
-func openPoolWait(ctx context.Context, key, url string, wait time.Duration) (*pgxpool.Pool, error) {
-	deadline := time.Now().Add(wait)
-	for {
-		pool, err := openPool(ctx, key, url)
-		if err == nil || url == "" || time.Now().Add(localConnectRetry).After(deadline) {
-			return pool, err
-		}
-		slog.Warn("database not reachable yet, retrying", "key", key, "err", err)
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(localConnectRetry):
-		}
-	}
 }
 
 // openPool connects to the database in the env var key and checks it is reachable.

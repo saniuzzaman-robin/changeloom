@@ -141,12 +141,7 @@ gcloud services enable monitoring.googleapis.com logging.googleapis.com cloudtra
    - 5xx responses
    - p95 latency
    - instances at `MAX_INSTANCES`
-   - no `notify received` log line for 12h, which means the curator stopped. This policy needs its
-     log-based metric, so create the metric first.
    ```sh
-   gcloud logging metrics create notify_received --project "$P" \
-     --description "POST /internal/notify calls from the curator" \
-     --log-filter "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"$CLOUD_RUN_SERVICE\" AND jsonPayload.message=\"notify received\""
    mkdir -p /tmp/changeloom-monitoring
    for f in deploy/monitoring/*.yaml; do
      out=/tmp/changeloom-monitoring/$(basename "$f")
@@ -154,7 +149,6 @@ gcloud services enable monitoring.googleapis.com logging.googleapis.com cloudtra
      gcloud monitoring policies create --project "$P" --notification-channels "$CHANNEL" --policy-from-file "$out"
    done
    ```
-   The 12h absence alert also fires while the curator is intentionally off; snooze it then.
 5. **Error Reporting.** The api's error logs show up there automatically. Turn on notifications in the
    console: Error Reporting → Configure notifications → `$CHANNEL`.
 6. **Billing budget.** Alerts the billing account's admins by email at 50%, 90% and 100% of the
@@ -173,10 +167,7 @@ The topic catalog (`curator/seed/catalog/`) and the keys below are tuned in `cur
 - **Backfill.** `curator backfill [--max-calls N]` fills leaf topics with fewer than `CURATOR_BACKFILL_TARGET` recent stories, `CURATOR_BACKFILL_TOPICS_PER_CALL` topics per Claude call. Run it repeatedly on first setup; each call uses subscription quota. `curator run` also makes `CURATOR_BACKFILL_CALLS_PER_RUN` calls per run.
 - **Fetch frequency.** Hot topics (at least `CURATOR_HOT_MIN_VIEWS` distinct viewers in 7 days) are fetched every run; warm ones (followed, or serving a user's profession) every `CURATOR_WARM_INTERVAL_HOURS`, or their priority's interval when shorter; cold ones every `CURATOR_PRIORITY_INTERVAL_HOURS` entry for their topic priority (1 highest to 5). Within a tier, higher-priority topics go first. Views come from the app's feed impressions.
 - **Prune** (keeps Neon under its 1 GB limit). `curator run` prunes each hosted DB every `CURATOR_PRUNE_INTERVAL_DAYS`; run `curator prune --env <env>` by hand to force it. Saved stories are never deleted. Unsaved stories are deleted when published over `CURATOR_PRUNE_MAX_AGE_DAYS` ago.
-- The launchd job runs `curator run --if-due` four times a day (02:00, 08:00, 14:00, 20:00) and at login. launchd runs a job missed during sleep when the Mac wakes; after a shutdown the login run covers it, and `--if-due` skips any run when the last successful fetch was under `CURATOR_RUN_MIN_GAP_HOURS` ago. `run` only touches the envs in `CURATOR_RUN_ENVS` (default `prod`, so staging is never synced by the job; use `curator sync --env staging` by hand). The job runs Claude with the `claude-personal` profile (`CLAUDE_CONFIG_DIR=~/.claude-personal`; set `CLAUDE_CONFIG_DIR` in `curator/.env` to override), and that profile must be logged in. Reinstall the plist with the sed command in its header to pick this up.
-
-When `curator run` fails on the Mac, it also shows a macOS notification and exits non-zero. Details
-are in `~/Library/Logs/changeloom-curator.log`.
+- `curator run` only touches the envs in `CURATOR_RUN_ENVS` (default `prod`, so staging is never synced by it; use `curator sync --env staging` by hand).
 
 ## Android app
 

@@ -116,9 +116,6 @@ type Config struct {
 	// RunEnvs are the hosted envs `curator run` pulls from, syncs to and prunes (CURATOR_RUN_ENVS,
 	// comma-separated; default prod).
 	RunEnvs []Env
-	// RunMinGap is the least time since the last successful fetch for `curator run --if-due` to run
-	// (CURATOR_RUN_MIN_GAP_HOURS).
-	RunMinGap time.Duration
 
 	// PruneInterval is how often `curator run` prunes a hosted DB (CURATOR_PRUNE_INTERVAL_DAYS).
 	PruneInterval time.Duration
@@ -251,8 +248,6 @@ func Load() (Config, error) {
 		BackfillTarget:        envInt(&errs, "CURATOR_BACKFILL_TARGET", 20),
 		BackfillTopicsPerCall: envInt(&errs, "CURATOR_BACKFILL_TOPICS_PER_CALL", 2),
 		BackfillCallsPerRun:   envInt(&errs, "CURATOR_BACKFILL_CALLS_PER_RUN", 2),
-
-		RunMinGap: time.Duration(envInt(&errs, "CURATOR_RUN_MIN_GAP_HOURS", 5)) * time.Hour,
 
 		PruneInterval: time.Duration(envInt(&errs, "CURATOR_PRUNE_INTERVAL_DAYS", 1)) * 24 * time.Hour,
 		PruneMaxAge:   time.Duration(envInt(&errs, "CURATOR_PRUNE_MAX_AGE_DAYS", 14)) * 24 * time.Hour,
