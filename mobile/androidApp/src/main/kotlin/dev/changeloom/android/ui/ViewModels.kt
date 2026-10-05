@@ -209,11 +209,16 @@ class TopicPickerViewModel(
                 val cached = cache.loadFollowed()
                 _state.update { if (it.followed.isEmpty()) it.copy(followed = cached) else it }
             }
+            // Nothing cached (a fresh sign-in): fetch the timeline alongside the account so the feed doesn't wait for it.
+            // Launched outside loadJob, so a retry can't cancel it mid-refresh.
+            if (_state.value.followed.isEmpty()) viewModelScope.launch { repo.refresh() }
             try {
                 val (loaded, me) = coroutineScope {
                     val loaded = async { catalog.tree() to catalog.professions() }
-                    val me = async { api.me() }
-                    loaded.await() to me.await()
+                    val me = api.me()
+                    // The account alone decides between the feed and onboarding; only the picker needs the catalog.
+                    _state.update { if (it.followed.isEmpty()) it.copy(followed = me.topics) else it }
+                    loaded.await() to me
                 }
                 val (tree, professions) = loaded
                 val known = professions.mapTo(mutableSetOf()) { it.slug }
@@ -321,7 +326,8 @@ class TimelineViewModel(
     val state: StateFlow<TimelineState> = repo.state
 
     init {
-        refresh()
+        // After a sign-in the topic picker has already started the first refresh.
+        if (!repo.state.value.refreshing) refresh()
         viewModelScope.launch { views.run(VIEW_FLUSH_INTERVAL_MS) }
     }
 
