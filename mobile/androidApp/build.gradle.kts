@@ -89,8 +89,8 @@ android {
         versionCode = providers.gradleProperty("changeloom.versionCode").orNull?.let {
             it.toIntOrNull()?.takeIf { code -> code > 0 }
                 ?: throw GradleException("changeloom.versionCode must be a positive integer, got \"$it\"")
-        } ?: 8
-        versionName = providers.gradleProperty("changeloom.versionName").orNull ?: "0.2.8"
+        } ?: 9
+        versionName = providers.gradleProperty("changeloom.versionName").orNull ?: "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
