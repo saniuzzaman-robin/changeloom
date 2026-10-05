@@ -1,5 +1,11 @@
 # Changeloom
 
+## Engineering standards
+Each area has its own standards, and every agent (including subagents) follows them before changing code there:
+`mobile/CLAUDE.md` (senior Android engineer), `backend/CLAUDE.md` and `curator/CLAUDE.md` (senior backend engineer).
+Read the relevant file first when a task spans areas or starts from the repo root. Production grade, verified,
+no guesswork.
+
 ## Status
 - P0–P8 done (backend, ingestion, AI, auth, deploy, Android app, FCM/discovery/dedupe/search/bookmarks).
 - **P9 iOS: deferred** by the user. Not started; don't work on it unless asked (iOS targets, SwiftUI/CMP app, Sign in with Apple, APNs, TestFlight).
