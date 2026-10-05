@@ -45,10 +45,11 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
 
     /** Shows the cached timeline immediately (if nothing is loaded yet), then fetches the first page. */
     suspend fun refresh() {
+        // Refreshing before the cache read: an empty list that isn't refreshing shows the "no stories" state.
+        _state.update { it.copy(refreshing = true, error = null) }
         if (_state.value.items.isEmpty()) {
             _state.update { it.copy(items = cache.loadTimeline()) }
         }
-        _state.update { it.copy(refreshing = true, error = null) }
         try {
             val page = api.timeline()
             val items = withPendingBookmarks(page.items)
