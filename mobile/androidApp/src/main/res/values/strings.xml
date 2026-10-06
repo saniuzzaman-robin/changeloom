@@ -126,6 +126,11 @@
     <string name="offline_banner">Offline — showing saved stories</string>
     <string name="feed_empty_title">No stories yet</string>
     <string name="feed_empty_body">New releases and changes for your topics land here. Pull down to check again.</string>
+    <string name="filter_no_match_title">No matching stories</string>
+    <string name="filter_no_match_body">Nothing in your timeline fits these filters.</string>
+    <string name="filter_clear">Clear filters</string>
+    <string name="filter_unread">Unread</string>
+    <string name="filter_read">Read</string>
     <string name="section_new">New for you</string>
     <string name="section_earlier">Earlier</string>
     <string name="suggested">Suggested</string>

@@ -38,6 +38,9 @@ func decodeCursor(s string) (cursor, error) {
 	return c, nil
 }
 
+// maxKindFilter bounds the kind filter: there are nine kinds, so more values can only be repeats.
+const maxKindFilter = 9
+
 // Timeline tiers, as ranked by ListTimeline.
 const (
 	tierFollowed   = 0
@@ -66,10 +69,27 @@ func (s *Server) GetTimeline(w http.ResponseWriter, r *http.Request, params GetT
 		return
 	}
 
+	kinds := []string{} // empty, not nil: a NULL array would filter out every story
+	if params.Kind != nil {
+		if len(*params.Kind) > maxKindFilter {
+			writeError(w, http.StatusBadRequest, "bad_request", fmt.Sprintf("at most %d kind values", maxKindFilter))
+			return
+		}
+		for _, k := range *params.Kind {
+			if !k.Valid() {
+				writeError(w, http.StatusBadRequest, "bad_request", fmt.Sprintf("unknown kind %q", k))
+				return
+			}
+			kinds = append(kinds, string(k))
+		}
+	}
+
 	arg := db.ListTimelineParams{
-		UserID:   user.ID,
-		Since:    s.now().Add(-s.opts.TimelineWindow),
-		PageSize: int32(limit + 1), //nolint:gosec // limit is bounded by maxPageSize
+		UserID:     user.ID,
+		Kinds:      kinds,
+		ReadFilter: params.Read,
+		Since:      s.now().Add(-s.opts.TimelineWindow),
+		PageSize:   int32(limit + 1), //nolint:gosec // limit is bounded by maxPageSize
 	}
 	if params.Cursor != nil {
 		c, err := decodeCursor(*params.Cursor)

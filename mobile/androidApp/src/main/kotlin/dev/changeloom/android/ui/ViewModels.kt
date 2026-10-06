@@ -24,6 +24,7 @@ import dev.changeloom.shared.data.Profession
 import dev.changeloom.shared.data.Story
 import dev.changeloom.shared.data.StoryCache
 import dev.changeloom.shared.data.StoryPager
+import dev.changeloom.shared.data.TimelineFilter
 import dev.changeloom.shared.data.TimelineRepository
 import dev.changeloom.shared.data.TimelineState
 import dev.changeloom.shared.data.TopicList
@@ -346,6 +347,10 @@ class TimelineViewModel(
 
     fun loadMore() {
         viewModelScope.launch { repo.loadMore() }
+    }
+
+    fun setFilter(filter: TimelineFilter) {
+        viewModelScope.launch { repo.setFilter(filter) }
     }
 
     fun setRead(id: Long, read: Boolean) {

@@ -3,7 +3,8 @@
 -- topic (or a descendant of one), tier 1 with an area of one of the user's professions (or a
 -- descendant), tier 2 with a related topic (a relation neighbour or an ancestor of a followed
 -- topic), tier 3 with anything else. Unread first, then by tier,
--- then newest first. Keyset pagination on (is_read, tier, published_at, id).
+-- then newest first. Optional filters: kinds (empty means all) and read_filter (NULL both, true read only, false unread only).
+-- Keyset pagination on (is_read, tier, published_at, id).
 -- Tiers come from one aggregate over the in-tier topics' story_topics rows instead of per-story
 -- subqueries, and topic slugs are built only for the page: per-row subplans over the whole window
 -- inflated the plan cost past jit_above_cost, and JIT compilation took ~90% of the query time.
@@ -50,6 +51,8 @@ WITH RECURSIVE followed AS (
         s.kind <> 'deal' OR cardinality(s.countries) = 0
         OR (SELECT u.country FROM users u WHERE u.id = @user_id) = ANY(s.countries)
     )
+    AND (cardinality(@kinds::text[]) = 0 OR s.kind = ANY(@kinds::text[]))
+    AND (sqlc.narg(read_filter)::boolean IS NULL OR (uss.read_at IS NOT NULL) = sqlc.narg(read_filter)::boolean)
 ), page AS (
     SELECT r.* FROM ranked r
     WHERE sqlc.narg(cursor_id)::bigint IS NULL

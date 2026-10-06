@@ -333,6 +333,76 @@ func TestTimelineCursorPagination(t *testing.T) {
 	}
 }
 
+func TestTimelineKindAndReadFilters(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now().Truncate(time.Second)
+	rel1 := e.insertStory("release 1", now.Add(-1*time.Hour), "languages/go")
+	sec1 := e.insertStory("security 1", now.Add(-2*time.Hour), "languages/go")
+	dep1 := e.insertStory("deprecation 1", now.Add(-3*time.Hour), "web/react")
+	sec2 := e.insertStory("security 2", now.Add(-4*time.Hour), "web/react")
+	for id, kind := range map[int64]string{sec1: "security", sec2: "security", dep1: "deprecation"} {
+		if _, err := e.pool.Exec(t.Context(), `UPDATE stories SET kind = $2 WHERE id = $1`, id, kind); err != nil {
+			t.Fatalf("set kind: %v", err)
+		}
+	}
+	e.markRead(aliceToken, sec1)
+	e.markRead(aliceToken, rel1)
+
+	get := func(query string) []int64 {
+		t.Helper()
+		var page timelinePage
+		if code := e.do(http.MethodGet, "/v1/timeline?"+query, aliceToken, nil, &page); code != http.StatusOK {
+			t.Fatalf("GET /v1/timeline?%s: status %d", query, code)
+		}
+		return ids(page.Items)
+	}
+	for _, tc := range []struct {
+		query string
+		want  []int64
+	}{
+		{"", []int64{dep1, sec2, rel1, sec1}},
+		{"kind=security", []int64{sec2, sec1}},
+		{"kind=security&kind=deprecation", []int64{dep1, sec2, sec1}},
+		{"read=true", []int64{rel1, sec1}},
+		{"read=false", []int64{dep1, sec2}},
+		{"kind=security&read=false", []int64{sec2}},
+		{"kind=security&read=true", []int64{sec1}},
+		{"kind=policy", []int64{}},
+	} {
+		if got := get(tc.query); !slices.Equal(got, tc.want) {
+			t.Errorf("GET /v1/timeline?%s = %v, want %v", tc.query, got, tc.want)
+		}
+	}
+
+	// Paging keeps the filter: the cursor only carries the position.
+	var paged []int64
+	cursor := ""
+	for range 5 {
+		q := url.Values{"limit": {"1"}, "kind": {"security"}}
+		if cursor != "" {
+			q.Set("cursor", cursor)
+		}
+		var page timelinePage
+		if code := e.do(http.MethodGet, "/v1/timeline?"+q.Encode(), aliceToken, nil, &page); code != http.StatusOK {
+			t.Fatalf("paged: status %d", code)
+		}
+		paged = append(paged, ids(page.Items)...)
+		if page.NextCursor == nil {
+			break
+		}
+		cursor = *page.NextCursor
+	}
+	if !slices.Equal(paged, []int64{sec2, sec1}) {
+		t.Fatalf("paged security = %v, want %v", paged, []int64{sec2, sec1})
+	}
+
+	for _, q := range []string{"kind=bogus", "read=maybe", "kind=release&kind=release&kind=release&kind=release&kind=release&kind=release&kind=release&kind=release&kind=release&kind=release"} {
+		if code := e.do(http.MethodGet, "/v1/timeline?"+q, aliceToken, nil, nil); code != http.StatusBadRequest {
+			t.Errorf("GET /v1/timeline?%s: status %d, want 400", q, code)
+		}
+	}
+}
+
 func TestTimelineRejectsBadParams(t *testing.T) {
 	e := newEnv(t)
 	for _, q := range []string{"limit=0", "limit=101", "limit=abc", "cursor=not-a-cursor", "cursor=e30",
