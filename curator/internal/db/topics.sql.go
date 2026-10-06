@@ -48,6 +48,20 @@ func (q *Queries) AddTopicRelation(ctx context.Context, arg AddTopicRelationPara
 	return result.RowsAffected(), nil
 }
 
+const setTopicHeadline = `-- name: SetTopicHeadline :exec
+UPDATE topics SET headline = $1 WHERE id = $2 AND headline IS DISTINCT FROM $1
+`
+
+type SetTopicHeadlineParams struct {
+	Headline bool
+	ID       int64
+}
+
+func (q *Queries) SetTopicHeadline(ctx context.Context, arg SetTopicHeadlineParams) error {
+	_, err := q.db.Exec(ctx, setTopicHeadline, arg.Headline, arg.ID)
+	return err
+}
+
 const setTopicPriority = `-- name: SetTopicPriority :exec
 INSERT INTO topic_priority (topic_id, priority)
 VALUES ($1, $2)

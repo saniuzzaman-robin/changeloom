@@ -1,7 +1,8 @@
 -- name: ListFetchTopics :many
 -- Every topic with what fetch planning needs: its parent, priority (@default_priority when it has
--- none), hints, demand (summed over the hosted envs), the professions its root serves, whether it
--- has children and when a fetch call covering it last succeeded.
+-- none), hints, demand (summed over the hosted envs), the professions its root serves, whether one
+-- of them is launched, whether it or its parent is a headline, whether it has children and when a
+-- fetch call covering it last succeeded.
 SELECT t.id,
     t.slug,
     t.name,
@@ -10,6 +11,7 @@ SELECT t.id,
     COALESCE(tp.priority, @default_priority::integer)::integer AS priority,
     COALESCE((SELECT sum(s.followers) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS followers,
     COALESCE((SELECT sum(s.profession_users) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS profession_users,
+    COALESCE((SELECT sum(s.engaged_7d) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS engaged_7d,
     COALESCE((SELECT sum(s.views_7d) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS views_7d,
     EXISTS (SELECT 1 FROM topics c WHERE c.parent_id = t.id) AS has_children,
     COALESCE((SELECT array_agg(h.url ORDER BY h.url) FROM topic_hints h WHERE h.topic_id = t.id), '{}')::text[] AS hints,
@@ -18,6 +20,11 @@ SELECT t.id,
         FROM profession_topics pt JOIN professions pr ON pr.id = pt.profession_id
         WHERE pt.topic_id = COALESCE(t.parent_id, t.id)
     ), '{}')::text[] AS professions,
+    EXISTS (
+        SELECT 1 FROM profession_topics pt JOIN professions pr ON pr.id = pt.profession_id
+        WHERE pt.topic_id = COALESCE(t.parent_id, t.id) AND pr.launched
+    ) AS launched,
+    (t.headline OR COALESCE(p.headline, false))::boolean AS headline,
     -- 'epoch' when no call covering the topic has succeeded yet.
     COALESCE((
         SELECT max(fr.started_at) FROM fetch_runs fr
@@ -56,8 +63,9 @@ JOIN topics a ON a.id = r.topic_id
 JOIN topics b ON b.id = r.related_id;
 
 -- name: ListBackfillTopics :many
--- Leaf topics with fewer than @target stories published since @since, the highest priority
--- (@default_priority when it has none) first, then the most wanted. A topic already covered by a
+-- Wanted leaf topics (under a launched profession's root, a headline themselves or through their
+-- parent, or with demand) with fewer than @target stories published since @since, the highest
+-- priority (@default_priority when it has none) first, then the most wanted. A topic already covered by a
 -- successful backfill call since @since is skipped, so topics with little real news are not asked
 -- about again and again.
 SELECT t.id,
@@ -79,6 +87,17 @@ WHERE NOT EXISTS (SELECT 1 FROM topics c WHERE c.parent_id = t.id)
     -- Deals are fetched per country, never in a backfill.
     AND t.slug <> 'deals' AND t.slug NOT LIKE 'deals/%'
     AND (
+        t.headline OR COALESCE(p.headline, false)
+        OR EXISTS (
+            SELECT 1 FROM profession_topics pt JOIN professions pr ON pr.id = pt.profession_id
+            WHERE pt.topic_id = COALESCE(t.parent_id, t.id) AND pr.launched
+        )
+        OR EXISTS (
+            SELECT 1 FROM topic_stats ts WHERE ts.topic_id IN (t.id, t.parent_id)
+                AND ts.followers + ts.profession_users + ts.engaged_7d + ts.views_7d > 0
+        )
+    )
+    AND (
         SELECT count(*) FROM story_topics st JOIN stories sv ON sv.id = st.story_id
         WHERE st.topic_id = t.id AND sv.published_at >= @since
     ) < @target::bigint
@@ -88,7 +107,8 @@ WHERE NOT EXISTS (SELECT 1 FROM topics c WHERE c.parent_id = t.id)
             AND fr.started_at >= @since AND fr.topic_ids @> ARRAY[t.id]
     )
 ORDER BY COALESCE(tp.priority, @default_priority::integer),
-    COALESCE((SELECT sum(ts.followers + ts.profession_users + ts.views_7d) FROM topic_stats ts WHERE ts.topic_id = t.id), 0) DESC,
+    COALESCE((SELECT sum(ts.followers + ts.profession_users + ts.engaged_7d) FROM topic_stats ts WHERE ts.topic_id = t.id), 0) DESC,
+    COALESCE((SELECT sum(ts.views_7d) FROM topic_stats ts WHERE ts.topic_id = t.id), 0) DESC,
     t.slug
 LIMIT @max_rows;
 

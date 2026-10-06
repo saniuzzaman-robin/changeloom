@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/url"
@@ -30,7 +31,10 @@ type Node struct {
 	Hints []string `yaml:"hints"`
 	// Priority ranks how much the topic is wanted when fetching, MinPriority (most) to MaxPriority.
 	// Roots must set it; a child left at 0 inherits its root's.
-	Priority int    `yaml:"priority"`
+	Priority int `yaml:"priority"`
+	// Headline topics (and their descendants) reach every user's timeline when a story is
+	// important enough, and are fetched like followed topics.
+	Headline bool   `yaml:"headline"`
 	Children []Node `yaml:"children"`
 }
 
@@ -43,11 +47,14 @@ const (
 )
 
 // Profession is a profession users can pick. Topics are root topic slugs in display order.
+// Launch professions are offered at onboarding and their topics are fetched without demand; the
+// others stay valid for users who already picked them.
 type Profession struct {
 	Slug        string   `yaml:"slug"`
 	Name        string   `yaml:"name"`
 	Description string   `yaml:"description"`
 	Topics      []string `yaml:"topics"`
+	Launch      bool     `yaml:"launch"`
 }
 
 // Catalog is the professions and the topic tree.
@@ -118,7 +125,7 @@ func decode(data []byte, v any) error {
 // Validate checks the topic tree, relations, hints and professions.
 func (c Catalog) Validate() error {
 	seen := map[string]bool{}
-	if err := validateTree(c.Topics, "", seen); err != nil {
+	if err := validateTree(c.Topics, "", false, seen); err != nil {
 		return err
 	}
 	if err := validateLinks(c.Topics, seen); err != nil {
@@ -134,7 +141,9 @@ func (c Catalog) validateProfessions() error {
 	}
 	mapped := map[string]bool{}
 	seen := map[string]bool{}
+	launched := false
 	for _, p := range c.Professions {
+		launched = launched || p.Launch
 		switch {
 		case p.Name == "":
 			return fmt.Errorf("profession %q needs a name", p.Slug)
@@ -161,12 +170,15 @@ func (c Catalog) validateProfessions() error {
 			return fmt.Errorf("root topic %q belongs to no profession", n.Slug)
 		}
 	}
+	if len(c.Professions) > 0 && !launched {
+		return errors.New("no profession has launch: true, so nothing would be offered at onboarding")
+	}
 	return nil
 }
 
 // validateTree checks names and slugs. The tree is at most two levels deep because the
 // Android topic picker shows two, and a child's slug is "<parent>/<segment>".
-func validateTree(nodes []Node, parent string, seen map[string]bool) error {
+func validateTree(nodes []Node, parent string, parentHeadline bool, seen map[string]bool) error {
 	for _, n := range nodes {
 		if n.Slug == "" || n.Name == "" {
 			return fmt.Errorf("topic under %q needs both slug and name", parent)
@@ -183,10 +195,13 @@ func validateTree(nodes []Node, parent string, seen map[string]bool) error {
 			}
 		}
 		seen[n.Slug] = true
+		if n.Headline && parentHeadline {
+			return fmt.Errorf("topic %q is a headline already through its parent", n.Slug)
+		}
 		if parent != "" && len(n.Children) > 0 {
 			return fmt.Errorf("topic %q has children, but topics nest at most two levels deep", n.Slug)
 		}
-		if err := validateTree(n.Children, n.Slug, seen); err != nil {
+		if err := validateTree(n.Children, n.Slug, n.Headline, seen); err != nil {
 			return err
 		}
 	}
@@ -258,7 +273,7 @@ type Result struct {
 }
 
 // Seed writes the catalog into the local DB in one transaction: the topics by slug with their
-// priorities, relations and hints, then the professions. Nothing is ever deleted.
+// priorities, headline flags, relations and hints, then the professions. Nothing is ever deleted.
 func Seed(ctx context.Context, pool *pgxpool.Pool, c Catalog) (Result, error) {
 	var res Result
 	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
@@ -290,14 +305,15 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, c Catalog) (Result, error) {
 func UpsertProfession(ctx context.Context, tx pgx.Tx, p Profession, position int) error {
 	var id int64
 	err := tx.QueryRow(ctx, `
-		INSERT INTO professions (slug, name, description, position) VALUES ($1, $2, $3, $4)
+		INSERT INTO professions (slug, name, description, position, launched) VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (slug) DO UPDATE
 		SET name = EXCLUDED.name, description = EXCLUDED.description, position = EXCLUDED.position,
+		    launched = EXCLUDED.launched,
 		    updated_at = CASE
-		        WHEN (professions.name, professions.description, professions.position)
-		            IS DISTINCT FROM (EXCLUDED.name, EXCLUDED.description, EXCLUDED.position)
+		        WHEN (professions.name, professions.description, professions.position, professions.launched)
+		            IS DISTINCT FROM (EXCLUDED.name, EXCLUDED.description, EXCLUDED.position, EXCLUDED.launched)
 		        THEN now() ELSE professions.updated_at END
-		RETURNING id`, p.Slug, p.Name, p.Description, position).Scan(&id)
+		RETURNING id`, p.Slug, p.Name, p.Description, position, p.Launch).Scan(&id)
 	if err != nil {
 		return fmt.Errorf("upsert profession %q: %w", p.Slug, err)
 	}
@@ -329,6 +345,9 @@ func upsertTopics(ctx context.Context, q *db.Queries, nodes []Node, parentID *in
 		priority := cmp.Or(n.Priority, parentPriority)
 		if err := q.SetTopicPriority(ctx, db.SetTopicPriorityParams{TopicID: id, Priority: int16(priority)}); err != nil { //nolint:gosec // validated to 1..5
 			return fmt.Errorf("set priority of topic %q: %w", n.Slug, err)
+		}
+		if err := q.SetTopicHeadline(ctx, db.SetTopicHeadlineParams{ID: id, Headline: n.Headline}); err != nil {
+			return fmt.Errorf("set headline of topic %q: %w", n.Slug, err)
 		}
 		if err := upsertTopics(ctx, q, n.Children, &id, priority, ids); err != nil {
 			return err

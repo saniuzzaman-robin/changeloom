@@ -64,15 +64,26 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.MarkEmailUnread
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PersonOutline
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -81,6 +92,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -127,6 +139,8 @@ import dev.changeloom.android.R
 import dev.changeloom.android.ads.FeedAds
 import dev.changeloom.android.ads.NativeAdCard
 import dev.changeloom.android.ads.NativeAdRepository
+import dev.changeloom.android.data.FollowSuggester
+import dev.changeloom.android.data.suggestion
 import dev.changeloom.android.play.ReviewPromptEffect
 import dev.changeloom.android.push.NotificationRationale
 import dev.changeloom.android.telemetry.TrackScreen
@@ -139,12 +153,14 @@ import dev.changeloom.android.ui.components.GradientText
 import dev.changeloom.android.ui.components.ImportanceMeter
 import dev.changeloom.android.ui.components.KindPill
 import dev.changeloom.android.ui.components.LoomMark
+import dev.changeloom.android.ui.components.PrimaryButton
 import dev.changeloom.android.ui.components.SaveToggle
 import dev.changeloom.android.ui.components.ScreenBackdrop
 import dev.changeloom.android.ui.components.SecondaryButton
 import dev.changeloom.android.ui.components.SeverityDot
 import dev.changeloom.android.ui.components.SkeletonBlock
 import dev.changeloom.android.ui.components.StatusBanner
+import dev.changeloom.android.ui.components.TextAction
 import dev.changeloom.android.ui.components.TopicChip
 import dev.changeloom.android.ui.components.enter
 import dev.changeloom.android.ui.theme.ChangeloomTheme
@@ -373,9 +389,28 @@ private fun FeedScreen(
     photo: ImageBitmap?,
     contentPadding: PaddingValues,
     vm: TimelineViewModel = koinViewModel(),
+    picker: TopicPickerViewModel = koinViewModel(),
     adRepository: NativeAdRepository = koinInject(),
+    suggester: FollowSuggester = koinInject(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val undo by vm.undo.collectAsStateWithLifecycle()
+    // Derived, so picker edits don't recompose the feed; only a change to the followed set does.
+    val pickerState = picker.state.collectAsStateWithLifecycle()
+    val followed by remember { derivedStateOf { pickerState.value.followed.toSet() } }
+    val menu = remember(followed) { StoryMenu(followed, vm::dismiss, vm::muteTopic) }
+    val counts = suggester.counts.collectAsStateWithLifecycle()
+    // Until the followed topics load, every topic looks unfollowed, so nothing is suggested yet.
+    val suggestion by remember {
+        derivedStateOf {
+            val p = pickerState.value
+            if (p.loading && p.followed.isEmpty()) {
+                null
+            } else {
+                counts.value.suggestion(followed)?.let { FollowSuggestion(it, counts.value.opens[it] ?: 0, p.saving, p.error) }
+            }
+        }
+    }
     val ads by adRepository.feedAds.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { adRepository.refresh() }
     FeedContent(
@@ -397,6 +432,13 @@ private fun FeedScreen(
         onSetSaved = vm::setBookmarked,
         onDismissError = vm::dismissError,
         onSeen = vm::storySeen,
+        menu = menu,
+        suggestion = suggestion,
+        onFollow = picker::follow,
+        onDeclineSuggestion = vm::declineSuggestion,
+        undo = undo,
+        onUndo = vm::undo,
+        onUndoExpired = vm::undoExpired,
     )
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.flushViews() }
 }
@@ -419,8 +461,28 @@ internal fun FeedContent(
     ads: FeedAds? = null,
     photo: ImageBitmap? = null,
     onSeen: (Long) -> Unit = {},
+    menu: StoryMenu? = null,
+    suggestion: FollowSuggestion? = null,
+    onFollow: (String) -> Unit = {},
+    onDeclineSuggestion: (String) -> Unit = {},
+    undo: FeedUndo? = null,
+    onUndo: (FeedUndo) -> Unit = {},
+    onUndoExpired: (FeedUndo) -> Unit = {},
 ) {
     val c = ChangeloomTheme.colors
+    val topicName = LocalTopicName.current
+    val snackbar = remember { SnackbarHostState() }
+    val undoMessage = when (undo) {
+        is FeedUndo.Dismissed -> stringResource(R.string.story_hidden)
+        is FeedUndo.Muted -> stringResource(R.string.topic_muted, topicName(undo.topic))
+        null -> null
+    }
+    val undoLabel = stringResource(R.string.undo)
+    LaunchedEffect(undo) {
+        val action = undo ?: return@LaunchedEffect
+        val result = snackbar.showSnackbar(undoMessage.orEmpty(), actionLabel = undoLabel, duration = SnackbarDuration.Short)
+        if (result == SnackbarResult.ActionPerformed) onUndo(action) else onUndoExpired(action)
+    }
     val listState = rememberLazyListState()
     val pullState = rememberPullToRefreshState()
     val (fresh, earlier) = remember(state.items) { state.items.partition { !it.isRead } }
@@ -477,18 +539,22 @@ internal fun FeedContent(
                         )
                     }
                     else -> {
+                        // The suggestion follows the first few new stories, or opens the earlier ones when nothing is new.
+                        val suggestAfter = minOf(FOLLOW_CARD_AFTER, fresh.size) - 1
                         if (fresh.isNotEmpty()) {
                             item(key = "new") { SectionHeader(stringResource(R.string.section_new), fresh.size, highlight = true, Modifier.animateItem()) }
                             fresh.forEachIndexed { i, story ->
-                                item(key = story.id, contentType = STORY_CONTENT) { FeedCard(story, staggered, i, onOpen, onSetRead, onSetSaved) }
+                                item(key = story.id, contentType = STORY_CONTENT) { FeedCard(story, staggered, i, onOpen, onSetRead, onSetSaved, menu) }
                                 feedAd(ads, i)
+                                if (i == suggestAfter) followSuggestion(suggestion, onFollow, onDeclineSuggestion)
                             }
                         }
                         if (earlier.isNotEmpty()) {
                             item(key = "earlier") { SectionHeader(stringResource(R.string.section_earlier), null, highlight = false, Modifier.animateItem()) }
+                            if (fresh.isEmpty()) followSuggestion(suggestion, onFollow, onDeclineSuggestion)
                             earlier.forEachIndexed { i, story ->
                                 item(key = story.id, contentType = STORY_CONTENT) {
-                                    FeedCard(story, staggered, fresh.size + i, onOpen, onSetRead, onSetSaved)
+                                    FeedCard(story, staggered, fresh.size + i, onOpen, onSetRead, onSetSaved, menu)
                                 }
                                 feedAd(ads, fresh.size + i)
                             }
@@ -500,6 +566,9 @@ internal fun FeedContent(
             }
         }
         BackToTopButton(listState, Modifier.align(Alignment.BottomEnd))
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(horizontal = Spacing.gutter, vertical = 12.dp)) { data ->
+            Snackbar(data, containerColor = c.elevated, contentColor = c.fg, actionColor = c.primaryText)
+        }
     }
 }
 
@@ -615,6 +684,40 @@ private fun BackToTopButton(listState: LazyListState, modifier: Modifier = Modif
     }
 }
 
+/** A topic the user keeps opening but doesn't follow, with how often they opened it and the follow call's state. */
+internal data class FollowSuggestion(val topic: String, val opens: Int, val saving: Boolean, val error: String?)
+
+private fun LazyListScope.followSuggestion(suggestion: FollowSuggestion?, onFollow: (String) -> Unit, onDecline: (String) -> Unit) {
+    if (suggestion == null) return
+    item(key = "follow_suggestion", contentType = FOLLOW_CONTENT) { FollowSuggestionCard(suggestion, onFollow, onDecline, Modifier.animateItem()) }
+}
+
+@Composable
+private fun FollowSuggestionCard(suggestion: FollowSuggestion, onFollow: (String) -> Unit, onDecline: (String) -> Unit, modifier: Modifier = Modifier) {
+    val c = ChangeloomTheme.colors
+    val name = LocalTopicName.current(suggestion.topic)
+    GlassCard(modifier.fillMaxWidth().testTag("follow_suggestion")) {
+        Eyebrow(stringResource(R.string.suggested), color = c.accent)
+        Spacer(Modifier.height(8.dp))
+        Text(stringResource(R.string.follow_suggestion_title, name), style = MaterialTheme.typography.titleMedium, color = c.fg)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            pluralStringResource(R.plurals.follow_suggestion_body, suggestion.opens, suggestion.opens),
+            style = MaterialTheme.typography.bodyMedium,
+            color = c.fgMuted,
+        )
+        if (suggestion.error != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(suggestion.error, style = MaterialTheme.typography.bodySmall, color = c.red)
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            PrimaryButton(stringResource(R.string.follow), { onFollow(suggestion.topic) }, loading = suggestion.saving)
+            TextAction(stringResource(R.string.not_now), { onDecline(suggestion.topic) }, enabled = !suggestion.saving)
+        }
+    }
+}
+
 /** The ad after the story at [index] in the feed, if one goes there. Ads never show outside the feed. */
 private fun LazyListScope.feedAd(ads: FeedAds?, index: Int) {
     val slot = ads?.slotAfter(index) ?: return
@@ -630,6 +733,7 @@ private fun LazyItemScope.FeedCard(
     onOpen: (Long) -> Unit,
     onSetRead: (Long, Boolean) -> Unit,
     onSetSaved: (Long, Boolean) -> Unit,
+    menu: StoryMenu?,
 ) {
     val entrance = if (animateIn && index < STAGGERED_CARDS) Modifier.enter(delayMillis = STAGGER_START_MILLIS + index * STAGGER_STEP_MILLIS) else Modifier
     SwipeActions(
@@ -649,7 +753,7 @@ private fun LazyItemScope.FeedCard(
         resetAfterSwipe = true,
         modifier = Modifier.animateItem().then(entrance),
     ) {
-        StoryCard(story, onOpen = { onOpen(story.id) }, onToggleSave = { onSetSaved(story.id, !story.isBookmarked) })
+        StoryCard(story, onOpen = { onOpen(story.id) }, onToggleSave = { onSetSaved(story.id, !story.isBookmarked) }, menu = menu)
     }
 }
 
@@ -716,9 +820,22 @@ private fun SectionHeader(title: String, count: Int?, highlight: Boolean, modifi
     }
 }
 
-/** Story card: meta row, title (shared with the detail screen), summary, topics, importance and save. */
+/**
+ * The feed card's "Not interested" and "Less about" actions. Followed topics aren't offered: muting one would unfollow
+ * it, which belongs on the topics screen.
+ */
+@Immutable
+internal class StoryMenu(val followed: Set<String>, val onNotInterested: (Long) -> Unit, val onLessAbout: (String) -> Unit)
+
+/** Story card: meta row, title (shared with the detail screen), summary, topics, importance, save and the feed's [menu]. */
 @Composable
-internal fun StoryCard(story: StorySummary, onOpen: () -> Unit, onToggleSave: () -> Unit, modifier: Modifier = Modifier) {
+internal fun StoryCard(
+    story: StorySummary,
+    onOpen: () -> Unit,
+    onToggleSave: () -> Unit,
+    modifier: Modifier = Modifier,
+    menu: StoryMenu? = null,
+) {
     val c = ChangeloomTheme.colors
     val topicName = LocalTopicName.current
     val brand = ChangeloomTheme.gradients.brand
@@ -743,7 +860,11 @@ internal fun StoryCard(story: StorySummary, onOpen: () -> Unit, onToggleSave: ()
                 Spacer(Modifier.weight(1f))
                 // Only the timeline sets `match`; followed stories need no label.
                 if (story.match != null && story.match != "followed") {
-                    Eyebrow(stringResource(R.string.suggested), Modifier.padding(end = 8.dp), color = c.accent)
+                    Eyebrow(
+                        stringResource(if (story.match == "headline") R.string.headline else R.string.suggested),
+                        Modifier.padding(end = 8.dp),
+                        color = c.accent,
+                    )
                 }
                 Eyebrow(relativeTime(story.publishedAt))
             }
@@ -774,6 +895,41 @@ internal fun StoryCard(story: StorySummary, onOpen: () -> Unit, onToggleSave: ()
                 }
                 ImportanceMeter(story.importance, Modifier.padding(start = 8.dp))
                 SaveToggle(story.isBookmarked, onToggleSave)
+                if (menu != null) StoryMenuButton(story, menu)
+            }
+        }
+    }
+}
+
+@Composable
+private fun StoryMenuButton(story: StorySummary, menu: StoryMenu) {
+    val c = ChangeloomTheme.colors
+    val topicName = LocalTopicName.current
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.story_actions), tint = c.fgSubtle)
+        }
+        // The menu's content is composed only while it is open, so the topic filter runs once per opening.
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = c.elevated) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.not_interested), color = c.fg) },
+                onClick = {
+                    open = false
+                    menu.onNotInterested(story.id)
+                },
+                leadingIcon = { Icon(Icons.Rounded.VisibilityOff, contentDescription = null, tint = c.fgMuted) },
+            )
+            val topics = remember(story.topics, menu.followed) { story.topics.filter { it !in menu.followed } }
+            topics.forEach { slug ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.less_about, topicName(slug)), color = c.fg) },
+                    onClick = {
+                        open = false
+                        menu.onLessAbout(slug)
+                    },
+                    leadingIcon = { Icon(Icons.Rounded.RemoveCircleOutline, contentDescription = null, tint = c.fgMuted) },
+                )
             }
         }
     }
@@ -1066,3 +1222,7 @@ private const val END_CONTENT = "end"
 private const val BACK_TO_TOP_AFTER_ITEMS = 4
 private const val BACK_TO_TOP_JUMP_ITEMS = 8
 private const val AD_CONTENT = "ad"
+private const val FOLLOW_CONTENT = "follow"
+
+/** New stories shown before the follow suggestion. */
+private const val FOLLOW_CARD_AFTER = 2

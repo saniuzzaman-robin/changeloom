@@ -134,6 +134,7 @@
     <string name="section_new">New for you</string>
     <string name="section_earlier">Earlier</string>
     <string name="suggested">Suggested</string>
+    <string name="headline">Headline</string>
     <string name="open_profile">Open profile</string>
     <string name="back_to_top">Back to top</string>
     <string name="feed_end_title">You\'ve reached the end</string>
@@ -189,6 +190,8 @@
     <string name="professions_eyebrow">Your profession</string>
     <string name="professions_empty_title">No professions match</string>
     <string name="professions_empty_body">Try a broader term, or skip this step.</string>
+    <string name="professions_coming_soon">More professions are coming soon. Missing yours? Request it later from your profile.</string>
+    <string name="headlines_note">Everyone also gets the biggest stories in %1$s.</string>
     <string name="professions_selected">%1$d chosen</string>
     <string name="professions_next">Next</string>
     <string name="professions_skip">Skip</string>
@@ -237,6 +240,22 @@
     <!-- Profile -->
     <string name="profile_activity">Your activity</string>
     <string name="following_none">You\'re not following any topics yet.</string>
+    <string name="muted_topics">Muted topics</string>
+    <string name="muted_topics_hint">Stories only in these topics stay out of your feed.</string>
+    <string name="unmute">Unmute</string>
+    <string name="unmute_failed">Couldn\'t unmute the topic. Try again.</string>
+    <string name="story_actions">More actions</string>
+    <string name="not_interested">Not interested</string>
+    <string name="less_about">Less about %1$s</string>
+    <string name="story_hidden">Story hidden</string>
+    <string name="topic_muted">You\'ll see less about %1$s</string>
+    <string name="undo">Undo</string>
+    <string name="follow_suggestion_title">Follow %1$s?</string>
+    <plurals name="follow_suggestion_body">
+        <item quantity="one">You\'ve opened %d story about it.</item>
+        <item quantity="other">You\'ve opened %d stories about it.</item>
+    </plurals>
+    <string name="follow">Follow</string>
     <string name="appearance">Appearance</string>
     <string name="theme_system">System</string>
     <string name="theme_light">Light</string>

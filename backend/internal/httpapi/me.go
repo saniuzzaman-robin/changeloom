@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -59,6 +60,10 @@ func (s *Server) ListTopics(w http.ResponseWriter, r *http.Request) {
 	items := make([]Topic, len(rows))
 	for i, t := range rows {
 		items[i] = Topic{Slug: t.Slug, Name: t.Name, Parent: t.ParentSlug, Description: t.Description}
+		// Absent means false: most topics are not headlines, so the flag is sent only when set.
+		if t.Headline {
+			items[i].Headline = &t.Headline
+		}
 	}
 	profRows, err := s.q.ListProfessions(r.Context())
 	if err != nil {
@@ -67,7 +72,7 @@ func (s *Server) ListTopics(w http.ResponseWriter, r *http.Request) {
 	}
 	professions := make([]Profession, len(profRows))
 	for i, p := range profRows {
-		professions[i] = Profession{Slug: p.Slug, Name: p.Name, Description: p.Description, Topics: p.Topics}
+		professions[i] = Profession{Slug: p.Slug, Name: p.Name, Description: p.Description, Topics: p.Topics, Launched: &p.Launched}
 	}
 	body, err := json.Marshal(struct {
 		Items       []Topic      `json:"items"`
@@ -137,29 +142,21 @@ func (s *Server) PutMyTopics(w http.ResponseWriter, r *http.Request) {
 	var unknown []string
 	err := pgx.BeginFunc(r.Context(), s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
-		found, err := q.GetTopicIDsBySlugs(r.Context(), slugs)
-		if err != nil {
-			return fmt.Errorf("look up topics: %w", err)
-		}
-		ids := make([]int64, 0, len(found))
-		known := make(map[string]bool, len(found))
-		for _, t := range found {
-			ids = append(ids, t.ID)
-			known[t.Slug] = true
-		}
-		for _, slug := range slugs {
-			if !known[slug] {
-				unknown = append(unknown, slug)
-			}
-		}
-		if len(unknown) > 0 {
-			return nil
+		var ids []int64
+		var err error
+		ids, unknown, err = topicIDs(r.Context(), q, slugs)
+		if err != nil || len(unknown) > 0 {
+			return err
 		}
 		if err := q.DeleteUserTopics(r.Context(), user.ID); err != nil {
 			return fmt.Errorf("clear user topics: %w", err)
 		}
 		if err := q.InsertUserTopics(r.Context(), db.InsertUserTopicsParams{UserID: user.ID, TopicIds: ids}); err != nil {
 			return fmt.Errorf("insert user topics: %w", err)
+		}
+		// A topic is followed or muted, never both.
+		if err := q.DeleteUserTopicMutesByIDs(r.Context(), db.DeleteUserTopicMutesByIDsParams{UserID: user.ID, TopicIds: ids}); err != nil {
+			return fmt.Errorf("unmute followed topics: %w", err)
 		}
 		return nil
 	})
@@ -172,6 +169,75 @@ func (s *Server) PutMyTopics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeMe(w, r, user)
+}
+
+// PutMyMutedTopics replaces the user's muted topics and unfollows the ones that were followed.
+func (s *Server) PutMyMutedTopics(w http.ResponseWriter, r *http.Request) {
+	user := mustUser(r)
+
+	var body PutMyMutedTopicsJSONRequestBody
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body: "+err.Error())
+		return
+	}
+	if body.Topics == nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "topics is required")
+		return
+	}
+	slugs := slices.Compact(slices.Sorted(slices.Values(body.Topics)))
+
+	var unknown []string
+	err := pgx.BeginFunc(r.Context(), s.pool, func(tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		var ids []int64
+		var err error
+		ids, unknown, err = topicIDs(r.Context(), q, slugs)
+		if err != nil || len(unknown) > 0 {
+			return err
+		}
+		if err := q.DeleteUserTopicMutes(r.Context(), user.ID); err != nil {
+			return fmt.Errorf("clear user topic mutes: %w", err)
+		}
+		if err := q.InsertUserTopicMutes(r.Context(), db.InsertUserTopicMutesParams{UserID: user.ID, TopicIds: ids}); err != nil {
+			return fmt.Errorf("insert user topic mutes: %w", err)
+		}
+		// A topic is followed or muted, never both.
+		if err := q.DeleteUserTopicsByIDs(r.Context(), db.DeleteUserTopicsByIDsParams{UserID: user.ID, TopicIds: ids}); err != nil {
+			return fmt.Errorf("unfollow muted topics: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		internalError(w, r, "put my muted topics", err)
+		return
+	}
+	if len(unknown) > 0 {
+		writeError(w, http.StatusBadRequest, "unknown_topics", "unknown topic slugs: "+strings.Join(unknown, ", "))
+		return
+	}
+	s.writeMe(w, r, user)
+}
+
+// topicIDs resolves topic slugs to ids, returning the slugs that are not topics.
+func topicIDs(ctx context.Context, q *db.Queries, slugs []string) (ids []int64, unknown []string, err error) {
+	found, err := q.GetTopicIDsBySlugs(ctx, slugs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("look up topics: %w", err)
+	}
+	ids = make([]int64, 0, len(found))
+	known := make(map[string]bool, len(found))
+	for _, t := range found {
+		ids = append(ids, t.ID)
+		known[t.Slug] = true
+	}
+	for _, slug := range slugs {
+		if !known[slug] {
+			unknown = append(unknown, slug)
+		}
+	}
+	return ids, unknown, nil
 }
 
 // PutMyProfessions replaces the user's professions.
@@ -269,17 +335,27 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user auth.User)
 		internalError(w, r, "get user country", err)
 		return
 	}
+	muted, err := s.q.ListUserMutedTopicSlugs(r.Context(), user.ID)
+	if err != nil {
+		internalError(w, r, "list user muted topics", err)
+		return
+	}
 	stats, err := s.q.GetUserStats(r.Context(), user.ID)
 	if err != nil {
 		internalError(w, r, "get user stats", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, Me{
+	me := Me{
 		Id:          user.ID,
 		Email:       user.Email,
 		Topics:      slugs,
 		Professions: professions,
 		Country:     country,
 		Stats:       MeStats{Saved: stats.Saved, Read: stats.Read},
-	})
+	}
+	// Absent means none: most users mute nothing.
+	if len(muted) > 0 {
+		me.MutedTopics = &muted
+	}
+	writeJSON(w, http.StatusOK, me)
 }

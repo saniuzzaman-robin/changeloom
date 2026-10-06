@@ -86,6 +86,14 @@ class ChangeloomApi(
             setBody(PutTopicsRequest(slugs))
         }.parse()
 
+    /** Replaces the muted topics; the server unfollows any of them that were followed. */
+    suspend fun putMyMutedTopics(slugs: List<String>): Me =
+        client.put("v1/me/muted-topics") {
+            authorize()
+            contentType(ContentType.Application.Json)
+            setBody(PutTopicsRequest(slugs))
+        }.parse()
+
     suspend fun putMyProfessions(slugs: List<String>): Me =
         client.put("v1/me/professions") {
             authorize()
@@ -135,6 +143,10 @@ class ChangeloomApi(
     suspend fun markRead(id: Long) = client.put("v1/stories/$id/read") { authorize() }.checkSuccess()
 
     suspend fun markUnread(id: Long) = client.delete("v1/stories/$id/read") { authorize() }.checkSuccess()
+
+    suspend fun dismiss(id: Long) = client.put("v1/stories/$id/dismiss") { authorize() }.checkSuccess()
+
+    suspend fun undismiss(id: Long) = client.delete("v1/stories/$id/dismiss") { authorize() }.checkSuccess()
 
     suspend fun search(query: String, cursor: String? = null, limit: Int = TIMELINE_PAGE_SIZE): TimelinePage =
         client.get("v1/search") {

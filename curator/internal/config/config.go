@@ -81,9 +81,9 @@ type Config struct {
 	// MergeWindow is how far back a new story about the same CVE or project+version is merged
 	// into an existing one (CURATOR_MERGE_WINDOW_DAYS).
 	MergeWindow time.Duration
-	// HotMinViews is how many distinct viewers of a topic's stories in the last week make the topic
-	// hot, fetched on every run (CURATOR_HOT_MIN_VIEWS).
-	HotMinViews int
+	// HotMinEngaged is how many distinct users who opened or saved one of a topic's stories in the
+	// last week make the topic hot, fetched on every run (CURATOR_HOT_MIN_ENGAGED).
+	HotMinEngaged int
 	// WarmInterval is the least time between fetches of a topic that is followed or serves a user's
 	// profession but is not hot (CURATOR_WARM_INTERVAL_HOURS).
 	WarmInterval time.Duration
@@ -235,7 +235,7 @@ func Load() (Config, error) {
 		MaxNewTopicsPerRun: envInt(&errs, "CURATOR_MAX_NEW_TOPICS_PER_RUN", 5),
 		ItemMaxAge:         time.Duration(envInt(&errs, "CURATOR_ITEM_MAX_AGE_DAYS", 14)) * 24 * time.Hour,
 		MergeWindow:        time.Duration(envInt(&errs, "CURATOR_MERGE_WINDOW_DAYS", 14)) * 24 * time.Hour,
-		HotMinViews:        envInt(&errs, "CURATOR_HOT_MIN_VIEWS", 1),
+		HotMinEngaged:      envInt(&errs, "CURATOR_HOT_MIN_ENGAGED", 1),
 		WarmInterval:       time.Duration(envInt(&errs, "CURATOR_WARM_INTERVAL_HOURS", 24)) * time.Hour,
 		PriorityIntervals:  envHours(&errs, "CURATOR_PRIORITY_INTERVAL_HOURS", [5]int{48, 96, 168, 336, 672}),
 		StoriesPerTopic:    envInt(&errs, "CURATOR_STORIES_PER_TOPIC", 5),

@@ -78,6 +78,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.changeloom.android.BuildConfig
 import dev.changeloom.android.R
 import dev.changeloom.android.telemetry.AppLog
 import dev.changeloom.android.ui.components.BannerTone
@@ -465,7 +466,7 @@ private fun cannotOpen(context: Context, error: Exception) {
 }
 
 private fun Context.shareStory(story: Story) {
-    val text = listOfNotNull(story.title, story.sources.firstOrNull()?.url).joinToString("\n\n")
+    val text = listOf(story.title, "https://${BuildConfig.LINK_HOST}/s/${story.id}").joinToString("\n\n")
     val send = Intent(Intent.ACTION_SEND)
         .setType("text/plain")
         .putExtra(Intent.EXTRA_SUBJECT, story.title)

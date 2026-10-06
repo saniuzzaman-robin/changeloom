@@ -24,6 +24,7 @@ type Profession struct {
 	Description string
 	Position    int16
 	UpdatedAt   time.Time
+	Launched    bool
 }
 
 type ProfessionTopic struct {
@@ -76,6 +77,7 @@ type Topic struct {
 	ParentID    *int64
 	Description string
 	UpdatedAt   time.Time
+	Headline    bool
 }
 
 type TopicRelation struct {
@@ -113,6 +115,12 @@ type UserProfession struct {
 	ProfessionID int64
 }
 
+type UserStoryDismissal struct {
+	UserID      int64
+	StoryID     int64
+	DismissedAt time.Time
+}
+
 type UserStoryState struct {
 	UserID  int64
 	StoryID int64
@@ -120,6 +128,11 @@ type UserStoryState struct {
 }
 
 type UserTopic struct {
+	UserID  int64
+	TopicID int64
+}
+
+type UserTopicMute struct {
 	UserID  int64
 	TopicID int64
 }

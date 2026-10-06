@@ -9,6 +9,7 @@ import dev.changeloom.android.auth.SessionManager
 import dev.changeloom.android.play.ReviewPrompter
 import dev.changeloom.android.data.fetchAvatar
 import dev.changeloom.android.telemetry.Analytics
+import dev.changeloom.android.data.FollowSuggester
 import dev.changeloom.android.telemetry.AppLog
 import dev.changeloom.android.ui.theme.ThemeMode
 import dev.changeloom.android.ui.theme.ThemePreferences
@@ -24,6 +25,7 @@ import dev.changeloom.shared.data.Profession
 import dev.changeloom.shared.data.Story
 import dev.changeloom.shared.data.StoryCache
 import dev.changeloom.shared.data.StoryPager
+import dev.changeloom.shared.data.StorySummary
 import dev.changeloom.shared.data.TimelineFilter
 import dev.changeloom.shared.data.TimelineRepository
 import dev.changeloom.shared.data.TimelineState
@@ -314,22 +316,59 @@ class TopicPickerViewModel(
         }
     }
 
+    /** Follows one more topic (a feed suggestion), keeping the rest; the timeline reloads to rank its stories. */
+    fun follow(slug: String) {
+        val s = _state.value
+        if (s.saving) return
+        val slugs = s.selection?.let { TopicSelection.fromFollowed(it.tree, s.followed + slug).toFollowed() } ?: (s.followed + slug).distinct().sorted()
+        _state.update { it.copy(saving = true, error = null) }
+        viewModelScope.launch {
+            try {
+                val followed = api.putMyTopics(slugs).topics
+                cache.saveFollowed(followed)
+                analytics.topicsUpdate(followed.size, onboarding = false)
+                viewModelScope.launch { repo.refresh() }
+                _state.update { st ->
+                    st.copy(saving = false, followed = followed, selection = st.selection?.let { TopicSelection.fromFollowed(it.tree, followed) })
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLog.failure(TAG_TOPICS, "Couldn't follow a suggested topic", e)
+                _state.update { it.copy(saving = false, error = strings.errorText(e, R.string.topics_save_failed)) }
+            }
+        }
+    }
+
     private fun edit(change: (TopicSelection) -> TopicSelection) = _state.update { s ->
         s.selection?.let { s.copy(selection = change(it), saved = false) } ?: s
     }
+}
+
+/** The last "Not interested" or "Less about" on the feed, which a snackbar offers to undo. */
+sealed interface FeedUndo {
+    data class Dismissed(val story: StorySummary) : FeedUndo
+
+    /** [hidden] are the stories the mute took off the feed, which an undo puts back. */
+    data class Muted(val topic: String, val hidden: List<StorySummary>) : FeedUndo
 }
 
 class TimelineViewModel(
     private val repo: TimelineRepository,
     private val analytics: Analytics,
     private val views: ViewTracker,
+    private val suggester: FollowSuggester,
 ) : ViewModel() {
     val state: StateFlow<TimelineState> = repo.state
+
+    private val _undo = MutableStateFlow<FeedUndo?>(null)
+    val undo: StateFlow<FeedUndo?> = _undo.asStateFlow()
 
     init {
         // After a sign-in the topic picker has already started the first refresh.
         if (!repo.state.value.refreshing) refresh()
         viewModelScope.launch { views.run(VIEW_FLUSH_INTERVAL_MS) }
+        viewModelScope.launch { suggester.load() }
     }
 
     /** A story was on screen long enough to count as seen. */
@@ -362,6 +401,42 @@ class TimelineViewModel(
         viewModelScope.launch { repo.setBookmarked(id, on) }
     }
 
+    /** "Not interested": the story leaves the feed; once the server has it, the undo is offered. */
+    fun dismiss(id: Long) {
+        val story = repo.state.value.items.firstOrNull { it.id == id } ?: return
+        viewModelScope.launch { if (repo.dismiss(id)) _undo.value = FeedUndo.Dismissed(story) }
+    }
+
+    /** "Less about [slug]": its stories leave the feed; once the server has it, the undo is offered. */
+    fun muteTopic(slug: String) {
+        viewModelScope.launch {
+            repo.muteTopic(slug)?.let {
+                _undo.value = FeedUndo.Muted(slug, it)
+                suggester.decline(slug)
+            }
+        }
+    }
+
+    /** "Not now" on a follow suggestion: it isn't offered again. */
+    fun declineSuggestion(slug: String) {
+        viewModelScope.launch { suggester.decline(slug) }
+    }
+
+    fun undo(action: FeedUndo) {
+        _undo.compareAndSet(action, null)
+        viewModelScope.launch {
+            when (action) {
+                is FeedUndo.Dismissed -> repo.undismiss(action.story)
+                is FeedUndo.Muted -> repo.undoMute(action.topic, action.hidden)
+            }
+        }
+    }
+
+    /** The snackbar closed without an undo. */
+    fun undoExpired(action: FeedUndo) {
+        _undo.compareAndSet(action, null)
+    }
+
     fun dismissError() = repo.clearError()
 }
 
@@ -373,6 +448,7 @@ class StoryDetailViewModel(
     private val analytics: Analytics,
     private val strings: Strings,
     private val review: ReviewPrompter,
+    private val suggester: FollowSuggester,
 ) : ViewModel() {
     private val _state = MutableStateFlow(StoryDetailState())
     val state: StateFlow<StoryDetailState> = _state.asStateFlow()
@@ -389,6 +465,7 @@ class StoryDetailViewModel(
                 _state.value = StoryDetailState(loading = false, story = story)
                 analytics.storyOpen(id)
                 review.storyRead()
+                suggester.recordOpen(story.topics)
                 repo.setRead(id, true) // opening a story marks it read
             } catch (e: CancellationException) {
                 throw e
@@ -528,12 +605,15 @@ data class ProfileState(
     val requestText: String = "",
     val submittingRequest: Boolean = false,
     val requestError: String? = null,
+    /** Muted topic slugs; null until the first `/v1/me` load succeeds. */
+    val muted: List<String>? = null,
     /** Null unless the user is deleting their account. */
     val delete: DeleteState? = null,
 )
 
 class ProfileViewModel(
     private val api: ChangeloomApi,
+    private val timeline: TimelineRepository,
     private val auth: AuthRepository,
     private val session: SessionManager,
     private val theme: ThemePreferences,
@@ -571,7 +651,7 @@ class ProfileViewModel(
         viewModelScope.launch {
             try {
                 val me = api.me()
-                _state.update { it.copy(stats = me.stats, country = me.country, error = null) }
+                _state.update { it.copy(stats = me.stats, country = me.country, muted = me.mutedTopics, error = null) }
                 if (me.country == null) deviceCountry()?.let(::setCountry)
             } catch (e: CancellationException) {
                 throw e
@@ -604,6 +684,23 @@ class ProfileViewModel(
             } catch (e: Exception) {
                 AppLog.failure(TAG_PROFILE, "Couldn't save the country", e)
                 _state.update { it.copy(country = previous, error = strings.errorText(e, R.string.country_save_failed)) }
+            }
+        }
+    }
+
+    /** Unmutes a topic; the timeline reloads to bring its stories back. A failure puts it back in the list. */
+    fun unmute(slug: String) {
+        val before = _state.value.muted ?: return
+        _state.update { it.copy(muted = before - slug) }
+        viewModelScope.launch {
+            try {
+                val saved = timeline.unmuteTopic(slug)
+                _state.update { it.copy(muted = saved) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLog.failure(TAG_PROFILE, "Couldn't unmute a topic", e)
+                _state.update { it.copy(muted = before, error = strings.errorText(e, R.string.unmute_failed)) }
             }
         }
     }

@@ -35,6 +35,18 @@ type Notifier interface {
 type Options struct {
 	// TimelineWindow hides stories published longer ago than this from the timeline.
 	TimelineWindow time.Duration
+	// HeadlineMinImportance is the least importance a headline-topic story needs to reach every
+	// user's timeline.
+	HeadlineMinImportance int16
+	// ExploreMinImportance is the least importance a story outside the user's interests needs to
+	// reach their timeline, unless they have no follows or professions; zero keeps every story.
+	ExploreMinImportance int16
+	// AffinityWindow is how far back the stories a user read or saved make their topics affinity.
+	AffinityWindow time.Duration
+	// TimelineScore weighs how unread timeline stories are ranked.
+	TimelineScore TimelineScore
+	// TimelineMix spreads topics and headlines within each timeline page.
+	TimelineMix TimelineMix
 	// TopicRequestMaxPending caps the pending topic requests per user.
 	TopicRequestMaxPending int
 	// NotifySecret is the bearer token POST /internal/notify requires; empty disables the route.
@@ -51,6 +63,27 @@ type Options struct {
 	// AppCheckEnforce is set, a missing or invalid token is only logged.
 	AppCheck        auth.AppCheckVerifier
 	AppCheckEnforce bool
+}
+
+// TimelineScore is the unread timeline ranking: tier, importance and severity points, minus one
+// point per AgeDecay of age and SeenPenalty for a story seen longer than SeenGrace ago but never
+// opened or saved. AgeDecay must be positive.
+type TimelineScore struct {
+	TierWeight       float64
+	ImportanceWeight float64
+	SeverityWeight   float64
+	AgeDecay         time.Duration
+	SeenPenalty      float64
+	SeenGrace        time.Duration
+}
+
+// TimelineMix re-orders each timeline page so that at most MaxTopicRun stories in a row share a
+// root topic and headline and explore stories are at least HeadlineSpacing and ExploreSpacing
+// apart, where the page allows it. Zero values disable the limit.
+type TimelineMix struct {
+	MaxTopicRun     int
+	HeadlineSpacing int
+	ExploreSpacing  int
 }
 
 // Server implements ServerInterface.

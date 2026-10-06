@@ -146,7 +146,7 @@ func (g *Grouper) Run(ctx context.Context, dryRun bool) (Result, error) {
 }
 
 func listProfessions(ctx context.Context, pool *pgxpool.Pool) ([]catalog.Profession, error) {
-	rows, err := pool.Query(ctx, `SELECT slug, name, description, '{}'::text[] FROM professions ORDER BY position, id`)
+	rows, err := pool.Query(ctx, `SELECT slug, name, description, '{}'::text[], launched FROM professions ORDER BY position, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list professions: %w", err)
 	}

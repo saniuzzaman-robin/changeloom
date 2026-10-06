@@ -154,6 +154,7 @@ internal fun ProfileScreen(
         contentPadding = contentPadding,
         onEditTopics = onEditTopics,
         onCountry = vm::setCountry,
+        onUnmute = vm::unmute,
         onEditProfessions = {
             picker.setStep(PickerStep.Professions)
             onEditTopics()
@@ -206,6 +207,7 @@ internal fun ProfileContent(
     professions: List<String> = emptyList(),
     onEditProfessions: () -> Unit = {},
     onCountry: (String) -> Unit = {},
+    onUnmute: (String) -> Unit = {},
     themeMode: ThemeMode,
     version: String,
     contentPadding: PaddingValues,
@@ -270,6 +272,19 @@ internal fun ProfileContent(
                     } else {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             followed.forEach { TopicChip(topicName(it)) }
+                        }
+                    }
+                    val muted = state.muted.orEmpty()
+                    if (muted.isNotEmpty()) {
+                        Spacer(Modifier.height(20.dp))
+                        Eyebrow(stringResource(R.string.muted_topics))
+                        Spacer(Modifier.height(4.dp))
+                        Text(stringResource(R.string.muted_topics_hint), style = MaterialTheme.typography.bodySmall, color = c.fgMuted)
+                        muted.forEach { slug ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(topicName(slug), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = c.fg)
+                                TextAction(stringResource(R.string.unmute), { onUnmute(slug) })
+                            }
                         }
                     }
                 }
@@ -597,7 +612,7 @@ private fun ProfilePreview(state: ProfileState, mode: ThemeMode) {
 @Preview(name = "Profile, dark", heightDp = 1000)
 @Composable
 private fun ProfileDark() = ChangeloomTheme(ThemeMode.Dark) {
-    Box(Modifier.background(ChangeloomTheme.colors.bg)) { ProfilePreview(ProfileState(stats = MeStats(saved = 12, read = 148)), ThemeMode.Dark) }
+    Box(Modifier.background(ChangeloomTheme.colors.bg)) { ProfilePreview(ProfileState(stats = MeStats(saved = 12, read = 148), muted = listOf("web/angular")), ThemeMode.Dark) }
 }
 
 @Preview(name = "Profile, error, light", heightDp = 1000)

@@ -28,9 +28,17 @@ import (
 const (
 	testWindow     = 60 * 24 * time.Hour
 	testMaxPending = 3
-	aliceToken     = auth.DevTokenPrefix + "alice"
-	bobToken       = auth.DevTokenPrefix + "bob"
+	// testHeadlineMin is the least importance of a headline story; insertStory uses 3.
+	testHeadlineMin = 3
+	aliceToken      = auth.DevTokenPrefix + "alice"
+	bobToken        = auth.DevTokenPrefix + "bob"
 )
+
+// testScore is the api's default ranking: with stories of equal importance a few hours apart,
+// tiers decide the order.
+var testScore = httpapi.TimelineScore{
+	TierWeight: 2, ImportanceWeight: 1, SeverityWeight: 0.5, AgeDecay: 24 * time.Hour, SeenPenalty: 3, SeenGrace: 12 * time.Hour,
+}
 
 type env struct {
 	t    *testing.T
@@ -50,7 +58,10 @@ func newEnvWith(t *testing.T, configure func(*httpapi.Options)) *env {
 	if _, err := topics.Sync(t.Context(), pool, seed.TopicsYAML); err != nil {
 		t.Fatalf("sync topics: %v", err)
 	}
-	opts := httpapi.Options{TimelineWindow: testWindow, TopicRequestMaxPending: testMaxPending}
+	opts := httpapi.Options{
+		TimelineWindow: testWindow, TopicRequestMaxPending: testMaxPending, HeadlineMinImportance: testHeadlineMin,
+		TimelineScore: testScore,
+	}
 	configure(&opts)
 	srv := httptest.NewServer(httpapi.NewHandler(httpapi.NewServer(pool, opts), auth.DevVerifier{}))
 	t.Cleanup(srv.Close)
@@ -285,7 +296,8 @@ func TestTimelineCursorPagination(t *testing.T) {
 	if len(full) != len(all) {
 		t.Fatalf("full timeline has %d items, want %d", len(full), len(all))
 	}
-	// Expected order: unread first, then tier, then newest, then highest id.
+	// Expected order: unread first, then tier (equal importance and only hours apart, so the score
+	// follows the tier), then newest, then highest id; read ones newest first.
 	want := slices.Clone(all)
 	pub := map[int64]time.Time{}
 	for _, it := range full {
@@ -298,7 +310,7 @@ func TestTimelineCursorPagination(t *testing.T) {
 				return 1
 			}
 			return -1
-		case tierOf[a] != tierOf[b]:
+		case !read[a] && tierOf[a] != tierOf[b]:
 			return tierOf[a] - tierOf[b]
 		case !pub[a].Equal(pub[b]):
 			return pub[b].Compare(pub[a])
@@ -406,8 +418,10 @@ func TestTimelineKindAndReadFilters(t *testing.T) {
 func TestTimelineRejectsBadParams(t *testing.T) {
 	e := newEnv(t)
 	for _, q := range []string{"limit=0", "limit=101", "limit=abc", "cursor=not-a-cursor", "cursor=e30",
-		// Tier 4 is out of range.
-		"cursor=eyJyIjpmYWxzZSwidCI6NCwicCI6IjIwMjYtMDEtMDFUMDA6MDA6MDBaIiwiaSI6MX0",
+		// A tier cursor from before scores: {"r":false,"t":1,"p":"2026-01-01T00:00:00Z","i":1}.
+		"cursor=eyJyIjpmYWxzZSwidCI6MSwicCI6IjIwMjYtMDEtMDFUMDA6MDA6MDBaIiwiaSI6MX0",
+		// A scored cursor without its ranking time: {"v":2,"r":false,"s":1,"p":"2026-01-01T00:00:00Z","i":1}.
+		"cursor=eyJ2IjoyLCJyIjpmYWxzZSwicyI6MSwicCI6IjIwMjYtMDEtMDFUMDA6MDA6MDBaIiwiaSI6MX0",
 	} {
 		if code := e.do(http.MethodGet, "/v1/timeline?"+q, aliceToken, nil, nil); code != http.StatusBadRequest {
 			t.Errorf("GET /v1/timeline?%s: status %d, want 400", q, code)
@@ -945,6 +959,163 @@ func TestProfessionEndpointsRequireAuth(t *testing.T) {
 	}
 }
 
+// exec runs a statement against the test database.
+func (e *env) exec(sql string, args ...any) {
+	e.t.Helper()
+	if _, err := e.pool.Exec(e.t.Context(), sql, args...); err != nil {
+		e.t.Fatalf("exec %q: %v", sql, err)
+	}
+}
+
+func TestTimelineHeadlineTier(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now().Truncate(time.Second)
+	// security is a headline root, so its children are headlines too. Newer stories sit in lower
+	// tiers, so the expected order can only come from the tiers.
+	e.exec(`UPDATE topics SET headline = true WHERE slug = 'security'`)
+	followed := e.insertStory("followed", now.Add(-5*time.Hour), "web/react")
+	related := e.insertStory("related", now.Add(-4*time.Hour), "cloud/aws")
+	headline := e.insertStory("headline", now.Add(-3*time.Hour), "security/advisories")
+	minor := e.insertStory("minor headline", now.Add(-2*time.Hour), "security/advisories")
+	explore := e.insertStory("explore", now.Add(-1*time.Hour), "databases/postgres")
+	followedHeadline := e.insertStory("followed and headline", now.Add(-6*time.Hour), "web/react", "security")
+	e.exec(`UPDATE stories SET importance = $2 WHERE id = $1`, minor, testHeadlineMin-1)
+
+	e.follow(aliceToken, "web/react")
+	e.relate("web/react", "cloud/aws")
+
+	want := []int64{followed, followedHeadline, related, headline, explore, minor}
+	wantMatch := []httpapi.StorySummaryMatch{
+		httpapi.StorySummaryMatchFollowed, httpapi.StorySummaryMatchFollowed, httpapi.StorySummaryMatchRelated,
+		httpapi.StorySummaryMatchHeadline, httpapi.StorySummaryMatchExplore, httpapi.StorySummaryMatchExplore,
+	}
+	got := e.timeline(aliceToken, 50, "").Items
+	if !slices.Equal(ids(got), want) {
+		t.Fatalf("timeline order = %v, want %v", ids(got), want)
+	}
+	for i, it := range got {
+		if it.Match == nil || *it.Match != wantMatch[i] {
+			t.Errorf("story %d (%s): match = %v, want %s", it.Id, it.Title, it.Match, wantMatch[i])
+		}
+	}
+
+	// Pages of two cross the related/headline and headline/explore boundaries.
+	var paged []int64
+	cursor := ""
+	for range len(want) {
+		page := e.timeline(aliceToken, 2, cursor)
+		paged = append(paged, ids(page.Items)...)
+		if page.NextCursor == nil {
+			break
+		}
+		cursor = *page.NextCursor
+	}
+	if !slices.Equal(paged, want) {
+		t.Fatalf("paged timeline = %v, want %v", paged, want)
+	}
+
+	// Another user with no follows still gets the headline first.
+	if got := ids(e.timeline(bobToken, 50, "").Items); len(got) == 0 || got[0] != headline {
+		t.Fatalf("bob's timeline = %v, want headline %d first", got, headline)
+	}
+}
+
+func TestTimelineScore(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now().Truncate(time.Second)
+	e.follow(aliceToken, "web/react")
+	// data-scientist maps to ai, databases and languages.
+	if code := e.do(http.MethodPut, "/v1/me/professions", aliceToken, map[string]any{"professions": []string{"data-scientist"}}, nil); code != http.StatusOK {
+		t.Fatalf("put professions: status %d", code)
+	}
+
+	// A fresh, important profession story outranks a stale, minor followed one.
+	stale := e.insertStory("stale followed", now.Add(-13*24*time.Hour), "web/react")
+	fresh := e.insertStory("fresh profession", now.Add(-1*time.Hour), "databases/postgres")
+	e.exec(`UPDATE stories SET importance = 1 WHERE id = $1`, stale)
+	e.exec(`UPDATE stories SET importance = 5 WHERE id = $1`, fresh)
+
+	// Severity lifts an otherwise equal story (the id tie-break alone would put plain first).
+	critical := e.insertStory("critical", now.Add(-2*time.Hour), "security/advisories")
+	plain := e.insertStory("plain", now.Add(-2*time.Hour), "security/advisories")
+	e.exec(`UPDATE stories SET kind = 'security', severity = 'critical' WHERE id = $1`, critical)
+
+	// A story seen long ago but never opened or saved sinks; recent views and saved stories don't.
+	unseen := e.insertStory("unseen", now.Add(-4*time.Hour), "web/react")
+	seenLongAgo := e.insertStory("seen long ago", now.Add(-3*time.Hour), "web/react")
+	seenRecently := e.insertStory("seen recently", now.Add(-3*time.Hour), "web/react")
+	seenSaved := e.insertStory("seen long ago and saved", now.Add(-3*time.Hour), "web/react")
+	if code := e.do(http.MethodPost, "/v1/stories/views", aliceToken, map[string]any{"ids": []int64{seenLongAgo, seenRecently, seenSaved}}, nil); code != http.StatusNoContent {
+		t.Fatalf("record views: status %d", code)
+	}
+	e.exec(`UPDATE story_views SET seen_at = $2 WHERE story_id = ANY($1)`, []int64{seenLongAgo, seenSaved}, now.Add(-testScore.SeenGrace-time.Hour))
+	if code := e.do(http.MethodPut, "/v1/stories/"+strconv.FormatInt(seenSaved, 10)+"/bookmark", aliceToken, nil, nil); code != http.StatusNoContent {
+		t.Fatalf("bookmark: status %d", code)
+	}
+
+	// Scores: fresh 5-2-1/24; seen recently and saved 3-3/24 (tie: highest id first); unseen
+	// 3-4/24; seen long ago 3-3/24-3; critical 3-8+1.5-2/24; plain 3-8-2/24; stale 1-13.
+	want := []int64{fresh, seenSaved, seenRecently, unseen, seenLongAgo, critical, plain, stale}
+	if got := ids(e.timeline(aliceToken, 50, "").Items); !slices.Equal(got, want) {
+		t.Fatalf("timeline order = %v, want %v", got, want)
+	}
+
+	// Bob's views don't penalize Alice's stories (Alice never saw this one).
+	e.follow(bobToken, "web/react")
+	if code := e.do(http.MethodPost, "/v1/stories/views", bobToken, map[string]any{"ids": []int64{unseen}}, nil); code != http.StatusNoContent {
+		t.Fatalf("record bob's views: status %d", code)
+	}
+	e.exec(`UPDATE story_views SET seen_at = $1 WHERE story_id = $2`, now.Add(-testScore.SeenGrace-time.Hour), unseen)
+	if got := ids(e.timeline(aliceToken, 50, "").Items); !slices.Equal(got, want) {
+		t.Fatalf("timeline order after bob's view = %v, want %v", got, want)
+	}
+
+	// Pages of every size walk the same order.
+	for _, limit := range []int{1, 2, 3} {
+		var walked []int64
+		cursor := ""
+		for range len(want) + 1 {
+			page := e.timeline(aliceToken, limit, cursor)
+			walked = append(walked, ids(page.Items)...)
+			if page.NextCursor == nil {
+				break
+			}
+			cursor = *page.NextCursor
+		}
+		if !slices.Equal(walked, want) {
+			t.Fatalf("limit %d: paged order = %v, want %v", limit, walked, want)
+		}
+	}
+}
+
+func TestTopicsMarkHeadlinesAndLaunches(t *testing.T) {
+	e := newEnv(t)
+	e.exec(`UPDATE topics SET headline = true WHERE slug = 'security'`)
+	e.exec(`UPDATE professions SET launched = false WHERE slug = 'data-scientist'`)
+	var got struct {
+		Items       []httpapi.Topic      `json:"items"`
+		Professions []httpapi.Profession `json:"professions"`
+	}
+	if code := e.do(http.MethodGet, "/v1/topics", aliceToken, nil, &got); code != http.StatusOK {
+		t.Fatalf("topics: status %d", code)
+	}
+	for _, it := range got.Items {
+		// Sent only when true.
+		if want := it.Slug == "security"; (it.Headline != nil) != want || (want && !*it.Headline) {
+			t.Errorf("topic %s: headline = %v, want %v", it.Slug, it.Headline, want)
+		}
+	}
+	for _, p := range got.Professions {
+		if want := p.Slug != "data-scientist"; p.Launched == nil || *p.Launched != want {
+			t.Errorf("profession %s: launched = %v, want %v", p.Slug, p.Launched, want)
+		}
+	}
+	// A profession that is not launched stays valid for users who pick it (older apps, earlier picks).
+	if code := e.do(http.MethodPut, "/v1/me/professions", aliceToken, map[string]any{"professions": []string{"data-scientist"}}, nil); code != http.StatusOK {
+		t.Fatalf("put unlaunched profession: status %d", code)
+	}
+}
+
 func TestTimelineProfessionTier(t *testing.T) {
 	e := newEnv(t)
 	now := time.Now().Truncate(time.Second)
@@ -989,5 +1160,232 @@ func TestTimelineProfessionTier(t *testing.T) {
 	}
 	if !slices.Equal(paged, want) {
 		t.Fatalf("paged order = %v, want %v", paged, want)
+	}
+}
+
+func TestDismissStory(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+	a := e.insertStory("A", now.Add(-2*time.Hour), "languages/go")
+	b := e.insertStory("B", now.Add(-1*time.Hour), "languages/go")
+	path := "/v1/stories/" + strconv.FormatInt(a, 10) + "/dismiss"
+
+	if code := e.do(http.MethodPut, path, "", nil, nil); code != http.StatusUnauthorized {
+		t.Fatalf("dismiss without auth: status %d, want 401", code)
+	}
+	for _, method := range []string{http.MethodPut, http.MethodDelete} {
+		if code := e.do(method, "/v1/stories/999999/dismiss", aliceToken, nil, nil); code != http.StatusNotFound {
+			t.Fatalf("%s unknown story: status %d, want 404", method, code)
+		}
+	}
+	for range 2 { // idempotent
+		if code := e.do(http.MethodPut, path, aliceToken, nil, nil); code != http.StatusNoContent {
+			t.Fatalf("dismiss: status %d, want 204", code)
+		}
+	}
+	if got := ids(e.timeline(aliceToken, 50, "").Items); !slices.Equal(got, []int64{b}) {
+		t.Fatalf("timeline after dismiss = %v, want [%d]", got, b)
+	}
+	if got := ids(e.timeline(bobToken, 50, "").Items); !slices.Equal(got, []int64{b, a}) {
+		t.Fatalf("bob's timeline = %v, want [%d %d]", got, b, a)
+	}
+	// A dismissed story is still a story: it opens and stays saved.
+	if code := e.do(http.MethodGet, "/v1/stories/"+strconv.FormatInt(a, 10), aliceToken, nil, nil); code != http.StatusOK {
+		t.Fatalf("get dismissed story: status %d, want 200", code)
+	}
+
+	for range 2 {
+		if code := e.do(http.MethodDelete, path, aliceToken, nil, nil); code != http.StatusNoContent {
+			t.Fatalf("undismiss: status %d, want 204", code)
+		}
+	}
+	if got := ids(e.timeline(aliceToken, 50, "").Items); !slices.Equal(got, []int64{b, a}) {
+		t.Fatalf("timeline after undismiss = %v, want [%d %d]", got, b, a)
+	}
+}
+
+func TestPutMyMutedTopics(t *testing.T) {
+	e := newEnv(t)
+	put := func(token string, body any) (httpapi.Me, int) {
+		t.Helper()
+		var me httpapi.Me
+		code := e.do(http.MethodPut, "/v1/me/muted-topics", token, body, &me)
+		return me, code
+	}
+
+	if _, code := put("", map[string]any{"topics": []string{"web"}}); code != http.StatusUnauthorized {
+		t.Fatalf("without auth: status %d, want 401", code)
+	}
+	for _, body := range []any{map[string]any{}, map[string]any{"topics": []string{"web", "nope"}}, map[string]any{"topic": "web"}} {
+		if _, code := put(aliceToken, body); code != http.StatusBadRequest {
+			t.Fatalf("body %v: status %d, want 400", body, code)
+		}
+	}
+	var me httpapi.Me
+	e.do(http.MethodGet, "/v1/me", aliceToken, nil, &me)
+	if me.MutedTopics != nil {
+		t.Fatalf("new user muted = %v, want absent", *me.MutedTopics)
+	}
+
+	// Muting a followed topic unfollows it, and following it again unmutes it.
+	e.follow(aliceToken, "web", "languages/go")
+	me, code := put(aliceToken, map[string]any{"topics": []string{"languages/go", "cloud", "cloud"}})
+	if code != http.StatusOK || me.MutedTopics == nil || !slices.Equal(*me.MutedTopics, []string{"cloud", "languages/go"}) {
+		t.Fatalf("mute: status %d, muted %v", code, me.MutedTopics)
+	}
+	if !slices.Equal(me.Topics, []string{"web"}) {
+		t.Fatalf("topics after mute = %v, want [web]", me.Topics)
+	}
+	e.do(http.MethodPut, "/v1/me/topics", aliceToken, map[string]any{"topics": []string{"web", "languages/go"}}, &me)
+	if me.MutedTopics == nil || !slices.Equal(*me.MutedTopics, []string{"cloud"}) {
+		t.Fatalf("muted after follow = %v, want [cloud]", me.MutedTopics)
+	}
+
+	// A rejected update keeps the previous set, and other users' mutes are their own.
+	put(aliceToken, map[string]any{"topics": []string{"nope"}})
+	e.do(http.MethodGet, "/v1/me", aliceToken, nil, &me)
+	if me.MutedTopics == nil || !slices.Equal(*me.MutedTopics, []string{"cloud"}) {
+		t.Fatalf("muted after rejected update = %v, want [cloud]", me.MutedTopics)
+	}
+	var bob httpapi.Me
+	e.do(http.MethodGet, "/v1/me", bobToken, nil, &bob)
+	if bob.MutedTopics != nil {
+		t.Fatalf("bob muted = %v, want absent", *bob.MutedTopics)
+	}
+
+	if me, _ = put(aliceToken, map[string]any{"topics": []string{}}); me.MutedTopics != nil {
+		t.Fatalf("muted after clearing = %v, want absent", *me.MutedTopics)
+	}
+}
+
+func TestTimelineMutedTopics(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now().Truncate(time.Second)
+	react := e.insertStory("react", now.Add(-1*time.Hour), "web/react")
+	vue := e.insertStory("vue", now.Add(-2*time.Hour), "web/vue")
+	golang := e.insertStory("go", now.Add(-3*time.Hour), "languages/go")
+	mixed := e.insertStory("go and aws", now.Add(-4*time.Hour), "languages/go", "cloud/aws")
+	aws := e.insertStory("aws", now.Add(-5*time.Hour), "cloud/aws")
+	gcp := e.insertStory("gcp", now.Add(-6*time.Hour), "cloud/gcp")
+	untagged := e.insertStory("untagged", now.Add(-7*time.Hour))
+	mute := func(token string, slugs ...string) {
+		t.Helper()
+		if code := e.do(http.MethodPut, "/v1/me/muted-topics", token, map[string]any{"topics": slugs}, nil); code != http.StatusOK {
+			t.Fatalf("mute %v: status %d", slugs, code)
+		}
+	}
+
+	// A muted descendant of a followed topic stays muted; a muted root covers its children; a story
+	// with another topic stays, ranked by that topic alone.
+	e.follow(aliceToken, "web")
+	mute(aliceToken, "web/vue", "languages")
+	got := e.timeline(aliceToken, 50, "").Items
+	if want := []int64{react, mixed, aws, gcp, untagged}; !slices.Equal(ids(got), want) {
+		t.Fatalf("alice's timeline = %v, want %v", ids(got), want)
+	}
+	for _, it := range got {
+		if it.Id == mixed && (it.Match == nil || *it.Match != httpapi.StorySummaryMatchExplore) {
+			t.Errorf("mixed story match = %v, want explore", it.Match)
+		}
+	}
+
+	// A followed descendant of a muted topic stays followed.
+	e.follow(bobToken, "cloud/aws")
+	mute(bobToken, "cloud")
+	got = e.timeline(bobToken, 50, "").Items
+	if want := []int64{mixed, aws, react, vue, golang, untagged}; !slices.Equal(ids(got), want) {
+		t.Fatalf("bob's timeline = %v, want %v", ids(got), want)
+	}
+
+	// Mutes are per user.
+	carol := auth.DevTokenPrefix + "carol"
+	if got := ids(e.timeline(carol, 50, "").Items); len(got) != 7 {
+		t.Fatalf("carol's timeline = %v, want all 7 stories", got)
+	}
+}
+
+func TestTimelineMix(t *testing.T) {
+	e := newEnvWith(t, func(o *httpapi.Options) { o.TimelineMix = httpapi.TimelineMix{MaxTopicRun: 2} })
+	now := time.Now().Truncate(time.Second)
+	web1 := e.insertStory("web 1", now.Add(-1*time.Hour), "web/react")
+	web2 := e.insertStory("web 2", now.Add(-2*time.Hour), "web/vue")
+	web3 := e.insertStory("web 3", now.Add(-3*time.Hour), "web/react")
+	cloud := e.insertStory("cloud", now.Add(-4*time.Hour), "cloud/aws")
+
+	if got, want := ids(e.timeline(aliceToken, 50, "").Items), []int64{web1, web2, cloud, web3}; !slices.Equal(got, want) {
+		t.Fatalf("timeline = %v, want %v", got, want)
+	}
+	// Pages are mixed one at a time, and the cursor still follows the ranked order.
+	first := e.timeline(aliceToken, 3, "")
+	if got, want := ids(first.Items), []int64{web1, web2, web3}; !slices.Equal(got, want) || first.NextCursor == nil {
+		t.Fatalf("first page = %v (next %v), want %v and a cursor", got, first.NextCursor, want)
+	}
+	if got := ids(e.timeline(aliceToken, 3, *first.NextCursor).Items); !slices.Equal(got, []int64{cloud}) {
+		t.Fatalf("second page = %v, want [%d]", got, cloud)
+	}
+}
+
+func TestTimelineAffinityTier(t *testing.T) {
+	e := newEnvWith(t, func(o *httpapi.Options) { o.AffinityWindow = 30 * 24 * time.Hour })
+	now := time.Now().Truncate(time.Second)
+	readOld := e.insertStory("read react", now.Add(-48*time.Hour), "web/react")
+	savedOld := e.insertStory("saved aws", now.Add(-47*time.Hour), "cloud/aws")
+	e.follow(aliceToken, "languages/go")
+	e.markRead(aliceToken, readOld)
+	if code := e.do(http.MethodPut, "/v1/stories/"+strconv.FormatInt(savedOld, 10)+"/bookmark", aliceToken, nil, nil); code != http.StatusNoContent {
+		t.Fatalf("bookmark: status %d", code)
+	}
+
+	followed := e.insertStory("go", now.Add(-3*time.Hour), "languages/go")
+	react := e.insertStory("react", now.Add(-2*time.Hour), "web/react")
+	aws := e.insertStory("aws", now.Add(-1*time.Hour), "cloud/aws")
+	explore := e.insertStory("postgres", now.Add(-30*time.Minute), "databases/postgres")
+
+	got := e.timeline(aliceToken, 50, "").Items
+	// The saved story is unread and in an affinity topic itself, so it outranks explore.
+	want := []int64{followed, aws, react, savedOld, explore, readOld}
+	if !slices.Equal(ids(got), want) {
+		t.Fatalf("timeline = %v, want %v", ids(got), want)
+	}
+	wantMatch := map[int64]httpapi.StorySummaryMatch{
+		followed: httpapi.StorySummaryMatchFollowed, aws: httpapi.StorySummaryMatchAffinity,
+		react: httpapi.StorySummaryMatchAffinity, explore: httpapi.StorySummaryMatchExplore,
+	}
+	for _, it := range got {
+		if want, ok := wantMatch[it.Id]; ok && (it.Match == nil || *it.Match != want) {
+			t.Errorf("story %d (%s): match = %v, want %s", it.Id, it.Title, it.Match, want)
+		}
+	}
+
+	// Affinity is per user, and a muted topic gives none.
+	if got := e.timeline(bobToken, 50, "").Items; got[0].Match == nil || *got[0].Match != httpapi.StorySummaryMatchExplore {
+		t.Fatalf("bob's first story match = %v, want explore", got[0].Match)
+	}
+	if code := e.do(http.MethodPut, "/v1/me/muted-topics", aliceToken, map[string]any{"topics": []string{"cloud/aws"}}, nil); code != http.StatusOK {
+		t.Fatalf("mute: status %d", code)
+	}
+	for _, it := range e.timeline(aliceToken, 50, "").Items {
+		if it.Id == aws {
+			t.Fatalf("muted aws story still in the timeline")
+		}
+	}
+}
+
+func TestTimelineExploreMinImportance(t *testing.T) {
+	e := newEnvWith(t, func(o *httpapi.Options) { o.ExploreMinImportance = 4 })
+	now := time.Now().Truncate(time.Second)
+	minorFollowed := e.insertStory("minor go", now.Add(-4*time.Hour), "languages/go")
+	minorExplore := e.insertStory("minor explore", now.Add(-3*time.Hour), "web/react")
+	majorExplore := e.insertStory("major explore", now.Add(-2*time.Hour), "databases/postgres")
+	e.exec(`UPDATE stories SET importance = 1 WHERE id = $1`, minorFollowed)
+	e.exec(`UPDATE stories SET importance = 4 WHERE id = $1`, majorExplore)
+
+	e.follow(aliceToken, "languages/go")
+	if got, want := ids(e.timeline(aliceToken, 50, "").Items), []int64{minorFollowed, majorExplore}; !slices.Equal(got, want) {
+		t.Fatalf("alice's timeline = %v, want %v (no minor explore)", got, want)
+	}
+	// Without follows or professions every story stays, so a new account never sees an empty feed.
+	if got := ids(e.timeline(bobToken, 50, "").Items); len(got) != 3 || !slices.Contains(got, minorExplore) {
+		t.Fatalf("bob's timeline = %v, want all 3 stories", got)
 	}
 }

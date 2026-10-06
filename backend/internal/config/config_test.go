@@ -11,23 +11,35 @@ import (
 func setBase(t *testing.T) {
 	t.Helper()
 	for k, v := range map[string]string{
-		"ENV":                         "dev",
-		"DATABASE_URL":                "postgres://localhost/test",
-		"PORT":                        "",
-		"FIREBASE_PROJECT_ID":         "",
-		"FCM_ENABLED":                 "",
-		"DB_MAX_CONNS":                "",
-		"REQUEST_TIMEOUT":             "",
-		"TIMELINE_WINDOW_DAYS":        "",
-		"TOPIC_REQUEST_MAX_PENDING":   "",
-		"LOG_LEVEL":                   "",
-		"RATE_LIMIT_IP_PER_MIN":       "",
-		"RATE_LIMIT_USER_PER_MIN":     "",
-		"OTEL_ENABLED":                "",
-		"OTEL_SAMPLE_RATIO":           "",
-		"OTEL_EXPORTER_OTLP_ENDPOINT": "",
-		"K_SERVICE":                   "",
-		"APPCHECK_ENFORCE":            "",
+		"ENV":                              "dev",
+		"DATABASE_URL":                     "postgres://localhost/test",
+		"PORT":                             "",
+		"FIREBASE_PROJECT_ID":              "",
+		"FCM_ENABLED":                      "",
+		"DB_MAX_CONNS":                     "",
+		"REQUEST_TIMEOUT":                  "",
+		"TIMELINE_WINDOW_DAYS":             "",
+		"TIMELINE_HEADLINE_MIN_IMPORTANCE": "",
+		"TIMELINE_TIER_WEIGHT":             "",
+		"TIMELINE_IMPORTANCE_WEIGHT":       "",
+		"TIMELINE_SEVERITY_WEIGHT":         "",
+		"TIMELINE_DECAY_HOURS":             "",
+		"TIMELINE_SEEN_PENALTY":            "",
+		"TIMELINE_SEEN_GRACE_HOURS":        "",
+		"TIMELINE_MAX_TOPIC_RUN":           "",
+		"TIMELINE_HEADLINE_SPACING":        "",
+		"TIMELINE_EXPLORE_SPACING":         "",
+		"TIMELINE_EXPLORE_MIN_IMPORTANCE":  "",
+		"TIMELINE_AFFINITY_DAYS":           "",
+		"TOPIC_REQUEST_MAX_PENDING":        "",
+		"LOG_LEVEL":                        "",
+		"RATE_LIMIT_IP_PER_MIN":            "",
+		"RATE_LIMIT_USER_PER_MIN":          "",
+		"OTEL_ENABLED":                     "",
+		"OTEL_SAMPLE_RATIO":                "",
+		"OTEL_EXPORTER_OTLP_ENDPOINT":      "",
+		"K_SERVICE":                        "",
+		"APPCHECK_ENFORCE":                 "",
 	} {
 		t.Setenv(k, v)
 	}
@@ -62,6 +74,44 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.RateLimitIPPerMin != 300 || cfg.RateLimitUserPerMin != 120 {
 		t.Errorf("Load() = rate limits %d per IP, %d per user; want 300, 120", cfg.RateLimitIPPerMin, cfg.RateLimitUserPerMin)
 	}
+	if cfg.HeadlineMinImportance != 3 {
+		t.Errorf("Load() = headline min importance %d, want 3", cfg.HeadlineMinImportance)
+	}
+	if cfg.TimelineWindow != 14*24*time.Hour {
+		t.Errorf("Load() = timeline window %s, want 14 days", cfg.TimelineWindow)
+	}
+	want := TimelineScore{TierWeight: 2, ImportanceWeight: 1, SeverityWeight: 0.5, AgeDecay: 24 * time.Hour, SeenPenalty: 3, SeenGrace: 12 * time.Hour}
+	if cfg.TimelineScore != want {
+		t.Errorf("Load() = timeline score %+v, want %+v", cfg.TimelineScore, want)
+	}
+	if want := (TimelineMix{MaxTopicRun: 2, HeadlineSpacing: 5, ExploreSpacing: 6}); cfg.TimelineMix != want {
+		t.Errorf("Load() = timeline mix %+v, want %+v", cfg.TimelineMix, want)
+	}
+	if cfg.ExploreMinImportance != 4 || cfg.AffinityWindow != 30*24*time.Hour {
+		t.Errorf("Load() = explore min %d, affinity %s; want 4, 30 days", cfg.ExploreMinImportance, cfg.AffinityWindow)
+	}
+}
+
+func TestLoadTimelineScore(t *testing.T) {
+	setBase(t)
+	t.Setenv("TIMELINE_TIER_WEIGHT", "0")
+	t.Setenv("TIMELINE_IMPORTANCE_WEIGHT", "1.5")
+	t.Setenv("TIMELINE_DECAY_HOURS", "48")
+	t.Setenv("TIMELINE_SEEN_GRACE_HOURS", "6")
+	t.Setenv("TIMELINE_MAX_TOPIC_RUN", "3")
+	t.Setenv("TIMELINE_HEADLINE_SPACING", "1")
+	t.Setenv("TIMELINE_EXPLORE_SPACING", "4")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	got := cfg.TimelineScore
+	if got.TierWeight != 0 || got.ImportanceWeight != 1.5 || got.AgeDecay != 48*time.Hour || got.SeenGrace != 6*time.Hour {
+		t.Errorf("Load() = timeline score %+v, want tier 0, importance 1.5, decay 48h, grace 6h", got)
+	}
+	if want := (TimelineMix{MaxTopicRun: 3, HeadlineSpacing: 1, ExploreSpacing: 4}); cfg.TimelineMix != want {
+		t.Errorf("Load() = timeline mix %+v, want %+v", cfg.TimelineMix, want)
+	}
 }
 
 func TestLoadPoolAndTimeout(t *testing.T) {
@@ -88,6 +138,20 @@ func TestLoadRejectsBadPoolAndTimeout(t *testing.T) {
 		{"OTEL_SAMPLE_RATIO", "1.5"},
 		{"OTEL_SAMPLE_RATIO", "-0.1"},
 		{"OTEL_ENABLED", "yes please"},
+		{"TIMELINE_HEADLINE_MIN_IMPORTANCE", "0"},
+		{"TIMELINE_HEADLINE_MIN_IMPORTANCE", "6"},
+		{"TIMELINE_TIER_WEIGHT", "-1"},
+		{"TIMELINE_IMPORTANCE_WEIGHT", "lots"},
+		{"TIMELINE_SEVERITY_WEIGHT", "NaN"},
+		{"TIMELINE_SEEN_PENALTY", "Inf"},
+		{"TIMELINE_DECAY_HOURS", "0"},
+		{"TIMELINE_SEEN_GRACE_HOURS", "1.5"},
+		{"TIMELINE_MAX_TOPIC_RUN", "0"},
+		{"TIMELINE_HEADLINE_SPACING", "-1"},
+		{"TIMELINE_EXPLORE_SPACING", "0"},
+		{"TIMELINE_EXPLORE_MIN_IMPORTANCE", "0"},
+		{"TIMELINE_EXPLORE_MIN_IMPORTANCE", "6"},
+		{"TIMELINE_AFFINITY_DAYS", "0"},
 	} {
 		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
 			setBase(t)

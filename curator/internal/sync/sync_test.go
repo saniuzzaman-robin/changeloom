@@ -16,14 +16,14 @@ import (
 
 const testCatalog = `
 professions:
-  - {slug: engineer, name: Engineer, topics: [security, databases]}
+  - {slug: engineer, name: Engineer, topics: [security, databases], launch: true}
 topics:
   - slug: databases
     name: Databases
     priority: 3
     children:
       - {slug: databases/postgres, name: PostgreSQL, related: [security]}
-  - {slug: security, name: Security, priority: 3}
+  - {slug: security, name: Security, priority: 3, headline: true}
 `
 
 func exec(t *testing.T, pool *pgxpool.Pool, sql string, args ...any) {
@@ -68,6 +68,30 @@ func addStory(t *testing.T, local *pgxpool.Pool, title, topicSlug, url string) {
 		)
 		INSERT INTO story_topics (story_id, topic_id) SELECT s.id, t.id FROM s, topics t WHERE t.slug = $2`,
 		title, topicSlug, url)
+}
+
+func TestPushCatalogFlags(t *testing.T) {
+	ctx := t.Context()
+	local, remote := setup(t)
+	if _, err := cursync.Push(ctx, local, remote, config.EnvStaging, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, remote, `SELECT count(*) FROM topics WHERE headline`); n != 1 || count(t, remote, `SELECT count(*) FROM topics WHERE slug = 'security' AND headline`) != 1 {
+		t.Errorf("headline topics = %d, want only security", n)
+	}
+	if n := count(t, remote, `SELECT count(*) FROM professions WHERE slug = 'engineer' AND launched`); n != 1 {
+		t.Errorf("engineer not synced as launched")
+	}
+
+	// Flags cleared locally are cleared remotely.
+	exec(t, local, `UPDATE topics SET headline = false`)
+	exec(t, local, `UPDATE professions SET launched = false`)
+	if _, err := cursync.Push(ctx, local, remote, config.EnvStaging, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, remote, `SELECT count(*) FROM topics WHERE headline`) + count(t, remote, `SELECT count(*) FROM professions WHERE launched`); n != 0 {
+		t.Errorf("%d flags still set after clearing them locally", n)
+	}
 }
 
 func TestPushTopicsAndStories(t *testing.T) {

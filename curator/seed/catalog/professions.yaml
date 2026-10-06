@@ -1,41 +1,52 @@
 # Professions, in display order. topics: root topic slugs (areas) in display order. Every root
 # topic must belong to at least one profession.
+# launch: offered at onboarding, and its topics are fetched without demand. The others stay valid
+# for users who already picked them; their topics are fetched only on demand. At least one must launch.
 - slug: software-engineer
   name: "Software Engineer"
   description: "Building and running software."
   topics: [frontend, backend, mobile, devops-cloud, databases, languages, devtools, security, ai-ml]
+  launch: true
 - slug: data-scientist
   name: "Data Scientist"
   description: "Analytics, statistics and machine learning on data."
   topics: [data-analytics, ai-ml, databases, data-engineering, languages]
+  launch: true
 - slug: ml-engineer
   name: "ML Engineer"
   description: "Training, serving and shipping machine learning systems."
   topics: [ai-ml, data-engineering, devops-cloud, languages, gpu-hardware]
+  launch: true
 - slug: cybersecurity
   name: "Cybersecurity Professional"
   description: "Defending systems and responding to threats."
   topics: [security, appsec, threat-intel, devops-cloud, compliance-privacy]
+  launch: true
 - slug: it-devops
   name: "IT & DevOps Engineer"
   description: "Operating infrastructure, networks and platforms."
   topics: [devops-cloud, sysadmin, networking, observability, security, databases]
+  launch: true
 - slug: product-manager
   name: "Product Manager"
   description: "Deciding what to build and measuring whether it works."
   topics: [product-craft, product-analytics, ux-design, ai-ml, startups]
+  launch: true
 - slug: ux-designer
   name: "UX & Product Designer"
   description: "Designing interfaces, systems and research."
   topics: [ux-design, design-tools, frontend, accessibility, product-craft]
+  launch: true
 - slug: game-developer
   name: "Game Developer"
   description: "Building games, engines and tools."
   topics: [game-engines, game-programming, game-art, game-industry, languages]
+  launch: true
 - slug: doctor
   name: "Doctor"
   description: "Clinical medicine, guidelines and drug news."
   topics: [clinical-guidelines, drug-approvals-safety, medical-specialties, medical-research, health-policy, medtech]
+  launch: true
 - slug: nurse
   name: "Nurse"
   description: "Nursing practice, workforce and patient care."
@@ -80,6 +91,7 @@
   name: "Teacher"
   description: "Teaching practice, curriculum and school policy."
   topics: [teaching-practice, curriculum-subjects, edtech, education-policy, student-wellbeing]
+  launch: true
 - slug: professor-researcher
   name: "Professor & Researcher"
   description: "Academia, publishing and research careers."
@@ -216,6 +228,7 @@
   name: "World Affairs Follower"
   description: "Geopolitics, elections and global news."
   topics: [world-politics, us-politics, europe-politics, asia-politics, middle-east, conflicts, diplomacy, global-economy]
+  launch: true
 - slug: gamer
   name: "Gamer"
   description: "Video games, esports and gaming culture."
@@ -224,6 +237,7 @@
   name: "Sports Fan"
   description: "Leagues, tournaments and athletes."
   topics: [football-soccer, us-sports, cricket, tennis-golf, motorsport, combat-sports, olympics]
+  launch: true
 - slug: entertainment-fan
   name: "Entertainment Fan"
   description: "Film, TV, streaming and celebrity news."
@@ -240,6 +254,7 @@
   name: "Tech Enthusiast"
   description: "Gadgets, big tech and consumer technology."
   topics: [gadgets, deals, big-tech, space-tech, electric-vehicles, consumer-ai, internet-culture]
+  launch: true
 - slug: science-enthusiast
   name: "Science Enthusiast"
   description: "Discoveries across space, nature and medicine."

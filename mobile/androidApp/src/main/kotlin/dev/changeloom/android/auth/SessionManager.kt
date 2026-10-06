@@ -1,5 +1,6 @@
 package dev.changeloom.android.auth
 
+import dev.changeloom.android.data.FollowSuggester
 import dev.changeloom.android.push.DeviceRegistrar
 import dev.changeloom.android.telemetry.AppLog
 import dev.changeloom.shared.auth.AuthRepository
@@ -23,6 +24,7 @@ class SessionManager(
     private val registrar: DeviceRegistrar,
     private val repo: TimelineRepository,
     private val api: ChangeloomApi,
+    private val suggester: FollowSuggester,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
 ) {
     private val signingOut = Mutex()
@@ -47,6 +49,7 @@ class SessionManager(
                 if (auth.currentUser.value != null) {
                     registrar.unregister()
                     repo.clear()
+                    suggester.clear()
                     auth.signOut()
                 }
             } finally {
@@ -63,6 +66,7 @@ class SessionManager(
     suspend fun deleteAccount() = scope.async {
         api.deleteMe()
         repo.clear()
+        suggester.clear()
         auth.deleteUser()
     }.await()
 }

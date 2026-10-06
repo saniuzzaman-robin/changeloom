@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,6 +22,7 @@ import (
 
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/ai"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/catalog"
+	"github.com/saniuzzaman-robin/changeloom/curator/internal/clean"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/config"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/fetch"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/migrate"
@@ -50,10 +53,16 @@ commands:
                                    (staging, the default, or prod), then ask its api to notify
   prune [--env ENV]                delete old and unseen stories nobody saved from the hosted DB of
                                    ENV (staging, the default, or prod)
-  run [--full]                     requests pull, requests group, fetch, backfill, then sync and
-                                   (daily) prune, for each env in CURATOR_RUN_ENVS (default prod);
-                                   --full is the one-shot version: fetch and backfill repeat until
-                                   every topic is covered, and prune always runs
+  clean [--envs ENVS] [--apply]    delete topics and professions no longer in seed/catalog/, and the
+                                   unsaved stories only in those topics, from the local DB and the
+                                   hosted DBs of ENVS (comma-separated, default staging,prod; list
+                                   every env that has users). Anything a user follows, muted, picked
+                                   or requested is kept. Without --apply it only reports.
+  run [--full]                     pull demand, fetch, backfill, then sync and (daily) prune, for
+                                   each env in CURATOR_RUN_ENVS (default prod); --full is the
+                                   one-shot version: fetch and backfill repeat until every topic is
+                                   covered, and prune always runs. User topic requests are not
+                                   handled: use requests pull, requests group, then sync
 
 Configuration comes from the environment; see curator/.env.example.
 `
@@ -147,6 +156,24 @@ func run(args []string) error {
 			return fmt.Errorf("%w: sync --env: %w", errUsage, err)
 		}
 		return runSync(ctx, cfg, env)
+	case "clean":
+		fs := flag.NewFlagSet("clean", flag.ContinueOnError)
+		envNames := fs.String("envs", string(config.EnvStaging)+","+string(config.EnvProd), "hosted environments to clean and check for use")
+		apply := fs.Bool("apply", false, "delete; without it, only report what would be deleted")
+		if err := parse(fs, rest); err != nil {
+			return err
+		}
+		var envs []config.Env
+		for _, name := range strings.Split(*envNames, ",") {
+			env, err := config.ParseEnv(strings.TrimSpace(name))
+			if err != nil {
+				return fmt.Errorf("%w: clean --envs: %w", errUsage, err)
+			}
+			if !slices.Contains(envs, env) {
+				envs = append(envs, env)
+			}
+		}
+		return runClean(ctx, cfg, envs, *apply)
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ContinueOnError)
 		full := fs.Bool("full", false, "repeat fetch and backfill until every topic is covered, and always prune")
@@ -258,6 +285,21 @@ func pullRequests(ctx context.Context, cfg config.Config, local *pgxpool.Pool, e
 	}
 	slog.InfoContext(ctx, "requests pulled", "env", env, "pending", res.Requests, "new", res.New,
 		"topics_with_demand", res.Topics, "unknown_topics", res.Unknown)
+	return nil
+}
+
+// pullDemand refreshes env's per-topic and per-country demand, which fetch plans with.
+func pullDemand(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env config.Env) error {
+	remote, err := openPool(ctx, "REMOTE_DATABASE_URL_"+env.Suffix(), cfg.Remotes[env].DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer remote.Close()
+	res, err := requests.PullDemand(ctx, local, remote, env)
+	if err != nil {
+		return err
+	}
+	slog.InfoContext(ctx, "demand pulled", "env", env, "topics_with_demand", res.Topics, "unknown_topics", res.Unknown)
 	return nil
 }
 
@@ -388,6 +430,64 @@ func pruneIfDue(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env
 	return pruneEnv(ctx, cfg, local, env)
 }
 
+// runClean deletes what left the catalog from the local DB, then from each hosted DB in envs, keeping
+// whatever any of them still uses. Local goes first: sync pushes every local topic, so one left
+// locally would come back to the hosted DBs.
+func runClean(ctx context.Context, cfg config.Config, envs []config.Env, apply bool) error {
+	cat, err := catalog.Load(seed.Catalog)
+	if err != nil {
+		return err
+	}
+	local, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer local.Close()
+
+	type target struct {
+		name string
+		pool *pgxpool.Pool
+	}
+	targets := []target{{"local", local}}
+	inUse := clean.NewInUse()
+	if err := inUse.AddLocal(ctx, local); err != nil {
+		return err
+	}
+	for _, env := range envs {
+		remote, err := openPool(ctx, "REMOTE_DATABASE_URL_"+env.Suffix(), cfg.Remotes[env].DatabaseURL)
+		if err != nil {
+			return err
+		}
+		defer remote.Close()
+		if err := inUse.AddHosted(ctx, remote); err != nil {
+			return fmt.Errorf("%s: %w", env, err)
+		}
+		targets = append(targets, target{string(env), remote})
+	}
+
+	for _, t := range targets {
+		plan, err := clean.PlanFor(ctx, t.pool, cat, inUse)
+		if err != nil {
+			return fmt.Errorf("%s: %w", t.name, err)
+		}
+		slog.InfoContext(ctx, "clean plan", "db", t.name,
+			"delete_topics", plan.Topics, "delete_professions", plan.Professions, "delete_stories", plan.Stories,
+			"kept_in_use_topics", plan.KeptTopics, "kept_in_use_professions", plan.KeptProfessions)
+		if !apply || plan.Empty() {
+			continue
+		}
+		res, err := clean.Apply(ctx, t.pool, plan)
+		slog.InfoContext(ctx, "cleaned", "db", t.name, "topics", res.Topics, "professions", res.Professions, "stories", res.Stories)
+		if err != nil {
+			return fmt.Errorf("%s: %w", t.name, err)
+		}
+	}
+	if !apply {
+		slog.InfoContext(ctx, "dry run: nothing deleted; rerun with --apply (make curator-clean APPLY=1) to delete")
+	}
+	return nil
+}
+
 func runSync(ctx context.Context, cfg config.Config, env config.Env) error {
 	local, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
 	if err != nil {
@@ -455,10 +555,10 @@ func runAll(ctx context.Context, cfg config.Config, full bool) error {
 			errs = append(errs, fmt.Errorf("%s: %w", name, err))
 		}
 	}
+	// Demand only: user topic requests are handled apart (`requests pull`, `requests group`, then sync).
 	for _, env := range envs {
-		step("requests pull "+string(env), func() error { return pullRequests(ctx, cfg, local, env) })
+		step("demand pull "+string(env), func() error { return pullDemand(ctx, cfg, local, env) })
 	}
-	step("requests group", func() error { return runGroup(ctx, cfg, local, false) })
 	step("fetch", func() error { return runFetch(ctx, cfg, full) })
 	step("backfill", func() error { return runBackfill(ctx, cfg, cfg.BackfillCallsPerRun, full) })
 	for _, env := range envs {

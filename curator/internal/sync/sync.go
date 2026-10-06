@@ -34,6 +34,7 @@ type Result struct {
 type topicRow struct {
 	Slug, Name, Description string
 	ParentSlug              *string
+	Headline                bool
 }
 
 type storyRow struct {
@@ -162,7 +163,7 @@ func Push(ctx context.Context, local, remote *pgxpool.Pool, env config.Env, minP
 func readTopics(ctx context.Context, local *pgxpool.Pool) ([]topicRow, [][2]string, error) {
 	// Parents first: the catalog is at most two levels deep.
 	rows, err := local.Query(ctx, `
-		SELECT t.slug, t.name, t.description, p.slug
+		SELECT t.slug, t.name, t.description, p.slug, t.headline
 		FROM topics t LEFT JOIN topics p ON p.id = t.parent_id
 		ORDER BY t.parent_id IS NOT NULL, t.id`)
 	if err != nil {
@@ -170,7 +171,7 @@ func readTopics(ctx context.Context, local *pgxpool.Pool) ([]topicRow, [][2]stri
 	}
 	topics, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (topicRow, error) {
 		var t topicRow
-		err := r.Scan(&t.Slug, &t.Name, &t.Description, &t.ParentSlug)
+		err := r.Scan(&t.Slug, &t.Name, &t.Description, &t.ParentSlug, &t.Headline)
 		return t, err
 	})
 	if err != nil {
@@ -198,7 +199,7 @@ func readTopics(ctx context.Context, local *pgxpool.Pool) ([]topicRow, [][2]stri
 func readProfessions(ctx context.Context, local *pgxpool.Pool) ([]catalog.Profession, error) {
 	rows, err := local.Query(ctx, `
 		SELECT p.slug, p.name, p.description,
-		       COALESCE(array_agg(t.slug ORDER BY pt.position) FILTER (WHERE t.id IS NOT NULL), '{}')
+		       COALESCE(array_agg(t.slug ORDER BY pt.position) FILTER (WHERE t.id IS NOT NULL), '{}'), p.launched
 		FROM professions p
 		LEFT JOIN profession_topics pt ON pt.profession_id = p.id
 		LEFT JOIN topics t ON t.id = pt.topic_id
@@ -268,15 +269,16 @@ func pushTopics(ctx context.Context, tx pgx.Tx, topics []topicRow, relations [][
 	batch := &pgx.Batch{}
 	for _, t := range topics {
 		batch.Queue(`
-			INSERT INTO topics (slug, name, parent_id, description)
-			VALUES ($1, $2, (SELECT id FROM topics WHERE slug = $3), $4)
+			INSERT INTO topics (slug, name, parent_id, description, headline)
+			VALUES ($1, $2, (SELECT id FROM topics WHERE slug = $3), $4, $5)
 			ON CONFLICT (slug) DO UPDATE
 			SET name = EXCLUDED.name, parent_id = EXCLUDED.parent_id, description = EXCLUDED.description,
+			    headline = EXCLUDED.headline,
 			    updated_at = CASE
-			        WHEN (topics.name, topics.parent_id, topics.description)
-			            IS DISTINCT FROM (EXCLUDED.name, EXCLUDED.parent_id, EXCLUDED.description)
+			        WHEN (topics.name, topics.parent_id, topics.description, topics.headline)
+			            IS DISTINCT FROM (EXCLUDED.name, EXCLUDED.parent_id, EXCLUDED.description, EXCLUDED.headline)
 			        THEN now() ELSE topics.updated_at END`,
-			t.Slug, t.Name, t.ParentSlug, t.Description)
+			t.Slug, t.Name, t.ParentSlug, t.Description, t.Headline)
 	}
 	if err := tx.SendBatch(ctx, batch).Close(); err != nil {
 		return fmt.Errorf("upsert topics: %w", err)

@@ -29,3 +29,6 @@ ON CONFLICT DO NOTHING;
 INSERT INTO topic_priority (topic_id, priority)
 VALUES (@topic_id, @priority)
 ON CONFLICT (topic_id) DO UPDATE SET priority = EXCLUDED.priority;
+
+-- name: SetTopicHeadline :exec
+UPDATE topics SET headline = @headline WHERE id = @id AND headline IS DISTINCT FROM @headline;

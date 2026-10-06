@@ -160,6 +160,10 @@ class MainActivity : ComponentActivity() {
         intent?.getStringExtra(EXTRA_STORY_ID)?.toLongOrNull()?.let {
             analytics.notificationOpen(it)
             pendingStoryId.value = it
+            return
         }
+        // A shared link: https://<host>/s/<id>.
+        val link = intent?.data?.takeIf { intent.action == Intent.ACTION_VIEW } ?: return
+        if (link.pathSegments.firstOrNull() == "s") link.pathSegments.getOrNull(1)?.toLongOrNull()?.let { pendingStoryId.value = it }
     }
 }

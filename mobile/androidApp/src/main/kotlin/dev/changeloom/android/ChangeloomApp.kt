@@ -9,6 +9,7 @@ import dev.changeloom.android.auth.FirebaseAppCheckTokens
 import dev.changeloom.android.auth.FirebaseAuthRepository
 import dev.changeloom.android.auth.SessionManager
 import dev.changeloom.android.data.FileStoryCache
+import dev.changeloom.android.data.FollowSuggester
 import dev.changeloom.android.push.DeviceRegistrar
 import dev.changeloom.android.play.AppPreferences
 import dev.changeloom.android.play.InAppUpdater
@@ -64,7 +65,8 @@ class ChangeloomApp : Application() {
                     single { AdsConfig() }
                     single { NativeAdRepository(androidContext(), BuildConfig.ADMOB_NATIVE_AD_UNIT_ID, get(), get()) }
                     // Created at start so it is listening for expired sessions before the first request.
-                    single(createdAtStart = true) { SessionManager(get(), get(), get(), get()) }
+                    single { FollowSuggester(androidContext()) }
+                    single(createdAtStart = true) { SessionManager(get(), get(), get(), get(), get()) }
                     viewModelOf(::SignInViewModel)
                     single { FileStoryCache(File(androidContext().filesDir, "changeloom")) } bind StoryCache::class
                     single { TopicCatalog(get()) }
@@ -74,7 +76,7 @@ class ChangeloomApp : Application() {
                     viewModelOf(::ProfileViewModel)
                     viewModelOf(::SearchViewModel)
                     viewModelOf(::BookmarksViewModel)
-                    viewModel { (id: Long) -> StoryDetailViewModel(id, get(), get(), get(), get()) }
+                    viewModel { (id: Long) -> StoryDetailViewModel(id, get(), get(), get(), get(), get()) }
                 },
             )
         }

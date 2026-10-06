@@ -2,6 +2,8 @@ package dev.changeloom.android.ui
 
 import android.content.ContextWrapper
 import android.content.SharedPreferences
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import dev.changeloom.android.telemetry.Analytics
 import dev.changeloom.android.telemetry.AnalyticsConsent
 import dev.changeloom.shared.auth.AuthRepository
@@ -17,9 +19,11 @@ import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.request.HttpRequestData
 import io.ktor.client.request.HttpResponseData
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
@@ -28,6 +32,13 @@ private const val AWAIT_TIMEOUT_MS = 5_000L
 /** Waits, in real time, for a state the api calls lead to: Ktor's engine finishes off the test scheduler. */
 suspend fun <T> StateFlow<T>.await(predicate: (T) -> Boolean): T =
     withContext(Dispatchers.Default) { withTimeout(AWAIT_TIMEOUT_MS) { first(predicate) } }
+
+/**
+ * Cancels the view model's work and waits for it to stop. Call it before a test ends when requests may still be in
+ * flight: MainDispatcherRule resets Dispatchers.Main afterwards, and a coroutine resuming on it then fails whichever
+ * test runs next.
+ */
+suspend fun ViewModel.stop() = viewModelScope.coroutineContext.job.cancelAndJoin()
 
 /** Resource lookups in tests just name the id, so assertions don't depend on the English text. */
 val testStrings = Strings { id, args -> "string:$id" + args.joinToString(prefix = "(", postfix = ")").takeIf { args.isNotEmpty() }.orEmpty() }
@@ -121,7 +132,8 @@ private class MemoryPrefs : SharedPreferences {
     private val values = mutableMapOf<String, Any?>()
     override fun getAll(): MutableMap<String, *> = values
     override fun getString(key: String, defValue: String?) = values[key] as String? ?: defValue
-    override fun getStringSet(key: String, defValues: MutableSet<String>?) = defValues
+    @Suppress("UNCHECKED_CAST")
+    override fun getStringSet(key: String, defValues: MutableSet<String>?) = values[key] as MutableSet<String>? ?: defValues
     override fun getInt(key: String, defValue: Int) = values[key] as Int? ?: defValue
     override fun getLong(key: String, defValue: Long) = values[key] as Long? ?: defValue
     override fun getFloat(key: String, defValue: Float) = values[key] as Float? ?: defValue
@@ -131,7 +143,7 @@ private class MemoryPrefs : SharedPreferences {
     override fun unregisterOnSharedPreferenceChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener?) = Unit
     override fun edit(): SharedPreferences.Editor = object : SharedPreferences.Editor {
         override fun putString(key: String, value: String?) = apply { values[key] = value }
-        override fun putStringSet(key: String, values: MutableSet<String>?) = this
+        override fun putStringSet(key: String, values: MutableSet<String>?) = apply { this@MemoryPrefs.values[key] = values?.toMutableSet() }
         override fun putInt(key: String, value: Int) = apply { this@MemoryPrefs.values[key] = value }
         override fun putLong(key: String, value: Long) = apply { this@MemoryPrefs.values[key] = value }
         override fun putFloat(key: String, value: Float) = apply { this@MemoryPrefs.values[key] = value }
