@@ -168,6 +168,7 @@ The topic catalog (`curator/seed/catalog/`) and the keys below are tuned in `cur
 - **Fetch frequency.** Hot topics (at least `CURATOR_HOT_MIN_ENGAGED` distinct users who opened or saved one of their stories in 7 days) are fetched every run; warm ones (followed, serving a user's profession, headlines, or with fewer engaged users) every `CURATOR_WARM_INTERVAL_HOURS`, or their priority's interval when shorter; cold ones (launched with no demand, or whose stories were seen but opened or saved by nobody) every `CURATOR_PRIORITY_INTERVAL_HOURS` entry for their topic priority (1 highest to 5). Within a tier, higher-priority topics go first, then the most engaged, then the most viewed. Views come from the app's feed impressions and are only a tiebreak.
 - **Prune** (keeps Neon under its 1 GB limit). `curator run` prunes each hosted DB every `CURATOR_PRUNE_INTERVAL_DAYS`; run `curator prune --env <env>` by hand to force it. Saved stories are never deleted. Unsaved stories are deleted when published over `CURATOR_PRUNE_MAX_AGE_DAYS` ago.
 - `curator run` only touches the envs in `CURATOR_RUN_ENVS` (default `prod`, so staging is never synced by it; use `curator sync --env staging` by hand).
+- **Removed catalog entries.** Seed and sync never delete. `make curator-clean` reports topics and professions no longer in the catalog (with the unsaved stories only in them) for the local DB and `ENVS` (default `staging,prod`); `APPLY=1` deletes them. Anything a user follows, muted, picked or requested is kept.
 
 ## Android app
 

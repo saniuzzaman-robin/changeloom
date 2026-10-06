@@ -49,7 +49,7 @@ CHROME ?= /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 BRANDING := $(MOBILE)/branding
 
 .PHONY: db-up db-down migrate migrate-down migrate-status migrate-remote generate run-api build test lint fmt \
-	curator-db curator-migrate curator-seed curator-fetch curator-backfill curator-full curator-sync curator-generate curator-build curator-test curator-lint curator-fmt \
+	curator-db curator-migrate curator-seed curator-fetch curator-backfill curator-full curator-clean curator-sync curator-generate curator-build curator-test curator-lint curator-fmt \
 	deploy-api android-apk android-bundle brand-assets release
 
 db-up: ## Start the dev Postgres (docker), or check the installed one is reachable (local)
@@ -123,6 +123,10 @@ curator-backfill: ## Fill thin topics with real AI calls (optional MAX_CALLS=N, 
 
 curator-full: ## One shot: pull, group, fetch and backfill every topic until covered, sync and prune all CURATOR_RUN_ENVS (long; real AI calls; optional AI= MODEL= PROMPT=)
 	$(CURATOR_AI_RUN) run --full
+
+curator-clean: ENVS ?= staging,prod
+curator-clean: ## Delete topics/professions no longer in the catalog (and unsaved stories only in them) from the local DB and each hosted DB in ENVS (default staging,prod), keeping anything users still use; reports only unless APPLY=1
+	$(CURATOR_RUN) clean --envs $(ENVS) $(if $(APPLY),--apply)
 
 curator-sync: ## Push the curator's local catalog and stories to DEPLOY_ENV's hosted DB (REMOTE_DATABASE_URL_<ENV> in curator/.env)
 	$(CURATOR_RUN) sync --env $(DEPLOY_ENV)
