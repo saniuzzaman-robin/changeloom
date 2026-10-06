@@ -20,14 +20,21 @@ type Topic struct {
 	// Priority is the topic's fetch priority, topiccatalog.MinPriority (highest) to MaxPriority.
 	Priority int
 	// Demand pulled from the hosted DBs: followers, users whose profession maps to the topic's
-	// root, and distinct viewers of its stories in the last week.
+	// root, distinct users who opened or saved one of its stories in the last week, and distinct
+	// viewers of its stories in the last week.
 	Followers       int
 	ProfessionUsers int
+	Engaged7d       int
 	Views7d         int
 	HasChildren     bool
 	Hints           []string
 	// Professions are the names of the professions served by the topic's root.
 	Professions []string
+	// Launched is true when one of those professions is launched: the topic is fetched without demand.
+	Launched bool
+	// Headline is true when the topic or its parent is a headline topic: it is fetched like a
+	// followed one.
+	Headline bool
 	// LastFetchedAt is when a call covering the topic last succeeded (the Unix epoch if never).
 	LastFetchedAt time.Time
 }
@@ -54,9 +61,10 @@ type PlanSettings struct {
 	MaxCalls      int
 	// StoriesPerTopic is copied to each group.
 	StoriesPerTopic int
-	// HotMinViews is the recent viewers that make a topic hot; WarmInterval is the least time
-	// between fetches of a warm topic, and PriorityIntervals[p-1] that of a cold topic of priority p.
-	HotMinViews       int
+	// HotMinEngaged is the recent users who opened or saved a story that make a topic hot;
+	// WarmInterval is the least time between fetches of a warm topic, and PriorityIntervals[p-1]
+	// that of a cold topic of priority p.
+	HotMinEngaged     int
 	WarmInterval      time.Duration
 	PriorityIntervals [topiccatalog.MaxPriority]time.Duration
 	MaxAge            time.Duration
@@ -66,11 +74,13 @@ type PlanSettings struct {
 type tier int
 
 const (
-	// tierHot topics have viewers: they are fetched on every run.
+	// tierHot topics have enough users opening or saving their stories: they are fetched on every run.
 	tierHot tier = iota
-	// tierWarm topics are followed or serve a user's profession, but nobody saw their stories.
+	// tierWarm topics are followed, serve a user's profession, are headlines or have a few users
+	// opening or saving their stories.
 	tierWarm
-	// tierCold topics have no demand.
+	// tierCold topics have no demand but belong to a launched profession, or their stories were
+	// seen but opened or saved by nobody.
 	tierCold
 )
 
@@ -79,18 +89,24 @@ type family struct {
 	topics   []Topic
 	tier     tier
 	priority int
+	engaged  int
+	views    int
 	oldest   time.Time
 }
 
 // Plan picks the topics due for a fetch and packs them into at most s.MaxCalls groups of at most
 // s.TopicsPerCall topics. Only leaf topics are fetched; a parent's stories come from its
-// children. A topic's demand is its own plus its parent's. A hot topic (s.HotMinViews recent
-// viewers) is always due; a warm one (followers or profession users) when it has not been fetched
-// for s.WarmInterval or its priority's interval, whichever is shorter; a cold one for its
-// priority's interval. A priority outside topiccatalog.MinPriority to MaxPriority counts as
-// DefaultPriority. Siblings stay together and a family takes the best priority of its due topics.
-// Hot families come first, then warm, then cold; within a tier the highest priority first, then
-// the least recently fetched. It returns the due topics that did not fit as deferred.
+// children. A topic's demand is its own plus its parent's. A hot topic (s.HotMinEngaged recent
+// users who opened or saved a story) is always due; a topic whose stories were seen but opened or
+// saved by nobody is cold, due for its priority's interval, even when followed; a warm one
+// (followers, profession users, a headline or fewer engaged users than hot) when it has not been
+// fetched for s.WarmInterval or its priority's interval, whichever is shorter; a cold one
+// (launched, no demand) for its priority's interval. A topic with no demand outside the launched
+// professions is never due. A priority outside topiccatalog.MinPriority to MaxPriority counts as
+// DefaultPriority. Siblings stay together and a family takes the best priority and demand of its
+// due topics. Hot families come first, then warm, then cold; within a tier the highest priority
+// first, then the most engaged users, then the most viewers, then the least recently fetched. It
+// returns the due topics that did not fit as deferred.
 func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferred []string) {
 	bySlug := make(map[string]Topic, len(topics))
 	for _, t := range topics {
@@ -108,15 +124,20 @@ func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferr
 		if p < topiccatalog.MinPriority || p > topiccatalog.MaxPriority {
 			p = topiccatalog.DefaultPriority
 		}
+		engaged, views := t.Engaged7d+parent.Engaged7d, t.Views7d+parent.Views7d
 		var tr tier
 		var interval time.Duration
 		switch {
-		case t.Views7d+parent.Views7d >= s.HotMinViews:
+		case engaged >= s.HotMinEngaged:
 			tr = tierHot
-		case t.Followers+parent.Followers+t.ProfessionUsers+parent.ProfessionUsers > 0:
-			tr, interval = tierWarm, min(s.WarmInterval, s.PriorityIntervals[p-1])
-		default:
+		case views > 0 && engaged == 0:
 			tr, interval = tierCold, s.PriorityIntervals[p-1]
+		case engaged > 0 || t.Headline || t.Followers+parent.Followers+t.ProfessionUsers+parent.ProfessionUsers > 0:
+			tr, interval = tierWarm, min(s.WarmInterval, s.PriorityIntervals[p-1])
+		case t.Launched:
+			tr, interval = tierCold, s.PriorityIntervals[p-1]
+		default:
+			continue
 		}
 		if now.Sub(t.LastFetchedAt) < interval {
 			continue
@@ -131,6 +152,8 @@ func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferr
 		f.topics = append(f.topics, t)
 		f.tier = min(f.tier, tr)
 		f.priority = min(f.priority, p)
+		f.engaged = max(f.engaged, engaged)
+		f.views = max(f.views, views)
 		if t.LastFetchedAt.Before(f.oldest) {
 			f.oldest = t.LastFetchedAt
 		}
@@ -139,6 +162,8 @@ func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferr
 		return cmp.Or(
 			cmp.Compare(a.tier, b.tier),
 			cmp.Compare(a.priority, b.priority),
+			cmp.Compare(b.engaged, a.engaged),
+			cmp.Compare(b.views, a.views),
 			a.oldest.Compare(b.oldest),
 			cmp.Compare(a.key, b.key),
 		)

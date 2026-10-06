@@ -1,5 +1,5 @@
 -- name: ListTopics :many
-SELECT t.slug, t.name, p.slug AS parent_slug, t.description
+SELECT t.slug, t.name, p.slug AS parent_slug, t.description, t.headline
 FROM topics t
 LEFT JOIN topics p ON p.id = t.parent_id
 ORDER BY t.slug;
@@ -22,7 +22,7 @@ WHERE EXISTS (SELECT 1 FROM user_topics ut WHERE ut.topic_id = t.id)
 ORDER BY t.slug;
 
 -- name: ListProfessions :many
-SELECT p.slug, p.name, p.description,
+SELECT p.slug, p.name, p.description, p.launched,
     COALESCE(
         array_agg(t.slug ORDER BY pt.position, t.slug) FILTER (WHERE t.id IS NOT NULL),
         '{}'

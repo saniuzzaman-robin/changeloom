@@ -128,7 +128,7 @@ func (q *Queries) ListFollowedTopics(ctx context.Context) ([]ListFollowedTopicsR
 }
 
 const listProfessions = `-- name: ListProfessions :many
-SELECT p.slug, p.name, p.description,
+SELECT p.slug, p.name, p.description, p.launched,
     COALESCE(
         array_agg(t.slug ORDER BY pt.position, t.slug) FILTER (WHERE t.id IS NOT NULL),
         '{}'
@@ -144,6 +144,7 @@ type ListProfessionsRow struct {
 	Slug        string
 	Name        string
 	Description string
+	Launched    bool
 	Topics      []string
 }
 
@@ -160,6 +161,7 @@ func (q *Queries) ListProfessions(ctx context.Context) ([]ListProfessionsRow, er
 			&i.Slug,
 			&i.Name,
 			&i.Description,
+			&i.Launched,
 			&i.Topics,
 		); err != nil {
 			return nil, err
@@ -173,7 +175,7 @@ func (q *Queries) ListProfessions(ctx context.Context) ([]ListProfessionsRow, er
 }
 
 const listTopics = `-- name: ListTopics :many
-SELECT t.slug, t.name, p.slug AS parent_slug, t.description
+SELECT t.slug, t.name, p.slug AS parent_slug, t.description, t.headline
 FROM topics t
 LEFT JOIN topics p ON p.id = t.parent_id
 ORDER BY t.slug
@@ -184,6 +186,7 @@ type ListTopicsRow struct {
 	Name        string
 	ParentSlug  *string
 	Description string
+	Headline    bool
 }
 
 func (q *Queries) ListTopics(ctx context.Context) ([]ListTopicsRow, error) {
@@ -200,6 +203,7 @@ func (q *Queries) ListTopics(ctx context.Context) ([]ListTopicsRow, error) {
 			&i.Name,
 			&i.ParentSlug,
 			&i.Description,
+			&i.Headline,
 		); err != nil {
 			return nil, err
 		}

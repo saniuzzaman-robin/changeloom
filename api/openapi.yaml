@@ -81,8 +81,8 @@ paths:
       operationId: deleteMe
       summary: Delete the signed-in user's account data.
       description: >
-        Deletes the user with their followed topics, read state, bookmarks, devices and
-        topic requests. The Firebase account itself is not deleted; the app deletes it and
+        Deletes the user with their followed and muted topics, read and dismissed state,
+        bookmarks, devices and topic requests. The Firebase account itself is not deleted; the app deletes it and
         signs out, or the next request recreates an empty user.
       responses:
         "204":
@@ -92,7 +92,9 @@ paths:
     put:
       operationId: putMyTopics
       summary: Replace the set of followed topics.
-      description: Following a topic also includes stories from its descendant topics.
+      description: >
+        Following a topic also includes stories from its descendant topics. Following a muted topic
+        unmutes it.
       requestBody:
         required: true
         content:
@@ -104,6 +106,35 @@ paths:
                 topics:
                   type: array
                   description: Topic slugs to follow.
+                  items: {type: string}
+      responses:
+        "200":
+          description: The updated user.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Me"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/me/muted-topics:
+    put:
+      operationId: putMyMutedTopics
+      summary: Replace the set of muted topics.
+      description: >
+        A muted topic and its descendants no longer rank stories in the timeline, and stories whose
+        every topic is muted leave it. A followed descendant of a muted topic stays followed, as a
+        muted descendant of a followed topic stays muted. Muting a followed topic unfollows it, and
+        following a muted topic (PUT /v1/me/topics) unmutes it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [topics]
+              properties:
+                topics:
+                  type: array
+                  description: Topic slugs to mute.
                   items: {type: string}
       responses:
         "200":
@@ -202,13 +233,18 @@ paths:
       operationId: getTimeline
       summary: Recent stories ranked by interest.
       description: >
-        Unread first, then followed topics, then related topics, then everything else,
-        newest first within each group.
+        Unread stories first, best first: a score from how the story matches the user (followed,
+        profession, related, headline, other), its importance and severity, less its age, and
+        lower once it has been on screen for a while without being opened or saved. Read stories
+        follow, newest first.
       parameters:
         - name: cursor
           in: query
           required: false
-          description: Opaque `next_cursor` from the previous page.
+          description: >
+            Opaque `next_cursor` from the previous page. Pages after the first are ranked as of the
+            first page's time. A cursor from an older server version gets a 400; reload from the
+            first page.
           schema: {type: string}
         - name: limit
           in: query
@@ -275,6 +311,23 @@ paths:
       summary: Mark a story unread (idempotent).
       responses:
         "204": {description: Marked unread.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /v1/stories/{id}/dismiss:
+    parameters:
+      - $ref: "#/components/parameters/StoryID"
+    put:
+      operationId: dismissStory
+      summary: Hide a story from the timeline ("Not interested"; idempotent).
+      responses:
+        "204": {description: Dismissed.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    delete:
+      operationId: undismissStory
+      summary: Show a dismissed story in the timeline again (idempotent).
+      responses:
+        "204": {description: Restored.}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "404": {$ref: "#/components/responses/NotFound"}
   /v1/search:
@@ -482,6 +535,11 @@ components:
         name: {type: string, example: Go}
         parent: {type: string, description: Parent topic slug; absent for root topics.}
         description: {type: string}
+        headline:
+          type: boolean
+          description: >
+            True for headline topics: important stories in them (or their descendants) reach every
+            user's timeline with match "headline". Absent means false.
     Profession:
       type: object
       required: [slug, name, description, topics]
@@ -493,6 +551,11 @@ components:
           type: array
           description: Root topic slugs (areas), in display order.
           items: {type: string}
+        launched:
+          type: boolean
+          description: >
+            False for professions not yet offered at onboarding. They stay valid for users who already
+            picked them. Absent means true.
     Me:
       type: object
       required: [id, topics, professions, stats]
@@ -510,6 +573,10 @@ components:
         country:
           type: string
           description: ISO 3166-1 alpha-2 country the user chose; absent until set.
+        muted_topics:
+          type: array
+          description: Muted topic slugs. Absent means none.
+          items: {type: string}
         stats: {$ref: "#/components/schemas/MeStats"}
     MeStats:
       type: object
@@ -542,10 +609,13 @@ components:
         read_at: {type: string, format: date-time}
         match:
           type: string
-          enum: [followed, profession, related, explore]
+          enum: [followed, affinity, profession, related, headline, explore]
           description: >
-            Timeline only: whether the story is in a followed topic, an area of one of the
-            user's professions, a topic related to a followed one, or none of these.
+            Timeline only: whether the story is in a followed topic, a topic of a story the user
+            recently opened or saved, an area of one of the user's professions, a topic related to
+            a followed one, an important story in a headline topic, or none of these (only
+            important stories, unless the user has no interests). Clients must tolerate values
+            added later.
     TopicRequest:
       type: object
       required: [id, text, status, created_at]

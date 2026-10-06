@@ -93,6 +93,11 @@ func run() error {
 
 	opts := httpapi.Options{
 		TimelineWindow:         cfg.TimelineWindow,
+		HeadlineMinImportance:  cfg.HeadlineMinImportance,
+		ExploreMinImportance:   cfg.ExploreMinImportance,
+		AffinityWindow:         cfg.AffinityWindow,
+		TimelineScore:          httpapi.TimelineScore(cfg.TimelineScore),
+		TimelineMix:            httpapi.TimelineMix(cfg.TimelineMix),
 		TopicRequestMaxPending: cfg.TopicRequestMaxPending,
 		NotifySecret:           cfg.NotifySecret,
 		RequestTimeout:         cfg.RequestTimeout,

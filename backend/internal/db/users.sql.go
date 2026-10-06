@@ -13,7 +13,8 @@ const deleteUser = `-- name: DeleteUser :exec
 DELETE FROM users WHERE id = $1
 `
 
-// Deleting the user cascades to their follows, read state, bookmarks, devices and topic requests.
+// Deleting the user cascades to their follows, mutes, read and dismissed state, bookmarks, devices and topic
+// requests.
 func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, deleteUser, id)
 	return err
@@ -28,12 +29,49 @@ func (q *Queries) DeleteUserProfessions(ctx context.Context, userID int64) error
 	return err
 }
 
+const deleteUserTopicMutes = `-- name: DeleteUserTopicMutes :exec
+DELETE FROM user_topic_mutes WHERE user_id = $1
+`
+
+func (q *Queries) DeleteUserTopicMutes(ctx context.Context, userID int64) error {
+	_, err := q.db.Exec(ctx, deleteUserTopicMutes, userID)
+	return err
+}
+
+const deleteUserTopicMutesByIDs = `-- name: DeleteUserTopicMutesByIDs :exec
+DELETE FROM user_topic_mutes WHERE user_id = $1 AND topic_id = ANY($2::bigint[])
+`
+
+type DeleteUserTopicMutesByIDsParams struct {
+	UserID   int64
+	TopicIds []int64
+}
+
+func (q *Queries) DeleteUserTopicMutesByIDs(ctx context.Context, arg DeleteUserTopicMutesByIDsParams) error {
+	_, err := q.db.Exec(ctx, deleteUserTopicMutesByIDs, arg.UserID, arg.TopicIds)
+	return err
+}
+
 const deleteUserTopics = `-- name: DeleteUserTopics :exec
 DELETE FROM user_topics WHERE user_id = $1
 `
 
 func (q *Queries) DeleteUserTopics(ctx context.Context, userID int64) error {
 	_, err := q.db.Exec(ctx, deleteUserTopics, userID)
+	return err
+}
+
+const deleteUserTopicsByIDs = `-- name: DeleteUserTopicsByIDs :exec
+DELETE FROM user_topics WHERE user_id = $1 AND topic_id = ANY($2::bigint[])
+`
+
+type DeleteUserTopicsByIDsParams struct {
+	UserID   int64
+	TopicIds []int64
+}
+
+func (q *Queries) DeleteUserTopicsByIDs(ctx context.Context, arg DeleteUserTopicsByIDsParams) error {
+	_, err := q.db.Exec(ctx, deleteUserTopicsByIDs, arg.UserID, arg.TopicIds)
 	return err
 }
 
@@ -98,6 +136,21 @@ func (q *Queries) InsertUserProfessions(ctx context.Context, arg InsertUserProfe
 	return err
 }
 
+const insertUserTopicMutes = `-- name: InsertUserTopicMutes :exec
+INSERT INTO user_topic_mutes (user_id, topic_id)
+SELECT $1, unnest($2::bigint[])
+`
+
+type InsertUserTopicMutesParams struct {
+	UserID   int64
+	TopicIds []int64
+}
+
+func (q *Queries) InsertUserTopicMutes(ctx context.Context, arg InsertUserTopicMutesParams) error {
+	_, err := q.db.Exec(ctx, insertUserTopicMutes, arg.UserID, arg.TopicIds)
+	return err
+}
+
 const insertUserTopics = `-- name: InsertUserTopics :exec
 INSERT INTO user_topics (user_id, topic_id)
 SELECT $1, unnest($2::bigint[])
@@ -111,6 +164,34 @@ type InsertUserTopicsParams struct {
 func (q *Queries) InsertUserTopics(ctx context.Context, arg InsertUserTopicsParams) error {
 	_, err := q.db.Exec(ctx, insertUserTopics, arg.UserID, arg.TopicIds)
 	return err
+}
+
+const listUserMutedTopicSlugs = `-- name: ListUserMutedTopicSlugs :many
+SELECT t.slug
+FROM user_topic_mutes um
+JOIN topics t ON t.id = um.topic_id
+WHERE um.user_id = $1
+ORDER BY t.slug
+`
+
+func (q *Queries) ListUserMutedTopicSlugs(ctx context.Context, userID int64) ([]string, error) {
+	rows, err := q.db.Query(ctx, listUserMutedTopicSlugs, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var slug string
+		if err := rows.Scan(&slug); err != nil {
+			return nil, err
+		}
+		items = append(items, slug)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listUserProfessionSlugs = `-- name: ListUserProfessionSlugs :many

@@ -65,7 +65,7 @@ func Pull(ctx context.Context, local *pgxpool.Pool, remote db.DBTX, env config.E
 		}
 		for _, c := range counts {
 			added, err := q.AddTopicStat(ctx, db.AddTopicStatParams{
-				Env: string(env), Followers: c.Followers, ProfessionUsers: c.ProfessionUsers, Views7d: c.Views, Slug: c.Slug,
+				Env: string(env), Followers: c.Followers, ProfessionUsers: c.ProfessionUsers, Engaged7d: c.Engaged, Views7d: c.Views, Slug: c.Slug,
 			})
 			if err != nil {
 				return fmt.Errorf("store demand of %q: %w", c.Slug, err)

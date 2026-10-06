@@ -40,8 +40,10 @@ func (e Severity) Valid() bool {
 
 // Defines values for StoryMatch.
 const (
+	StoryMatchAffinity   StoryMatch = "affinity"
 	StoryMatchExplore    StoryMatch = "explore"
 	StoryMatchFollowed   StoryMatch = "followed"
+	StoryMatchHeadline   StoryMatch = "headline"
 	StoryMatchProfession StoryMatch = "profession"
 	StoryMatchRelated    StoryMatch = "related"
 )
@@ -49,9 +51,13 @@ const (
 // Valid indicates whether the value is a known member of the StoryMatch enum.
 func (e StoryMatch) Valid() bool {
 	switch e {
+	case StoryMatchAffinity:
+		return true
 	case StoryMatchExplore:
 		return true
 	case StoryMatchFollowed:
+		return true
+	case StoryMatchHeadline:
 		return true
 	case StoryMatchProfession:
 		return true
@@ -103,8 +109,10 @@ func (e StoryKind) Valid() bool {
 
 // Defines values for StorySummaryMatch.
 const (
+	StorySummaryMatchAffinity   StorySummaryMatch = "affinity"
 	StorySummaryMatchExplore    StorySummaryMatch = "explore"
 	StorySummaryMatchFollowed   StorySummaryMatch = "followed"
+	StorySummaryMatchHeadline   StorySummaryMatch = "headline"
 	StorySummaryMatchProfession StorySummaryMatch = "profession"
 	StorySummaryMatchRelated    StorySummaryMatch = "related"
 )
@@ -112,9 +120,13 @@ const (
 // Valid indicates whether the value is a known member of the StorySummaryMatch enum.
 func (e StorySummaryMatch) Valid() bool {
 	switch e {
+	case StorySummaryMatchAffinity:
+		return true
 	case StorySummaryMatchExplore:
 		return true
 	case StorySummaryMatchFollowed:
+		return true
+	case StorySummaryMatchHeadline:
 		return true
 	case StorySummaryMatchProfession:
 		return true
@@ -181,6 +193,9 @@ type Me struct {
 	Email   *string `json:"email,omitempty"`
 	Id      int64   `json:"id"`
 
+	// MutedTopics Muted topic slugs. Absent means none.
+	MutedTopics *[]string `json:"muted_topics,omitempty"`
+
 	// Professions Profession slugs.
 	Professions []string `json:"professions"`
 	Stats       MeStats  `json:"stats"`
@@ -201,6 +216,9 @@ type MeStats struct {
 // Profession defines model for Profession.
 type Profession struct {
 	Description string `json:"description"`
+
+	// Launched False for professions not yet offered at onboarding. They stay valid for users who already picked them. Absent means true.
+	Launched *bool `json:"launched,omitempty"`
 
 	// Name Example: Software Engineer
 	Name string `json:"name"`
@@ -225,7 +243,7 @@ type Story struct {
 	IsRead       bool      `json:"is_read"`
 	Kind         StoryKind `json:"kind"`
 
-	// Match Timeline only: whether the story is in a followed topic, an area of one of the user's professions, a topic related to a followed one, or none of these.
+	// Match Timeline only: whether the story is in a followed topic, a topic of a story the user recently opened or saved, an area of one of the user's professions, a topic related to a followed one, an important story in a headline topic, or none of these (only important stories, unless the user has no interests). Clients must tolerate values added later.
 	Match       *StoryMatch   `json:"match,omitempty"`
 	PublishedAt time.Time     `json:"published_at"`
 	ReadAt      *time.Time    `json:"read_at,omitempty"`
@@ -236,7 +254,7 @@ type Story struct {
 	Topics      []string      `json:"topics"`
 }
 
-// StoryMatch Timeline only: whether the story is in a followed topic, an area of one of the user's professions, a topic related to a followed one, or none of these.
+// StoryMatch Timeline only: whether the story is in a followed topic, a topic of a story the user recently opened or saved, an area of one of the user's professions, a topic related to a followed one, an important story in a headline topic, or none of these (only important stories, unless the user has no interests). Clients must tolerate values added later.
 type StoryMatch string
 
 // StoryKind defines model for StoryKind.
@@ -256,7 +274,7 @@ type StorySummary struct {
 	IsRead       bool      `json:"is_read"`
 	Kind         StoryKind `json:"kind"`
 
-	// Match Timeline only: whether the story is in a followed topic, an area of one of the user's professions, a topic related to a followed one, or none of these.
+	// Match Timeline only: whether the story is in a followed topic, a topic of a story the user recently opened or saved, an area of one of the user's professions, a topic related to a followed one, an important story in a headline topic, or none of these (only important stories, unless the user has no interests). Clients must tolerate values added later.
 	Match       *StorySummaryMatch `json:"match,omitempty"`
 	PublishedAt time.Time          `json:"published_at"`
 	ReadAt      *time.Time         `json:"read_at,omitempty"`
@@ -266,12 +284,15 @@ type StorySummary struct {
 	Topics      []string           `json:"topics"`
 }
 
-// StorySummaryMatch Timeline only: whether the story is in a followed topic, an area of one of the user's professions, a topic related to a followed one, or none of these.
+// StorySummaryMatch Timeline only: whether the story is in a followed topic, a topic of a story the user recently opened or saved, an area of one of the user's professions, a topic related to a followed one, an important story in a headline topic, or none of these (only important stories, unless the user has no interests). Clients must tolerate values added later.
 type StorySummaryMatch string
 
 // Topic defines model for Topic.
 type Topic struct {
 	Description string `json:"description"`
+
+	// Headline True for headline topics: important stories in them (or their descendants) reach every user's timeline with match "headline". Absent means false.
+	Headline *bool `json:"headline,omitempty"`
 
 	// Name Example: Go
 	Name string `json:"name"`
@@ -357,6 +378,12 @@ type PutMyDeviceJSONBody struct {
 // PutMyDeviceJSONBodyPlatform defines parameters for PutMyDevice.
 type PutMyDeviceJSONBodyPlatform string
 
+// PutMyMutedTopicsJSONBody defines parameters for PutMyMutedTopics.
+type PutMyMutedTopicsJSONBody struct {
+	// Topics Topic slugs to mute.
+	Topics []string `json:"topics"`
+}
+
 // PutMyProfessionsJSONBody defines parameters for PutMyProfessions.
 type PutMyProfessionsJSONBody struct {
 	// Professions Profession slugs.
@@ -384,7 +411,7 @@ type RecordStoryViewsJSONBody struct {
 
 // GetTimelineParams defines parameters for GetTimeline.
 type GetTimelineParams struct {
-	// Cursor Opaque `next_cursor` from the previous page.
+	// Cursor Opaque `next_cursor` from the previous page. Pages after the first are ranked as of the first page's time. A cursor from an older server version gets a 400; reload from the first page.
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
 
@@ -409,6 +436,9 @@ type PutMyCountryJSONRequestBody PutMyCountryJSONBody
 
 // PutMyDeviceJSONRequestBody defines body for PutMyDevice for application/json ContentType.
 type PutMyDeviceJSONRequestBody PutMyDeviceJSONBody
+
+// PutMyMutedTopicsJSONRequestBody defines body for PutMyMutedTopics for application/json ContentType.
+type PutMyMutedTopicsJSONRequestBody PutMyMutedTopicsJSONBody
 
 // PutMyProfessionsJSONRequestBody defines body for PutMyProfessions for application/json ContentType.
 type PutMyProfessionsJSONRequestBody PutMyProfessionsJSONBody
@@ -454,6 +484,9 @@ type ServerInterface interface {
 	// PutMyDevice Register (or refresh) a push notification token for this device.
 	// (PUT /v1/me/devices)
 	PutMyDevice(w http.ResponseWriter, r *http.Request)
+	// PutMyMutedTopics Replace the set of muted topics.
+	// (PUT /v1/me/muted-topics)
+	PutMyMutedTopics(w http.ResponseWriter, r *http.Request)
 	// PutMyProfessions Replace the user's professions.
 	// (PUT /v1/me/professions)
 	PutMyProfessions(w http.ResponseWriter, r *http.Request)
@@ -475,6 +508,12 @@ type ServerInterface interface {
 	// AddBookmark Bookmark a story (idempotent).
 	// (PUT /v1/stories/{id}/bookmark)
 	AddBookmark(w http.ResponseWriter, r *http.Request, id StoryID)
+	// UndismissStory Show a dismissed story in the timeline again (idempotent).
+	// (DELETE /v1/stories/{id}/dismiss)
+	UndismissStory(w http.ResponseWriter, r *http.Request, id StoryID)
+	// DismissStory Hide a story from the timeline ("Not interested"; idempotent).
+	// (PUT /v1/stories/{id}/dismiss)
+	DismissStory(w http.ResponseWriter, r *http.Request, id StoryID)
 	// MarkStoryUnread Mark a story unread (idempotent).
 	// (DELETE /v1/stories/{id}/read)
 	MarkStoryUnread(w http.ResponseWriter, r *http.Request, id StoryID)
@@ -695,6 +734,20 @@ func (siw *ServerInterfaceWrapper) PutMyDevice(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// PutMyMutedTopics operation middleware
+func (siw *ServerInterfaceWrapper) PutMyMutedTopics(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutMyMutedTopics(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PutMyProfessions operation middleware
 func (siw *ServerInterfaceWrapper) PutMyProfessions(w http.ResponseWriter, r *http.Request) {
 
@@ -865,6 +918,58 @@ func (siw *ServerInterfaceWrapper) AddBookmark(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AddBookmark(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UndismissStory operation middleware
+func (siw *ServerInterfaceWrapper) UndismissStory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id StoryID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UndismissStory(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DismissStory operation middleware
+func (siw *ServerInterfaceWrapper) DismissStory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id StoryID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DismissStory(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1167,6 +1272,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/me", wrapper.DeleteMe)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/me", wrapper.GetMe)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/topics", wrapper.PutMyTopics)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/muted-topics", wrapper.PutMyMutedTopics)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/professions", wrapper.PutMyProfessions)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/country", wrapper.PutMyCountry)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/me/devices", wrapper.DeleteMyDevice)
@@ -1175,6 +1281,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/stories/{id}", wrapper.GetStory)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/stories/{id}/read", wrapper.MarkStoryUnread)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/stories/{id}/read", wrapper.MarkStoryRead)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/stories/{id}/dismiss", wrapper.UndismissStory)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/stories/{id}/dismiss", wrapper.DismissStory)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/search", wrapper.SearchStories)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/bookmarks", wrapper.ListBookmarks)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/bookmarks/sync", wrapper.SyncBookmarks)

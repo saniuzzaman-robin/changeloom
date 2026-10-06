@@ -3,16 +3,16 @@
   priority: 1
   description: "International relations and global institutions."
   children:
-    - {slug: world-politics/un, name: "United Nations"}
-    - {slug: world-politics/nato, name: "NATO"}
+    - {slug: world-politics/un, name: "United Nations", headline: true}
+    - {slug: world-politics/nato, name: "NATO", headline: true}
     - {slug: world-politics/g7-g20, name: "G7 & G20", priority: 2}
     - {slug: world-politics/eu, name: "European Union"}
     - {slug: world-politics/brics, name: "BRICS", priority: 2}
-    - {slug: world-politics/sanctions, name: "Sanctions"}
-    - {slug: world-politics/trade-wars, name: "Trade Wars & Tariffs"}
+    - {slug: world-politics/sanctions, name: "Sanctions", headline: true}
+    - {slug: world-politics/trade-wars, name: "Trade Wars & Tariffs", headline: true}
     - {slug: world-politics/international-law, name: "International Law", priority: 2}
     - {slug: world-politics/nuclear, name: "Nuclear Policy"}
-    - {slug: world-politics/summits, name: "Summits", priority: 2}
+    - {slug: world-politics/summits, name: "Summits", priority: 2, headline: true}
     - {slug: world-politics/human-rights, name: "Human Rights", priority: 2}
     - {slug: world-politics/migration, name: "Migration & Refugees"}
 - slug: us-politics
@@ -75,11 +75,11 @@
   priority: 1
   description: "Active conflicts and peace efforts."
   children:
-    - {slug: conflicts/ukraine, name: "Russia-Ukraine War"}
-    - {slug: conflicts/gaza, name: "Gaza War"}
+    - {slug: conflicts/ukraine, name: "Russia-Ukraine War", headline: true}
+    - {slug: conflicts/gaza, name: "Gaza War", headline: true}
     - {slug: conflicts/sudan, name: "Sudan Conflict", priority: 2}
     - {slug: conflicts/myanmar, name: "Myanmar", priority: 2}
-    - {slug: conflicts/peace-talks, name: "Peace Talks"}
+    - {slug: conflicts/peace-talks, name: "Peace Talks", headline: true}
     - {slug: conflicts/weapons, name: "Defense & Weapons", priority: 2}
     - {slug: conflicts/terrorism, name: "Terrorism"}
     - {slug: conflicts/humanitarian, name: "Humanitarian Crises"}
@@ -100,8 +100,8 @@
   priority: 1
   description: "Macro economy and trade."
   children:
-    - {slug: global-economy/central-banks, name: "Central Banks"}
-    - {slug: global-economy/inflation, name: "Inflation & Rates"}
+    - {slug: global-economy/central-banks, name: "Central Banks", headline: true}
+    - {slug: global-economy/inflation, name: "Inflation & Rates", headline: true}
     - {slug: global-economy/energy-markets, name: "Oil & Energy Markets"}
     - {slug: global-economy/supply-chains, name: "Supply Chains"}
     - {slug: global-economy/imf-world-bank, name: "IMF & World Bank", priority: 2}
@@ -191,23 +191,23 @@
   priority: 1
   description: "Clubs, leagues and transfers."
   children:
-    - {slug: football-soccer/premier-league, name: "Premier League"}
+    - {slug: football-soccer/premier-league, name: "Premier League", headline: true}
     - {slug: football-soccer/la-liga, name: "La Liga"}
-    - {slug: football-soccer/champions-league, name: "Champions League"}
+    - {slug: football-soccer/champions-league, name: "Champions League", headline: true}
     - {slug: football-soccer/serie-a-bundesliga, name: "Serie A & Bundesliga"}
-    - {slug: football-soccer/world-cup, name: "World Cup"}
+    - {slug: football-soccer/world-cup, name: "World Cup", headline: true}
     - {slug: football-soccer/transfers, name: "Transfers"}
     - {slug: football-soccer/mls, name: "MLS", priority: 2}
     - {slug: football-soccer/womens, name: "Women's Football", priority: 2}
-    - {slug: football-soccer/national-teams, name: "National Teams", priority: 2}
+    - {slug: football-soccer/national-teams, name: "National Teams", priority: 2, headline: true}
     - {slug: football-soccer/tactics, name: "Tactics", priority: 2}
 - slug: us-sports
   name: "US Sports"
   priority: 1
   description: "NFL, NBA, MLB and NHL."
   children:
-    - {slug: us-sports/nfl, name: "NFL"}
-    - {slug: us-sports/nba, name: "NBA"}
+    - {slug: us-sports/nfl, name: "NFL", headline: true}
+    - {slug: us-sports/nba, name: "NBA", headline: true}
     - {slug: us-sports/mlb, name: "MLB"}
     - {slug: us-sports/nhl, name: "NHL", priority: 2}
     - {slug: us-sports/college-football, name: "College Football"}
@@ -220,10 +220,10 @@
   priority: 2
   description: "Test, ODI and T20 cricket."
   children:
-    - {slug: cricket/ipl, name: "IPL", priority: 1}
-    - {slug: cricket/tests, name: "Test Cricket"}
-    - {slug: cricket/t20-world-cup, name: "T20 World Cup", priority: 1}
-    - {slug: cricket/odi, name: "ODI & World Cup"}
+    - {slug: cricket/ipl, name: "IPL", priority: 1, headline: true}
+    - {slug: cricket/tests, name: "Test Cricket", headline: true}
+    - {slug: cricket/t20-world-cup, name: "T20 World Cup", priority: 1, headline: true}
+    - {slug: cricket/odi, name: "ODI & World Cup", headline: true}
     - {slug: cricket/india, name: "India Cricket"}
     - {slug: cricket/pakistan, name: "Pakistan Cricket"}
     - {slug: cricket/bangladesh, name: "Bangladesh Cricket"}
@@ -237,7 +237,7 @@
   children:
     - {slug: tennis-golf/atp, name: "ATP Tour"}
     - {slug: tennis-golf/wta, name: "WTA Tour"}
-    - {slug: tennis-golf/grand-slams, name: "Grand Slams", priority: 1}
+    - {slug: tennis-golf/grand-slams, name: "Grand Slams", priority: 1, headline: true}
     - {slug: tennis-golf/pga, name: "PGA Tour"}
     - {slug: tennis-golf/liv, name: "LIV Golf"}
     - {slug: tennis-golf/majors, name: "The Majors"}

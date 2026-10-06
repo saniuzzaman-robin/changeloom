@@ -229,6 +229,17 @@ WHERE NOT EXISTS (SELECT 1 FROM topics c WHERE c.parent_id = t.id)
     -- Deals are fetched per country, never in a backfill.
     AND t.slug <> 'deals' AND t.slug NOT LIKE 'deals/%'
     AND (
+        t.headline OR COALESCE(p.headline, false)
+        OR EXISTS (
+            SELECT 1 FROM profession_topics pt JOIN professions pr ON pr.id = pt.profession_id
+            WHERE pt.topic_id = COALESCE(t.parent_id, t.id) AND pr.launched
+        )
+        OR EXISTS (
+            SELECT 1 FROM topic_stats ts WHERE ts.topic_id IN (t.id, t.parent_id)
+                AND ts.followers + ts.profession_users + ts.engaged_7d + ts.views_7d > 0
+        )
+    )
+    AND (
         SELECT count(*) FROM story_topics st JOIN stories sv ON sv.id = st.story_id
         WHERE st.topic_id = t.id AND sv.published_at >= $2
     ) < $3::bigint
@@ -238,7 +249,8 @@ WHERE NOT EXISTS (SELECT 1 FROM topics c WHERE c.parent_id = t.id)
             AND fr.started_at >= $2 AND fr.topic_ids @> ARRAY[t.id]
     )
 ORDER BY COALESCE(tp.priority, $1::integer),
-    COALESCE((SELECT sum(ts.followers + ts.profession_users + ts.views_7d) FROM topic_stats ts WHERE ts.topic_id = t.id), 0) DESC,
+    COALESCE((SELECT sum(ts.followers + ts.profession_users + ts.engaged_7d) FROM topic_stats ts WHERE ts.topic_id = t.id), 0) DESC,
+    COALESCE((SELECT sum(ts.views_7d) FROM topic_stats ts WHERE ts.topic_id = t.id), 0) DESC,
     t.slug
 LIMIT $4
 `
@@ -261,8 +273,9 @@ type ListBackfillTopicsRow struct {
 	Professions []string
 }
 
-// Leaf topics with fewer than @target stories published since @since, the highest priority
-// (@default_priority when it has none) first, then the most wanted. A topic already covered by a
+// Wanted leaf topics (under a launched profession's root, a headline themselves or through their
+// parent, or with demand) with fewer than @target stories published since @since, the highest
+// priority (@default_priority when it has none) first, then the most wanted. A topic already covered by a
 // successful backfill call since @since is skipped, so topics with little real news are not asked
 // about again and again.
 func (q *Queries) ListBackfillTopics(ctx context.Context, arg ListBackfillTopicsParams) ([]ListBackfillTopicsRow, error) {
@@ -342,6 +355,7 @@ SELECT t.id,
     COALESCE(tp.priority, $1::integer)::integer AS priority,
     COALESCE((SELECT sum(s.followers) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS followers,
     COALESCE((SELECT sum(s.profession_users) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS profession_users,
+    COALESCE((SELECT sum(s.engaged_7d) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS engaged_7d,
     COALESCE((SELECT sum(s.views_7d) FROM topic_stats s WHERE s.topic_id = t.id), 0)::integer AS views_7d,
     EXISTS (SELECT 1 FROM topics c WHERE c.parent_id = t.id) AS has_children,
     COALESCE((SELECT array_agg(h.url ORDER BY h.url) FROM topic_hints h WHERE h.topic_id = t.id), '{}')::text[] AS hints,
@@ -350,6 +364,11 @@ SELECT t.id,
         FROM profession_topics pt JOIN professions pr ON pr.id = pt.profession_id
         WHERE pt.topic_id = COALESCE(t.parent_id, t.id)
     ), '{}')::text[] AS professions,
+    EXISTS (
+        SELECT 1 FROM profession_topics pt JOIN professions pr ON pr.id = pt.profession_id
+        WHERE pt.topic_id = COALESCE(t.parent_id, t.id) AND pr.launched
+    ) AS launched,
+    (t.headline OR COALESCE(p.headline, false))::boolean AS headline,
     -- 'epoch' when no call covering the topic has succeeded yet.
     COALESCE((
         SELECT max(fr.started_at) FROM fetch_runs fr
@@ -370,16 +389,20 @@ type ListFetchTopicsRow struct {
 	Priority        int32
 	Followers       int32
 	ProfessionUsers int32
+	Engaged7d       int32
 	Views7d         int32
 	HasChildren     bool
 	Hints           []string
 	Professions     []string
+	Launched        bool
+	Headline        bool
 	LastFetchedAt   time.Time
 }
 
 // Every topic with what fetch planning needs: its parent, priority (@default_priority when it has
-// none), hints, demand (summed over the hosted envs), the professions its root serves, whether it
-// has children and when a fetch call covering it last succeeded.
+// none), hints, demand (summed over the hosted envs), the professions its root serves, whether one
+// of them is launched, whether it or its parent is a headline, whether it has children and when a
+// fetch call covering it last succeeded.
 func (q *Queries) ListFetchTopics(ctx context.Context, defaultPriority int32) ([]ListFetchTopicsRow, error) {
 	rows, err := q.db.Query(ctx, listFetchTopics, defaultPriority)
 	if err != nil {
@@ -398,10 +421,13 @@ func (q *Queries) ListFetchTopics(ctx context.Context, defaultPriority int32) ([
 			&i.Priority,
 			&i.Followers,
 			&i.ProfessionUsers,
+			&i.Engaged7d,
 			&i.Views7d,
 			&i.HasChildren,
 			&i.Hints,
 			&i.Professions,
+			&i.Launched,
+			&i.Headline,
 			&i.LastFetchedAt,
 		); err != nil {
 			return nil, err

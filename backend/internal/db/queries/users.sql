@@ -21,13 +21,34 @@ DELETE FROM user_topics WHERE user_id = @user_id;
 INSERT INTO user_topics (user_id, topic_id)
 SELECT @user_id, unnest(@topic_ids::bigint[]);
 
+-- name: DeleteUserTopicsByIDs :exec
+DELETE FROM user_topics WHERE user_id = @user_id AND topic_id = ANY(@topic_ids::bigint[]);
+
+-- name: ListUserMutedTopicSlugs :many
+SELECT t.slug
+FROM user_topic_mutes um
+JOIN topics t ON t.id = um.topic_id
+WHERE um.user_id = @user_id
+ORDER BY t.slug;
+
+-- name: DeleteUserTopicMutes :exec
+DELETE FROM user_topic_mutes WHERE user_id = @user_id;
+
+-- name: InsertUserTopicMutes :exec
+INSERT INTO user_topic_mutes (user_id, topic_id)
+SELECT @user_id, unnest(@topic_ids::bigint[]);
+
+-- name: DeleteUserTopicMutesByIDs :exec
+DELETE FROM user_topic_mutes WHERE user_id = @user_id AND topic_id = ANY(@topic_ids::bigint[]);
+
 -- name: GetUserStats :one
 SELECT
     (SELECT count(*) FROM user_bookmarks ub WHERE ub.user_id = @user_id)::bigint AS saved,
     (SELECT count(*) FROM user_story_state uss WHERE uss.user_id = @user_id)::bigint AS read;
 
 -- name: DeleteUser :exec
--- Deleting the user cascades to their follows, read state, bookmarks, devices and topic requests.
+-- Deleting the user cascades to their follows, mutes, read and dismissed state, bookmarks, devices and topic
+-- requests.
 DELETE FROM users WHERE id = @id;
 
 -- name: ListUserProfessionSlugs :many

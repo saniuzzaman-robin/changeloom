@@ -50,12 +50,15 @@ topics: [{slug: a, name: A, priority: 3}, {slug: b, name: B, priority: 3}]`, `ro
 		{"root priority too high", `[{slug: z, name: Z, priority: 6}]`, `topic "z": priority 6`},
 		{"child priority out of range", `[{slug: z, name: Z, priority: 2, children: [{slug: z/x, name: X, priority: -1}]}]`, `topic "z/x": priority -1`},
 		{"unknown key", `[{slug: a, name: A, priority: 3, hint: [https://example.com]}]`, "field hint not found"},
+		{"nothing launched", `professions: [{slug: p, name: P, topics: [a]}]
+topics: [{slug: a, name: A, priority: 3}]`, "no profession has launch: true"},
+		{"headline under headline", `[{slug: a, name: A, priority: 3, headline: true, children: [{slug: a/x, name: X, headline: true}]}]`, `"a/x" is a headline already through its parent`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			yaml := tc.yaml
 			if !strings.Contains(yaml, "professions:") {
-				yaml = "professions: [{slug: p, name: P, topics: [a]}]\ntopics: " + yaml
+				yaml = "professions: [{slug: p, name: P, topics: [a], launch: true}]\ntopics: " + yaml
 			}
 			_, err := catalog.Parse([]byte(yaml))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -67,7 +70,7 @@ topics: [{slug: a, name: A, priority: 3}, {slug: b, name: B, priority: 3}]`, `ro
 
 const seedCatalog = `
 professions:
-  - {slug: p, name: P, topics: [a, b]}
+  - {slug: p, name: P, topics: [a, b], launch: true}
   - {slug: q, name: Q, topics: [b]}
 topics:
   - slug: a
@@ -79,7 +82,7 @@ topics:
     name: B
     priority: 4
     children:
-      - {slug: b/y, name: Y, priority: 1, related: [a/x]}
+      - {slug: b/y, name: Y, priority: 1, related: [a/x], headline: true}
 `
 
 func TestSeed(t *testing.T) {
@@ -131,6 +134,34 @@ func TestSeed(t *testing.T) {
 		}
 		return got
 	}
+	flags := func(sql string) map[string]bool {
+		t.Helper()
+		rows, err := pool.Query(ctx, sql)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]bool{}
+		for rows.Next() {
+			var slug string
+			var v bool
+			if err := rows.Scan(&slug, &v); err != nil {
+				t.Fatal(err)
+			}
+			got[slug] = v
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	const headlinesSQL, launchedSQL = `SELECT slug, headline FROM topics`, `SELECT slug, launched FROM professions`
+	if got, want := flags(headlinesSQL), map[string]bool{"a": false, "a/x": false, "b": false, "b/y": true}; !maps.Equal(got, want) {
+		t.Fatalf("headlines = %v, want %v", got, want)
+	}
+	if got, want := flags(launchedSQL), map[string]bool{"p": true, "q": false}; !maps.Equal(got, want) {
+		t.Fatalf("launched = %v, want %v", got, want)
+	}
+
 	// a/x inherits its root's priority; b/y sets its own.
 	if got, want := priorities(), map[string]int{"a": 2, "a/x": 2, "b": 4, "b/y": 1}; !maps.Equal(got, want) {
 		t.Fatalf("priorities = %v, want %v", got, want)
@@ -161,7 +192,7 @@ func TestSeed(t *testing.T) {
 	// A changed name bumps updated_at; topics missing from the catalog are kept, and a
 	// profession's topic list is replaced.
 	renamed, err := catalog.Parse([]byte(`
-professions: [{slug: p, name: P, topics: [a]}]
+professions: [{slug: p, name: P, topics: [a], launch: true}]
 topics: [{slug: a, name: A, priority: 3, children: [{slug: a/x, name: X2}]}]`))
 	if err != nil {
 		t.Fatal(err)
@@ -185,5 +216,19 @@ topics: [{slug: a, name: A, priority: 3, children: [{slug: a/x, name: X2}]}]`))
 	}
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM profession_topics pt JOIN professions p ON p.id = pt.profession_id WHERE p.slug = 'p'`).Scan(&links); err != nil || links != 1 {
 		t.Fatalf("profession p has %d topics, %v; want 1", links, err)
+	}
+
+	// Dropping a flag from the catalog clears it on reseed.
+	c.Topics[1].Children[0].Headline = false
+	c.Professions[0].Launch = false
+	c.Professions[1].Launch = true
+	if _, err := catalog.Seed(ctx, pool, c); err != nil {
+		t.Fatal(err)
+	}
+	if got := flags(headlinesSQL); got["b/y"] {
+		t.Fatalf("headlines after unflagging b/y = %v", got)
+	}
+	if got, want := flags(launchedSQL), map[string]bool{"p": false, "q": true}; !maps.Equal(got, want) {
+		t.Fatalf("launched after swap = %v, want %v", got, want)
 	}
 }

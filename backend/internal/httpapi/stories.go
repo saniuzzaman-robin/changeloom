@@ -13,16 +13,25 @@ import (
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/db"
 )
 
-// cursor is the keyset position of the last item on a timeline page.
+// cursorVersion marks timeline cursors whose score matches the current ranking; older ones (tier
+// cursors, or scores from before the affinity tier) are rejected so the client reloads from the
+// first page.
+const cursorVersion = 3
+
+// cursor is the keyset position of the last item on a page. Timeline cursors also carry their
+// version and the time the first page was ranked at, which fixes every score for the pages that
+// follow; bookmark and search cursors use only PublishedAt and ID.
 type cursor struct {
+	Version     int       `json:"v,omitzero"`
+	AsOf        time.Time `json:"a,omitzero"`
 	IsRead      bool      `json:"r"`
-	Tier        int32     `json:"t"`
+	Score       float64   `json:"s,omitzero"`
 	PublishedAt time.Time `json:"p"`
 	ID          int64     `json:"i"`
 }
 
 func (c cursor) encode() string {
-	b, _ := json.Marshal(c) // cannot fail: plain struct of basic types
+	b, _ := json.Marshal(c) // cannot fail: plain struct of basic types, and scores are finite
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
@@ -32,7 +41,7 @@ func decodeCursor(s string) (cursor, error) {
 	if err != nil {
 		return c, fmt.Errorf("invalid cursor: %w", err)
 	}
-	if err := json.Unmarshal(b, &c); err != nil || c.ID <= 0 || c.PublishedAt.IsZero() || c.Tier < tierFollowed || c.Tier > tierExplore {
+	if err := json.Unmarshal(b, &c); err != nil || c.ID <= 0 || c.PublishedAt.IsZero() {
 		return c, errors.New("invalid cursor")
 	}
 	return c, nil
@@ -44,15 +53,19 @@ const maxKindFilter = 9
 // Timeline tiers, as ranked by ListTimeline.
 const (
 	tierFollowed   = 0
-	tierProfession = 1
-	tierRelated    = 2
-	tierExplore    = 3
+	tierAffinity   = 1
+	tierProfession = 2
+	tierRelated    = 3
+	tierHeadline   = 4
+	tierExplore    = 5
 )
 
 var tierMatch = map[int32]StorySummaryMatch{
 	tierFollowed:   StorySummaryMatchFollowed,
+	tierAffinity:   StorySummaryMatchAffinity,
 	tierProfession: StorySummaryMatchProfession,
 	tierRelated:    StorySummaryMatchRelated,
+	tierHeadline:   StorySummaryMatchHeadline,
 	tierExplore:    StorySummaryMatchExplore,
 }
 
@@ -84,20 +97,40 @@ func (s *Server) GetTimeline(w http.ResponseWriter, r *http.Request, params GetT
 		}
 	}
 
-	arg := db.ListTimelineParams{
-		UserID:     user.ID,
-		Kinds:      kinds,
-		ReadFilter: params.Read,
-		Since:      s.now().Add(-s.opts.TimelineWindow),
-		PageSize:   int32(limit + 1), //nolint:gosec // limit is bounded by maxPageSize
-	}
+	asOf := s.now()
+	var c *cursor
 	if params.Cursor != nil {
-		c, err := decodeCursor(*params.Cursor)
+		decoded, err := decodeCursor(*params.Cursor)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 			return
 		}
-		arg.CursorRead, arg.CursorTier, arg.CursorPublishedAt, arg.CursorID = &c.IsRead, &c.Tier, &c.PublishedAt, &c.ID
+		if decoded.Version != cursorVersion || decoded.AsOf.IsZero() {
+			writeError(w, http.StatusBadRequest, "bad_request", "outdated cursor: reload the timeline from the first page")
+			return
+		}
+		c, asOf = &decoded, decoded.AsOf
+	}
+	score := s.opts.TimelineScore
+	arg := db.ListTimelineParams{
+		UserID:                user.ID,
+		Kinds:                 kinds,
+		ReadFilter:            params.Read,
+		Since:                 asOf.Add(-s.opts.TimelineWindow),
+		PageSize:              int32(limit + 1), //nolint:gosec // limit is bounded by maxPageSize
+		HeadlineMinImportance: s.opts.HeadlineMinImportance,
+		ExploreMinImportance:  s.opts.ExploreMinImportance,
+		AffinitySince:         asOf.Add(-s.opts.AffinityWindow),
+		AsOf:                  asOf,
+		TierWeight:            score.TierWeight,
+		ImportanceWeight:      score.ImportanceWeight,
+		SeverityWeight:        score.SeverityWeight,
+		DecayHours:            score.AgeDecay.Hours(),
+		SeenPenalty:           score.SeenPenalty,
+		SeenBefore:            asOf.Add(-score.SeenGrace),
+	}
+	if c != nil {
+		arg.CursorRead, arg.CursorScore, arg.CursorPublishedAt, arg.CursorID = &c.IsRead, &c.Score, &c.PublishedAt, &c.ID
 	}
 
 	rows, err := s.q.ListTimeline(r.Context(), arg)
@@ -110,9 +143,13 @@ func (s *Server) GetTimeline(w http.ResponseWriter, r *http.Request, params GetT
 	if len(rows) > limit {
 		rows = rows[:limit]
 		last := rows[limit-1]
-		c := cursor{IsRead: last.ReadAt != nil, Tier: last.Tier, PublishedAt: last.PublishedAt, ID: last.ID}.encode()
+		c := cursor{
+			Version: cursorVersion, AsOf: asOf, IsRead: last.ReadAt != nil, Score: last.Score,
+			PublishedAt: last.PublishedAt, ID: last.ID,
+		}.encode()
 		next = &c
 	}
+	rows = mixPage(rows, s.opts.TimelineMix)
 	items := make([]StorySummary, len(rows))
 	for i, row := range rows {
 		match, ok := tierMatch[row.Tier]
@@ -187,6 +224,16 @@ func (s *Server) MarkStoryUnread(w http.ResponseWriter, r *http.Request, id Stor
 	s.setRead(w, r, id, false)
 }
 
+// DismissStory hides the story from the user's timeline.
+func (s *Server) DismissStory(w http.ResponseWriter, r *http.Request, id StoryID) {
+	s.setDismissed(w, r, id, true)
+}
+
+// UndismissStory shows a dismissed story in the user's timeline again.
+func (s *Server) UndismissStory(w http.ResponseWriter, r *http.Request, id StoryID) {
+	s.setDismissed(w, r, id, false)
+}
+
 // maxViewIDs is the most story ids one views request may carry.
 const maxViewIDs = 100
 
@@ -232,6 +279,30 @@ func (s *Server) setRead(w http.ResponseWriter, r *http.Request, id StoryID, rea
 	}
 	if err != nil {
 		internalError(w, r, "set story read state", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) setDismissed(w http.ResponseWriter, r *http.Request, id StoryID, dismissed bool) {
+	user := mustUser(r)
+
+	exists, err := s.q.StoryExists(r.Context(), id)
+	if err != nil {
+		internalError(w, r, "check story exists", err)
+		return
+	}
+	if !exists {
+		writeError(w, http.StatusNotFound, "not_found", "story not found")
+		return
+	}
+	if dismissed {
+		err = s.q.DismissStory(r.Context(), db.DismissStoryParams{UserID: user.ID, StoryID: id})
+	} else {
+		err = s.q.UndismissStory(r.Context(), db.UndismissStoryParams{UserID: user.ID, StoryID: id})
+	}
+	if err != nil {
+		internalError(w, r, "set story dismissed", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

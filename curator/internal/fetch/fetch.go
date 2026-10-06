@@ -100,8 +100,9 @@ func (c catalog) also(g Group) []string {
 func toTopic(r db.ListFetchTopicsRow) Topic {
 	return Topic{
 		ID: r.ID, Slug: r.Slug, Name: r.Name, Description: r.Description, ParentSlug: deref(r.ParentSlug),
-		Priority: int(r.Priority), Followers: int(r.Followers), ProfessionUsers: int(r.ProfessionUsers), Views7d: int(r.Views7d),
-		HasChildren: r.HasChildren, Hints: r.Hints, Professions: r.Professions, LastFetchedAt: r.LastFetchedAt,
+		Priority: int(r.Priority), Followers: int(r.Followers), ProfessionUsers: int(r.ProfessionUsers), Engaged7d: int(r.Engaged7d), Views7d: int(r.Views7d),
+		HasChildren: r.HasChildren, Hints: r.Hints, Professions: r.Professions, Launched: r.Launched, Headline: r.Headline,
+		LastFetchedAt: r.LastFetchedAt,
 	}
 }
 
@@ -170,7 +171,7 @@ func (f *Fetcher) Run(ctx context.Context) (Summary, error) {
 		TopicsPerCall:     f.cfg.TopicsPerCall,
 		MaxCalls:          f.cfg.MaxCallsPerRun,
 		StoriesPerTopic:   f.cfg.StoriesPerTopic,
-		HotMinViews:       f.cfg.HotMinViews,
+		HotMinEngaged:     f.cfg.HotMinEngaged,
 		WarmInterval:      f.cfg.WarmInterval,
 		PriorityIntervals: f.cfg.PriorityIntervals,
 		MaxAge:            f.cfg.ItemMaxAge,

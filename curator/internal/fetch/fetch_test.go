@@ -47,7 +47,7 @@ func setup(t *testing.T) *pgxpool.Pool {
 	pool := dbtest.New(t)
 	cat, err := catalog.Parse([]byte(`
 professions:
-  - {slug: engineer, name: Engineer, topics: [languages, security]}
+  - {slug: engineer, name: Engineer, topics: [languages, security], launch: true}
 topics:
   - slug: languages
     name: Languages
@@ -83,7 +83,7 @@ func testConfig() config.Config {
 	return config.Config{
 		MaxCallsPerRun: 5, TopicsPerCall: 5, ItemMaxAge: 14 * 24 * time.Hour,
 		MergeWindow: 14 * 24 * time.Hour, StoriesPerTopic: 5, Concurrency: 1,
-		HotMinViews: 1, WarmInterval: 24 * time.Hour,
+		HotMinEngaged: 1, WarmInterval: 24 * time.Hour,
 		PriorityIntervals: [5]time.Duration{48 * time.Hour, 96 * time.Hour, 168 * time.Hour, 336 * time.Hour, 672 * time.Hour},
 		BackfillTarget:    20, BackfillTopicsPerCall: 2,
 		DealsMaxCountries: 5, DealsMaxCallsPerRun: 4, DealsMaxAge: 7 * 24 * time.Hour,
@@ -158,9 +158,9 @@ func TestFetchStoresAndMerges(t *testing.T) {
 		t.Fatalf("second run: %+v, %v", sum, err)
 	}
 
-	// Viewers make the topic hot, so it is due again; known stories go into the prompt, and a story
+	// Users who opened or saved its stories make the topic hot, so it is due again; known stories go into the prompt, and a story
 	// with an already stored URL is merged rather than duplicated.
-	if _, err := pool.Exec(ctx, `INSERT INTO topic_stats (topic_id, env, views_7d) SELECT id, 'staging', 3 FROM topics WHERE slug = 'languages'`); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO topic_stats (topic_id, env, engaged_7d) SELECT id, 'staging', 3 FROM topics WHERE slug = 'languages'`); err != nil {
 		t.Fatal(err)
 	}
 	fake.responses = []any{map[string]any{"stories": []any{
@@ -259,14 +259,15 @@ func TestBackfill(t *testing.T) {
 	}
 }
 
+func exec(t *testing.T, pool *pgxpool.Pool, sql string) {
+	t.Helper()
+	if _, err := pool.Exec(t.Context(), sql); err != nil {
+		t.Fatalf("%s: %v", sql, err)
+	}
+}
+
 func TestBackfillOrdersByPriority(t *testing.T) {
 	ctx := t.Context()
-	exec := func(t *testing.T, pool *pgxpool.Pool, sql string) {
-		t.Helper()
-		if _, err := pool.Exec(ctx, sql); err != nil {
-			t.Fatalf("%s: %v", sql, err)
-		}
-	}
 	backfillOne := func(t *testing.T, pool *pgxpool.Pool) string {
 		t.Helper()
 		cfg := testConfig()
@@ -305,6 +306,35 @@ func TestBackfillOrdersByPriority(t *testing.T) {
 			t.Errorf("prompt:\n%s", p)
 		}
 	})
+}
+
+func TestBackfillOnlyWantedTopics(t *testing.T) {
+	pool := setup(t)
+	ctx := t.Context()
+	cfg := testConfig()
+	backfill := func() []string {
+		t.Helper()
+		fake := &fakeClaude{responses: []any{map[string]any{"stories": []any{}}}}
+		if _, err := fetch.New(pool, fake, cfg).Backfill(ctx, 1); err != nil {
+			t.Fatalf("backfill: %v", err)
+		}
+		return fake.prompts
+	}
+
+	// No launched profession, headline or demand: nothing is wanted, so no call is made.
+	exec(t, pool, `UPDATE professions SET launched = false`)
+	if prompts := backfill(); len(prompts) != 0 {
+		t.Fatalf("backfill with nothing wanted made %d calls", len(prompts))
+	}
+
+	// A headline is wanted without demand; so is a topic whose parent has followers.
+	exec(t, pool, `UPDATE topics SET headline = true WHERE slug = 'security'`)
+	exec(t, pool, `INSERT INTO topic_stats (topic_id, env, followers, profession_users, views_7d)
+		SELECT id, 'staging', 1, 0, 0 FROM topics WHERE slug = 'languages'`)
+	prompts := backfill()
+	if len(prompts) != 1 || !strings.Contains(prompts[0], "- security:") || !strings.Contains(prompts[0], "- languages/go:") {
+		t.Fatalf("backfill prompts:\n%s", strings.Join(prompts, "\n---\n"))
+	}
 }
 
 func TestBackfillSkipsFilledTopics(t *testing.T) {
@@ -382,7 +412,7 @@ func TestFetchDealsPerCountry(t *testing.T) {
 	now := time.Now()
 	cat, err := catalog.Parse([]byte(`
 professions:
-  - {slug: enthusiast, name: Tech Enthusiast, topics: [deals]}
+  - {slug: enthusiast, name: Tech Enthusiast, topics: [deals], launch: true}
 topics:
   - slug: deals
     name: Deals
