@@ -1,5 +1,6 @@
 package dev.changeloom.android.ui
 
+import android.icu.text.CompactDecimalFormat
 import androidx.activity.compose.LocalActivity
 import androidx.annotation.StringRes
 import androidx.compose.animation.animateColorAsState
@@ -14,11 +15,13 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -114,6 +117,7 @@ import dev.changeloom.android.ui.theme.expoTween
 import dev.changeloom.shared.data.MeStats
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import java.text.NumberFormat
 import java.util.Locale
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
@@ -243,10 +247,14 @@ internal fun ProfileContent(
                     Spacer(Modifier.height(12.dp))
                     StatusBanner(state.error, Icons.Rounded.ErrorOutline, tone = BannerTone.Error, actionLabel = stringResource(R.string.retry), onAction = onRetry)
                     if (state.error != null) Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        StatTile(stringResource(R.string.saved), state.stats?.saved, Icons.Rounded.Bookmark, c.primaryText, Modifier.weight(1f))
-                        StatTile(stringResource(R.string.read), state.stats?.read, Icons.Rounded.DoneAll, c.success, Modifier.weight(1f))
-                        StatTile(stringResource(R.string.topics), followed.size.toLong(), Icons.Rounded.Tag, c.accent, Modifier.weight(1f))
+                    GlassCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(vertical = 12.dp)) {
+                        Row(Modifier.height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
+                            StatTile(stringResource(R.string.saved), state.stats?.saved, Icons.Rounded.Bookmark, c.primaryText, Modifier.weight(1f))
+                            StatDivider()
+                            StatTile(stringResource(R.string.read), state.stats?.read, Icons.Rounded.DoneAll, c.success, Modifier.weight(1f))
+                            StatDivider()
+                            StatTile(stringResource(R.string.topics), followed.size.toLong(), Icons.Rounded.Tag, c.accent, Modifier.weight(1f))
+                        }
                     }
                 }
 
@@ -507,26 +515,38 @@ private fun StatTile(label: String, value: Long?, icon: ImageVector, tint: Color
     val c = ChangeloomTheme.colors
     val inspection = LocalInspectionMode.current
     val shown = remember { Animatable(if (inspection) (value ?: 0).toFloat() else 0f) }
+    val locale = Locale.getDefault()
+    val formatter = remember(locale) { StatFormatter(locale) }
     LaunchedEffect(value) { if (value != null) shown.animateTo(value.toFloat(), expoTween(Durations.SLOW + 600)) }
-    GlassCard(modifier, contentPadding = PaddingValues(14.dp)) {
-        Box(
-            Modifier
-                .size(32.dp)
-                .clip(Radius.md)
-                .background(tint.copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center,
-        ) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Icon(icon, contentDescription = null, Modifier.size(18.dp), tint = tint)
+            Text(
+                if (value == null) "–" else formatter.format(shown.value.roundToLong()),
+                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                color = c.fg,
+                maxLines = 1,
+            )
         }
-        Spacer(Modifier.height(12.dp))
-        Text(
-            if (value == null) "–" else shown.value.roundToLong().toString(),
-            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-            color = c.fg,
-            maxLines = 1,
-        )
         Eyebrow(label)
     }
+}
+
+/** Grouped digits below [COMPACT_FROM] ("1,234"), compact above it ("12K", "1.2M"), per locale. */
+private class StatFormatter(locale: Locale) {
+    private val grouped = NumberFormat.getIntegerInstance(locale)
+    private val compact = CompactDecimalFormat.getInstance(locale, CompactDecimalFormat.CompactStyle.SHORT)
+
+    fun format(n: Long): String = if (n < COMPACT_FROM) grouped.format(n) else compact.format(n)
+
+    private companion object {
+        const val COMPACT_FROM = 10_000L
+    }
+}
+
+@Composable
+private fun StatDivider() {
+    Box(Modifier.width(1.dp).fillMaxHeight().background(ChangeloomTheme.colors.line))
 }
 
 /** Segmented System / Light / Dark switch; a washed pill slides under the selected option. */
