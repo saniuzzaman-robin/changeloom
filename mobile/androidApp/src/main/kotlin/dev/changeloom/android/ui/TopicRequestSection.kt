@@ -83,7 +83,7 @@ private fun RequestRow(request: TopicRequest) {
         else -> R.string.request_pending to c.fgMuted
     }
     Column(Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 request.text,
                 Modifier.weight(1f),
@@ -95,6 +95,7 @@ private fun RequestRow(request: TopicRequest) {
         }
         val detail = listOfNotNull(request.topic?.let { stringResource(R.string.request_topic, topicName(it)) }, request.note).joinToString(" · ")
         if (detail.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
             Text(detail, style = MaterialTheme.typography.bodySmall, color = c.fgMuted)
         }
     }
