@@ -146,6 +146,7 @@ class ProfileViewModelTest {
         f.vm.state.await { it.muted == listOf("b", "c") }
         assertTrue("PUT /v1/me/muted-topics" in f.requests)
         assertTrue(f.requests.any { it.startsWith("GET /v1/timeline") })
+        f.vm.stop() // the topic requests load may still be in flight
     }
 
     @Test
@@ -156,5 +157,6 @@ class ProfileViewModelTest {
         f.vm.unmute("a")
         val state = f.vm.state.await { it.error != null }
         assertEquals(listOf("a", "b"), state.muted)
+        f.vm.stop()
     }
 }

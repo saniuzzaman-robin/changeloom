@@ -74,5 +74,6 @@ class TopicPickerViewModelTest {
         assertEquals(listOf("languages/go", "web/react"), s.followed)
         assertEquals(listOf("languages/go", "web/react"), s.selection?.toFollowed())
         assertEquals(listOf("""{"topics":["languages/go","web/react"]}"""), bodies)
+        vm.stop() // the timeline refreshes may still be in flight
     }
 }

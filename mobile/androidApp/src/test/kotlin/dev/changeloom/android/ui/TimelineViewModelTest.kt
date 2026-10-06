@@ -1,6 +1,5 @@
 package dev.changeloom.android.ui
 
-import androidx.lifecycle.viewModelScope
 import dev.changeloom.android.data.FollowSuggester
 import dev.changeloom.shared.data.TimelineRepository
 import dev.changeloom.shared.data.ViewTracker
@@ -10,7 +9,6 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -54,7 +52,7 @@ class TimelineViewModelTest {
         try {
             notInterested(vm, requests)
         } finally {
-            vm.viewModelScope.cancel() // stops the view tracker's endless flush loop, or runTest never idles
+            vm.stop() // also ends the view tracker's endless flush loop, or runTest never idles
         }
     }
 
@@ -79,7 +77,7 @@ class TimelineViewModelTest {
         try {
             lessAbout(vm)
         } finally {
-            vm.viewModelScope.cancel()
+            vm.stop()
         }
     }
 
