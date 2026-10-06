@@ -106,6 +106,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -450,14 +451,14 @@ internal fun FeedContent(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item(key = "header") { FeedHeader(displayName, userEmail, photo, fresh.size, onProfile, animateIn = staggered) }
-                if (state.items.isNotEmpty() || !state.filter.isDefault) {
-                    item(key = "filters") { FeedFilters(state.filter, onFilter) }
-                }
                 item(key = "banners") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         StatusBanner(if (state.offline) stringResource(R.string.offline_banner) else null, Icons.Rounded.CloudOff, tone = BannerTone.Warning)
                         StatusBanner(state.error, Icons.Rounded.ErrorOutline, tone = BannerTone.Error, actionLabel = stringResource(R.string.dismiss), onAction = onDismissError)
                     }
+                }
+                if (state.items.isNotEmpty() || !state.filter.isDefault) {
+                    stickyHeader(key = "filters", contentType = FILTER_CHIP) { FeedFilters(state.filter, onFilter) }
                 }
                 when {
                     state.items.isEmpty() && state.refreshing -> items(LIST_SKELETON_CARDS) { SkeletonStoryCard() }
@@ -505,8 +506,19 @@ internal fun FeedContent(
 /** Read state (one of unread/read, or neither for all) and story kinds (any number); the server applies them. */
 @Composable
 private fun FeedFilters(filter: TimelineFilter, onChange: (TimelineFilter) -> Unit) {
+    val gutter = Spacing.gutter
     LazyRow(
-        Modifier.fillMaxWidth().testTag("feed_filters"),
+        Modifier
+            // Pinned to the top of the list: opaque so stories scroll underneath, and out to the screen edges past the list's gutter.
+            .layout { measurable, constraints ->
+                val bleed = gutter.roundToPx()
+                val placeable = measurable.measure(constraints.copy(minWidth = constraints.maxWidth + 2 * bleed, maxWidth = constraints.maxWidth + 2 * bleed))
+                layout(constraints.maxWidth, placeable.height) { placeable.place(-bleed, 0) }
+            }
+            .background(ChangeloomTheme.colors.navGlass)
+            .padding(vertical = 6.dp)
+            .testTag("feed_filters"),
+        contentPadding = PaddingValues(horizontal = gutter),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item(key = "unread", contentType = FILTER_CHIP) {
