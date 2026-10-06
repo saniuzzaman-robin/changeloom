@@ -707,12 +707,9 @@ private fun PickerBar(
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextAction(stringResource(R.string.select_all), onSelectAll, enabled = editable)
             TextAction(stringResource(R.string.clear), onClear, enabled = editable && selection?.isEmpty == false)
+            Spacer(Modifier.weight(1f))
             if (state.professions.isNotEmpty()) {
                 TextAction(stringResource(R.string.back_to_professions), onEditProfessions, enabled = editable, icon = Icons.Rounded.Edit)
-            }
-            Spacer(Modifier.weight(1f))
-            AnimatedContent(count, label = "selectedCount") { n ->
-                Eyebrow(pluralStringResource(R.plurals.topic_count, n, n), color = if (n > 0) c.primaryText else c.fgSubtle)
             }
         }
         Spacer(Modifier.height(8.dp))
