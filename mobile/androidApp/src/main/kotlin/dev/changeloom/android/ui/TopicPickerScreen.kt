@@ -97,7 +97,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -223,6 +226,7 @@ internal fun TopicPickerContent(
     }
     val moreComing = offered.size < state.professions.size
     val headlineAreas = remember(selection?.tree) { selection?.tree?.let(::headlineAreas).orEmpty() }
+    var headlinesNoteDismissed by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val staggered = rememberStaggered(listState)
     // The two steps share one list, so moving between them starts from the top.
@@ -299,9 +303,14 @@ internal fun TopicPickerContent(
                         )
                     }
                     else -> {
-                        if (query.isEmpty() && headlineAreas.isNotEmpty()) {
+                        if (query.isEmpty() && headlineAreas.isNotEmpty() && !headlinesNoteDismissed) {
                             item(key = "headlines") {
-                                StatusBanner(stringResource(R.string.headlines_note, headlineAreas), Icons.Rounded.Public)
+                                StatusBanner(
+                                    stringResource(R.string.headlines_note, headlineAreas),
+                                    Icons.Rounded.Public,
+                                    actionLabel = stringResource(R.string.dismiss),
+                                    onAction = { headlinesNoteDismissed = true },
+                                )
                             }
                         }
                         // Sections only when something is saved or suggested and nothing is being searched.
