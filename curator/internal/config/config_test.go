@@ -15,12 +15,14 @@ func TestPromptStyle(t *testing.T) {
 	}{
 		{provider: "claude", want: config.PromptFrontier},
 		{provider: "openai", want: config.PromptCompact},
+		{provider: "gemini", want: config.PromptCompact},
 		{provider: "openai", style: "frontier", want: config.PromptFrontier},
 		{provider: "claude", style: "compact", want: config.PromptCompact},
 	} {
 		t.Setenv("CURATOR_AI_PROVIDER", tc.provider)
 		t.Setenv("CURATOR_PROMPT_STYLE", tc.style)
 		t.Setenv("OPENAI_MODEL", "gpt-test")
+		t.Setenv("GEMINI_API_KEY", "key-test")
 		cfg, err := config.Load()
 		if err != nil {
 			t.Fatalf("%s/%q: %v", tc.provider, tc.style, err)
@@ -60,5 +62,19 @@ func TestPriorityIntervals(t *testing.T) {
 		if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), "CURATOR_PRIORITY_INTERVAL_HOURS") {
 			t.Errorf("%q: err = %v", bad, err)
 		}
+	}
+}
+
+func TestGeminiNeedsAnAPIKey(t *testing.T) {
+	t.Setenv("CURATOR_AI_PROVIDER", "gemini")
+	t.Setenv("GEMINI_API_KEY", "")
+	if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), "GEMINI_API_KEY") {
+		t.Fatalf("err = %v", err)
+	}
+	t.Setenv("GEMINI_API_KEY", "key-test")
+	t.Setenv("CURATOR_AI_MODEL", "gemini-test")
+	cfg, err := config.Load()
+	if err != nil || cfg.Gemini.Model != "gemini-test" {
+		t.Fatalf("model %q, err %v", cfg.Gemini.Model, err)
 	}
 }

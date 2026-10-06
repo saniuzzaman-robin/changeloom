@@ -110,7 +110,7 @@ curator-migrate: ## Apply the backend and curator migrations to the curator's lo
 curator-seed: ## Load curator/seed/catalog/ into the curator's local DB
 	$(CURATOR_RUN) seed
 
-# For one run, AI=claude|openai, MODEL=<name> and PROMPT=frontier|compact override
+# For one run, AI=claude|openai|gemini, MODEL=<name> and PROMPT=frontier|compact override
 # CURATOR_AI_PROVIDER, CURATOR_AI_MODEL and CURATOR_PROMPT_STYLE from curator/.env.
 CURATOR_AI_RUN = cd $(CURATOR) && $(if $(AI),CURATOR_AI_PROVIDER=$(AI)) $(if $(MODEL),CURATOR_AI_MODEL=$(MODEL)) \
 	$(if $(PROMPT),CURATOR_PROMPT_STYLE=$(PROMPT)) go run ./cmd/curator

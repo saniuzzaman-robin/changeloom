@@ -63,6 +63,7 @@ type Config struct {
 	Provider Provider
 	Claude   Claude
 	OpenAI   OpenAI
+	Gemini   Gemini
 	// PromptStyle selects the prompt wording (CURATOR_PROMPT_STYLE; defaults to frontier for claude
 	// and compact for openai).
 	PromptStyle PromptStyle
@@ -131,6 +132,8 @@ type Provider string
 const (
 	ProviderClaude Provider = "claude"
 	ProviderOpenAI Provider = "openai"
+	// ProviderGemini calls the Gemini API with a Google AI Studio key.
+	ProviderGemini Provider = "gemini"
 )
 
 // PromptStyle is a wording of the curator's prompts.
@@ -147,7 +150,7 @@ const (
 var PromptStyles = []PromptStyle{PromptFrontier, PromptCompact}
 
 // Providers lists the supported providers.
-var Providers = []Provider{ProviderClaude, ProviderOpenAI}
+var Providers = []Provider{ProviderClaude, ProviderOpenAI, ProviderGemini}
 
 // OpenAI configures calls to an OpenAI-compatible /chat/completions API. The curator gives the
 // model no tools, so the model must search the web on its own.
@@ -159,6 +162,18 @@ type OpenAI struct {
 	// Model is the model to call (OPENAI_MODEL); required with this provider.
 	Model string
 	// Timeout bounds one call, including its format retries (OPENAI_TIMEOUT, a Go duration).
+	Timeout time.Duration
+}
+
+// Gemini configures calls to the Gemini API, with Google Search and URL context as tools.
+type Gemini struct {
+	// BaseURL is the API root (GEMINI_BASE_URL).
+	BaseURL string
+	// APIKey is a Google AI Studio key, sent in the x-goog-api-key header (GEMINI_API_KEY); required.
+	APIKey string
+	// Model is the model to call (GEMINI_MODEL); a Gemini 3 model, which can use tools with structured output.
+	Model string
+	// Timeout bounds one call, including its retries (GEMINI_TIMEOUT, a Go duration).
 	Timeout time.Duration
 }
 
@@ -200,6 +215,11 @@ func Load() (Config, error) {
 		errs = append(errs, fmt.Errorf("OPENAI_TIMEOUT must be a positive Go duration such as 10m, got %q", os.Getenv("OPENAI_TIMEOUT")))
 	}
 
+	geminiTimeout, err := time.ParseDuration(getenv("GEMINI_TIMEOUT", "10m"))
+	if err != nil || geminiTimeout <= 0 {
+		errs = append(errs, fmt.Errorf("GEMINI_TIMEOUT must be a positive Go duration such as 10m, got %q", os.Getenv("GEMINI_TIMEOUT")))
+	}
+
 	provider := Provider(getenv("CURATOR_AI_PROVIDER", string(ProviderClaude)))
 	if !slices.Contains(Providers, provider) {
 		errs = append(errs, fmt.Errorf("CURATOR_AI_PROVIDER must be one of %v, got %q", Providers, provider))
@@ -221,6 +241,12 @@ func Load() (Config, error) {
 			APIKey:  getenv("OPENAI_API_KEY", ""),
 			Model:   getenv("OPENAI_MODEL", ""),
 			Timeout: openaiTimeout,
+		},
+		Gemini: Gemini{
+			BaseURL: strings.TrimRight(getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"), "/"),
+			APIKey:  getenv("GEMINI_API_KEY", ""),
+			Model:   getenv("GEMINI_MODEL", "gemini-3.8-flash"),
+			Timeout: geminiTimeout,
 		},
 		CallDelay: callDelay,
 		Claude: Claude{
@@ -268,10 +294,16 @@ func Load() (Config, error) {
 			cfg.Claude.Model = model
 		case ProviderOpenAI:
 			cfg.OpenAI.Model = model
+		case ProviderGemini:
+			cfg.Gemini.Model = model
 		}
 	}
 	if provider == ProviderOpenAI && cfg.OpenAI.Model == "" {
 		errs = append(errs, errors.New("OPENAI_MODEL (or CURATOR_AI_MODEL) is required with CURATOR_AI_PROVIDER=openai"))
+	}
+
+	if provider == ProviderGemini && cfg.Gemini.APIKey == "" {
+		errs = append(errs, errors.New("GEMINI_API_KEY (a Google AI Studio key) is required with CURATOR_AI_PROVIDER=gemini"))
 	}
 
 	defaultStyle := PromptCompact
