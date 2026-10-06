@@ -11,11 +11,9 @@ import (
 )
 
 // Band is an inclusive, 1-based range of topic ranks (see Rank); To 0 leaves the end open. The zero
-// Band is every topic. LeastFirst makes a run take the least important topics first instead of the
-// most important ones.
+// Band is every topic.
 type Band struct {
-	From, To   int
-	LeastFirst bool
+	From, To int
 }
 
 // ParseBand reads "FROM-TO" ("1-100") or "FROM-" ("401-"); empty is the zero Band.
@@ -42,7 +40,7 @@ func ParseBand(s string) (Band, error) {
 }
 
 // IsZero reports whether b covers every topic.
-func (b Band) IsZero() bool { return b.From == 0 && b.To == 0 }
+func (b Band) IsZero() bool { return b == Band{} }
 
 func (b Band) String() string {
 	if b.IsZero() {

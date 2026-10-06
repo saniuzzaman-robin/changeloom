@@ -49,7 +49,7 @@ CHROME ?= /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 BRANDING := $(MOBILE)/branding
 
 .PHONY: searxng-up searxng-down db-up db-down migrate migrate-down migrate-status migrate-remote generate run-api build test lint fmt \
-	curator-db curator-migrate curator-seed curator-fetch curator-full curator-full-claude curator-full-gemini curator-requests curator-clean curator-sync curator-prune curator-generate curator-build curator-test curator-lint curator-fmt \
+	curator-db curator-migrate curator-seed curator-fetch curator-full curator-full-claude curator-requests curator-clean curator-sync curator-prune curator-generate curator-build curator-test curator-lint curator-fmt \
 	deploy-api android-apk android-bundle brand-assets release
 
 db-up: ## Start the dev Postgres (docker), or check the installed one is reachable (local)
@@ -110,7 +110,7 @@ curator-migrate: ## Apply the backend and curator migrations to the curator's lo
 curator-seed: ## Load curator/seed/catalog/ into the curator's local DB
 	$(CURATOR_RUN) seed
 
-# For one run, AI=claude|openai|gemini, MODEL=<name> and PROMPT=frontier|compact override
+# For one run, AI=claude|openai|local, MODEL=<name> and PROMPT=frontier|compact override
 # CURATOR_AI_PROVIDER, CURATOR_AI_MODEL and CURATOR_PROMPT_STYLE from curator/.env.
 CURATOR_AI_RUN = cd $(CURATOR) && $(if $(AI),CURATOR_AI_PROVIDER=$(AI)) $(if $(MODEL),CURATOR_AI_MODEL=$(MODEL)) \
 	$(if $(PROMPT),CURATOR_PROMPT_STYLE=$(PROMPT)) go run ./cmd/curator
@@ -118,18 +118,13 @@ CURATOR_AI_RUN = cd $(CURATOR) && $(if $(AI),CURATOR_AI_PROVIDER=$(AI)) $(if $(M
 curator-fetch: ## Fetch stories for due topics with real AI calls (optional AI= MODEL= PROMPT=)
 	$(CURATOR_AI_RUN) fetch
 
-# Ranked tiers (see `fetch.Rank`): the top CURATOR_CLAUDE_TOP topics use Claude, the next CURATOR_GEMINI_NEXT use Gemini; `curator-full` (local LLM) covers every topic, least important first.
+# Ranked tiers (see `fetch.Rank`): the top CURATOR_CLAUDE_TOP topics use Claude, `curator-full` (local LLM) takes the rest, most important first.
 CURATOR_CLAUDE_TOP ?= 100
-CURATOR_GEMINI_NEXT ?= 300
 CURATOR_CLAUDE_TO := $(CURATOR_CLAUDE_TOP)
-CURATOR_GEMINI_FROM := $(shell echo $$(($(CURATOR_CLAUDE_TOP) + 1)))
-CURATOR_GEMINI_TO := $(shell echo $$(($(CURATOR_CLAUDE_TOP) + $(CURATOR_GEMINI_NEXT))))
+CURATOR_LOCAL_FROM := $(shell echo $$(($(CURATOR_CLAUDE_TOP) + 1)))
 
 curator-full-claude: ## Tier 1: pull demand and fetch the top CURATOR_CLAUDE_TOP ranked topics with Claude; no sync or prune (optional MODEL= PROMPT=)
 	cd $(CURATOR) && CURATOR_AI_PROVIDER=claude $(if $(MODEL),CURATOR_AI_MODEL=$(MODEL)) $(if $(PROMPT),CURATOR_PROMPT_STYLE=$(PROMPT)) go run ./cmd/curator run --full --rank 1-$(CURATOR_CLAUDE_TO)
-
-curator-full-gemini: ## Tier 2: same for the next CURATOR_GEMINI_NEXT ranked topics with Gemini (optional MODEL= PROMPT=)
-	cd $(CURATOR) && CURATOR_AI_PROVIDER=gemini $(if $(MODEL),CURATOR_AI_MODEL=$(MODEL)) $(if $(PROMPT),CURATOR_PROMPT_STYLE=$(PROMPT)) go run ./cmd/curator run --full --rank $(CURATOR_GEMINI_FROM)-$(CURATOR_GEMINI_TO)
 
 searxng-up: ## Start SearXNG (web search for CURATOR_AI_PROVIDER=local) on 127.0.0.1:SEARXNG_PORT (default 8080)
 	docker compose --profile curator up -d searxng
@@ -137,8 +132,8 @@ searxng-up: ## Start SearXNG (web search for CURATOR_AI_PROVIDER=local) on 127.0
 searxng-down: ## Stop SearXNG
 	docker compose --profile curator stop searxng
 
-curator-full: searxng-up ## Tier 3: same for every topic (not just a band) with the local LLM, least important first, so a stopped run has covered the least important ones (starts SearXNG itself; needs `ollama serve`); no sync or prune (curator-sync, curator-prune); user topic requests are left to curator-requests (long; optional MODEL= PROMPT=)
-	cd $(CURATOR) && CURATOR_AI_PROVIDER=local $(if $(MODEL),CURATOR_AI_MODEL=$(MODEL)) $(if $(PROMPT),CURATOR_PROMPT_STYLE=$(PROMPT)) go run ./cmd/curator run --full --least-first
+curator-full: searxng-up ## Tier 2: same for every topic ranked after the Claude tier (from rank CURATOR_CLAUDE_TOP+1 on) with the local LLM, most important first (starts SearXNG itself; needs `ollama serve`); no sync or prune (curator-sync, curator-prune); user topic requests are left to curator-requests (long; optional MODEL= PROMPT=)
+	cd $(CURATOR) && CURATOR_AI_PROVIDER=local $(if $(MODEL),CURATOR_AI_MODEL=$(MODEL)) $(if $(PROMPT),CURATOR_PROMPT_STYLE=$(PROMPT)) go run ./cmd/curator run --full --rank $(CURATOR_LOCAL_FROM)-
 
 curator-requests: ## Handle user topic requests for DEPLOY_ENV: pull pending ones, group them into topics with real AI calls, then sync DEPLOY_ENV so users see the new topics and decisions (DRY_RUN=1 only prints the proposal; optional AI= MODEL= PROMPT=)
 	$(CURATOR_RUN) requests pull --env $(DEPLOY_ENV)

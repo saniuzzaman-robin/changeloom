@@ -379,24 +379,3 @@ func TestFetchStaysInTheRankBand(t *testing.T) {
 		t.Errorf("fetch beyond the last rank: %+v, %v, %d prompts", sum, err, len(fake.prompts))
 	}
 }
-
-func TestLeastFirstTakesTheLowestPriorityTopicFirst(t *testing.T) {
-	pool := setup(t)
-	// languages/go keeps priority 3; security becomes priority 1, so it is the more important one.
-	exec(t, pool, `UPDATE topic_priority SET priority = 1 WHERE topic_id = (SELECT id FROM topics WHERE slug = 'security')`)
-	cfg := testConfig()
-	cfg.MaxCallsPerRun, cfg.TopicsPerCall = 1, 1
-
-	for _, leastFirst := range []bool{false, true} {
-		exec(t, pool, `DELETE FROM fetch_runs`)
-		fake := &fakeClaude{responses: []any{map[string]any{"stories": []any{}}}}
-		f := fetch.New(pool, fake, cfg).WithBand(fetch.Band{LeastFirst: leastFirst})
-		if sum, err := f.Run(t.Context()); err != nil || sum.Calls != 1 {
-			t.Fatalf("least-first=%v: %+v, %v", leastFirst, sum, err)
-		}
-		wantSecurity := !leastFirst
-		if got := strings.Contains(fake.prompts[0], "- security:"); got != wantSecurity {
-			t.Errorf("least-first=%v: prompt has security = %v, want %v", leastFirst, got, wantSecurity)
-		}
-	}
-}

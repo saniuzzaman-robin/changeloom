@@ -41,12 +41,10 @@ commands:
                                    --remote applies only the backend migrations to the hosted DB
                                    of ENV (staging, the default, or prod): REMOTE_DATABASE_URL_<ENV>
   seed                             load the profession and topic catalog (seed/catalog/) into the local DB
-  fetch [--all] [--rank FROM-TO] [--least-first]
-                                   fetch new stories with Claude into the local DB; --all repeats
+  fetch [--all] [--rank FROM-TO]   fetch new stories with Claude into the local DB; --all repeats
                                    until every due topic has been fetched; --rank limits it to the
                                    topics ranked FROM-TO (e.g. 1-100, or 401- for the rest) by
-                                   priority, then demand; --least-first takes the least important
-                                   topics first (default: the most important)
+                                   priority, then demand
   requests pull [--env ENV]        copy pending topic requests and follower counts from the hosted
                                    DB of ENV (staging, the default, or prod)
   requests group [--dry-run]       turn pending requests into topics with Claude
@@ -59,11 +57,10 @@ commands:
                                    hosted DBs of ENVS (comma-separated, default staging,prod; list
                                    every env that has users). Anything a user follows, muted, picked
                                    or requested is kept. Without --apply it only reports.
-  run [--full] [--rank FROM-TO] [--least-first]
-                                   pull demand and fetch, for each env in CURATOR_RUN_ENVS
+  run [--full] [--rank FROM-TO]    pull demand and fetch, for each env in CURATOR_RUN_ENVS
                                    (default prod); --full repeats fetch until every topic is covered. It neither syncs nor prunes: use sync and
                                    prune. User topic requests are not handled: use requests pull,
-                                   requests group, then sync. --rank and --least-first as in fetch
+                                   requests group, then sync. --rank as in fetch
 
 Configuration comes from the environment; see curator/.env.example.
 `
@@ -121,11 +118,10 @@ func run(args []string) error {
 		fs := flag.NewFlagSet("fetch", flag.ContinueOnError)
 		all := fs.Bool("all", false, "repeat until every due topic has been fetched")
 		rank := fs.String("rank", "", rankUsage)
-		leastFirst := fs.Bool("least-first", false, leastFirstUsage)
 		if err := parse(fs, rest); err != nil {
 			return err
 		}
-		band, err := parseBand(*rank, *leastFirst)
+		band, err := parseBand(*rank)
 		if err != nil {
 			return err
 		}
@@ -174,11 +170,10 @@ func run(args []string) error {
 		fs := flag.NewFlagSet("run", flag.ContinueOnError)
 		full := fs.Bool("full", false, "repeat fetch until every topic is covered")
 		rank := fs.String("rank", "", rankUsage)
-		leastFirst := fs.Bool("least-first", false, leastFirstUsage)
 		if err := parse(fs, rest); err != nil {
 			return err
 		}
-		band, err := parseBand(*rank, *leastFirst)
+		band, err := parseBand(*rank)
 		if err != nil {
 			return err
 		}
@@ -188,17 +183,14 @@ func run(args []string) error {
 	}
 }
 
-const leastFirstUsage = "take the least important topics first (lowest priority, least engaged) instead of the most important"
-
 const rankUsage = "only the topics ranked inside FROM-TO (1-100) or FROM- (401-), by priority then demand; default every topic"
 
-// parseBand reads the --rank and --least-first flags.
-func parseBand(value string, leastFirst bool) (fetch.Band, error) {
+// parseBand reads a --rank value.
+func parseBand(value string) (fetch.Band, error) {
 	band, err := fetch.ParseBand(value)
 	if err != nil {
 		return fetch.Band{}, fmt.Errorf("%w: --rank: %w", errUsage, err)
 	}
-	band.LeastFirst = leastFirst
 	return band, nil
 }
 

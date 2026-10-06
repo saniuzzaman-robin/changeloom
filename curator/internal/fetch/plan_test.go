@@ -237,29 +237,3 @@ func TestPlanEngagement(t *testing.T) {
 		t.Errorf("deferred = %v", deferred)
 	}
 }
-
-func TestPlanLeastFirst(t *testing.T) {
-	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
-	never := time.Unix(0, 0)
-	settings := fetch.PlanSettings{
-		TopicsPerCall: 1, MaxCalls: 2, StoriesPerTopic: 5, HotMinEngaged: 1, LeastFirst: true,
-		WarmInterval: 24 * time.Hour, PriorityIntervals: hours(1, 1, 1, 1, 1), MaxAge: 14 * 24 * time.Hour,
-	}
-	topics := []fetch.Topic{
-		{Slug: "hot", Priority: 1, Engaged7d: 4, LastFetchedAt: never},
-		{Slug: "warm", Priority: 1, Followers: 2, LastFetchedAt: never},
-		{Slug: "coldlow", Priority: 5, Views7d: 1, LastFetchedAt: never},
-		{Slug: "coldhigh", Priority: 2, Views7d: 1, LastFetchedAt: never},
-	}
-	groups, deferred := fetch.Plan(topics, settings, now)
-	var got []string
-	for _, g := range groups {
-		got = append(got, slugsOf(g)...)
-	}
-	if want := []string{"coldlow", "coldhigh"}; !slices.Equal(got, want) {
-		t.Errorf("planned = %v, want %v", got, want)
-	}
-	if want := []string{"warm", "hot"}; !slices.Equal(deferred, want) {
-		t.Errorf("deferred = %v, want %v", deferred, want)
-	}
-}
