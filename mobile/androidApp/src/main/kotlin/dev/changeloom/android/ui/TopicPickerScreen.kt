@@ -207,9 +207,15 @@ internal fun TopicPickerContent(
     val query = state.query.trim()
     val professionStep = state.step == PickerStep.Professions && state.professions.isNotEmpty()
     val suggested = remember(state.professions, state.selectedProfessions) { suggestedRoots(state.professions, state.selectedProfessions) }
-    val rows = remember(selection?.tree, query, suggested) { selection?.tree?.let { topicRows(it, query, suggested) }.orEmpty() }
-    val professionList = remember(state.professions, query) {
-        state.professions.filter { query.isEmpty() || it.name.contains(query, ignoreCase = true) }
+    // Pinned from what is saved, not the live selection, so a card doesn't jump when tapped and can be re-ticked.
+    val savedRoots = remember(selection?.tree, state.followed) { selection?.tree?.let { savedRoots(it, state.followed) }.orEmpty() }
+    val rows = remember(selection?.tree, query, suggested, savedRoots) {
+        selection?.tree?.let { topicRows(it, query, suggested, savedRoots) }.orEmpty()
+    }
+    val professionList = remember(state.professions, query, state.savedProfessions) {
+        state.professions
+            .filter { query.isEmpty() || it.name.contains(query, ignoreCase = true) }
+            .sortedByDescending { it.slug in state.savedProfessions } // stable: the rest keep catalog order
     }
     val listState = rememberLazyListState()
     val staggered = rememberStaggered(listState)
@@ -251,13 +257,23 @@ internal fun TopicPickerContent(
                             art = { IconTile(Icons.Rounded.SearchOff) },
                         )
                     }
-                    professionStep -> items(professionList, key = { it.slug }) { profession ->
-                        val picked = profession.slug in state.selectedProfessions
-                        ProfessionCard(
-                            profession,
-                            picked = picked,
-                            onClick = { onToggleProfession(profession.slug) },
-                        )
+                    professionStep -> {
+                        val sections = query.isEmpty() && professionList.any { it.slug in state.savedProfessions } &&
+                            professionList.any { it.slug !in state.savedProfessions }
+                        professionList.forEachIndexed { index, profession ->
+                            val saved = profession.slug in state.savedProfessions
+                            if (sections && index == 0) item(key = "your") { SectionLabel(stringResource(R.string.your_professions)) }
+                            if (sections && !saved && professionList[index - 1].slug in state.savedProfessions) {
+                                item(key = "all") { SectionLabel(stringResource(R.string.all_professions)) }
+                            }
+                            item(key = profession.slug) {
+                                ProfessionCard(
+                                    profession,
+                                    picked = profession.slug in state.selectedProfessions,
+                                    onClick = { onToggleProfession(profession.slug) },
+                                )
+                            }
+                        }
                     }
                     rows.isEmpty() -> item {
                         EmptyState(
@@ -267,12 +283,21 @@ internal fun TopicPickerContent(
                         )
                     }
                     else -> {
-                        // Sections only when professions suggest areas and nothing is being searched.
-                        val sections = query.isEmpty() && rows.any { it.suggested } && rows.any { !it.suggested }
+                        // Sections only when something is saved or suggested and nothing is being searched.
+                        val sections = query.isEmpty() && rows.any { it.group != TopicGroup.Other } && rows.any { it.group == TopicGroup.Other }
                         rows.forEachIndexed { index, row ->
-                            if (sections && index == 0) item(key = "suggested") { SectionLabel(stringResource(R.string.suggested_areas)) }
-                            if (sections && !row.suggested && rows[index - 1].suggested) {
-                                item(key = "more") { SectionLabel(stringResource(R.string.more_areas)) }
+                            if (sections && (index == 0 || row.group != rows[index - 1].group)) {
+                                item(key = "group-${row.group.name}") {
+                                    SectionLabel(
+                                        stringResource(
+                                            when (row.group) {
+                                                TopicGroup.Saved -> R.string.your_topics
+                                                TopicGroup.Suggested -> R.string.suggested_areas
+                                                TopicGroup.Other -> R.string.more_areas
+                                            },
+                                        ),
+                                    )
+                                }
                             }
                             item(key = row.root.slug) {
                                 RootTopicCard(
@@ -377,11 +402,17 @@ private fun SearchField(query: String, onChange: (String) -> Unit, placeholder: 
     )
 }
 
-/**
- * A root topic and the children to show under it; [matchedChildren] means the search matched only children and
- * [suggested] that one of the chosen professions lists this area.
- */
-private data class TopicRow(val root: Topic, val children: List<Topic>, val matchedChildren: Boolean, val suggested: Boolean = false)
+/** Where a root sits in the list: topics already saved, then areas the chosen professions suggest, then the rest. */
+private enum class TopicGroup { Saved, Suggested, Other }
+
+/** A root topic and the children to show under it; [matchedChildren] means the search matched only children. */
+private data class TopicRow(val root: Topic, val children: List<Topic>, val matchedChildren: Boolean, val group: TopicGroup)
+
+/** Roots with at least one saved topic. */
+private fun savedRoots(tree: TopicTree, followed: List<String>): Set<String> {
+    val saved = TopicSelection.fromFollowed(tree, followed)
+    return tree.roots.mapNotNullTo(mutableSetOf()) { root -> root.slug.takeIf { saved.stateOf(it) != CheckState.Unchecked } }
+}
 
 /** Root slugs of the chosen professions, in the order the professions were picked, then each profession's display order. */
 private fun suggestedRoots(professions: List<Profession>, chosen: List<String>): List<String> {
@@ -389,20 +420,25 @@ private fun suggestedRoots(professions: List<Profession>, chosen: List<String>):
     return chosen.flatMap { bySlug[it]?.topics.orEmpty() }.distinct()
 }
 
-/** Matching roots with the [suggested] areas first (in that order), then the rest in catalog order. */
-private fun topicRows(tree: TopicTree, query: String, suggested: List<String>): List<TopicRow> {
+/** Matching roots: the [saved] ones first, then the [suggested] areas (in that order), then the rest in catalog order. */
+private fun topicRows(tree: TopicTree, query: String, suggested: List<String>, saved: Set<String>): List<TopicRow> {
     val rank = suggested.withIndex().associate { it.value to it.index }
     val rows = tree.roots.mapNotNull { root ->
         val children = tree.childrenOf(root.slug)
-        val isSuggested = root.slug in rank
+        val group = when {
+            root.slug in saved -> TopicGroup.Saved
+            root.slug in rank -> TopicGroup.Suggested
+            else -> TopicGroup.Other
+        }
         when {
-            query.isEmpty() || root.name.contains(query, ignoreCase = true) -> TopicRow(root, children, matchedChildren = false, suggested = isSuggested)
+            query.isEmpty() || root.name.contains(query, ignoreCase = true) -> TopicRow(root, children, matchedChildren = false, group = group)
             else -> children.filter { it.name.contains(query, ignoreCase = true) }
                 .takeIf { it.isNotEmpty() }
-                ?.let { TopicRow(root, it, matchedChildren = true, suggested = isSuggested) }
+                ?.let { TopicRow(root, it, matchedChildren = true, group = group) }
         }
     }
-    return rows.sortedBy { rank[it.root.slug] ?: Int.MAX_VALUE } // stable: unsuggested keep catalog order
+    // Stable: saved and unsuggested roots keep catalog order.
+    return rows.sortedWith(compareBy({ it.group }, { rank[it.root.slug] ?: Int.MAX_VALUE }))
 }
 
 @Composable

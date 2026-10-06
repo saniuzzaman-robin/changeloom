@@ -197,6 +197,9 @@
     <string name="country_save_failed">Couldn\'t save your country. Try again.</string>
     <string name="more_areas">More areas</string>
     <string name="suggested_areas">Suggested for you</string>
+    <string name="your_topics">Your topics</string>
+    <string name="your_professions">Your professions</string>
+    <string name="all_professions">All professions</string>
     <string name="back_to_professions">Professions</string>
     <string name="topics_empty_title">No topics match</string>
     <string name="topics_empty_body">Try a broader term like \"web\" or \"cloud\".</string>
