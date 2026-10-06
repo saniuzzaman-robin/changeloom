@@ -126,6 +126,11 @@
     <string name="offline_banner">Offline — showing saved stories</string>
     <string name="feed_empty_title">No stories yet</string>
     <string name="feed_empty_body">New releases and changes for your topics land here. Pull down to check again.</string>
+    <string name="filter_no_match_title">No matching stories</string>
+    <string name="filter_no_match_body">Nothing in your timeline fits these filters.</string>
+    <string name="filter_clear">Clear filters</string>
+    <string name="filter_unread">Unread</string>
+    <string name="filter_read">Read</string>
     <string name="section_new">New for you</string>
     <string name="section_earlier">Earlier</string>
     <string name="suggested">Suggested</string>
@@ -197,6 +202,9 @@
     <string name="country_save_failed">Couldn\'t save your country. Try again.</string>
     <string name="more_areas">More areas</string>
     <string name="suggested_areas">Suggested for you</string>
+    <string name="your_topics">Your topics</string>
+    <string name="your_professions">Your professions</string>
+    <string name="all_professions">All professions</string>
     <string name="back_to_professions">Professions</string>
     <string name="topics_empty_title">No topics match</string>
     <string name="topics_empty_body">Try a broader term like \"web\" or \"cloud\".</string>

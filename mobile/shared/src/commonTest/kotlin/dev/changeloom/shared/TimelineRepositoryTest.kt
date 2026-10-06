@@ -5,7 +5,9 @@ import dev.changeloom.shared.auth.AuthUser
 import dev.changeloom.shared.data.ChangeloomApi
 import dev.changeloom.shared.data.Story
 import dev.changeloom.shared.data.StoryCache
+import dev.changeloom.shared.data.ReadFilter
 import dev.changeloom.shared.data.StorySummary
+import dev.changeloom.shared.data.TimelineFilter
 import dev.changeloom.shared.data.TimelineRepository
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -75,6 +77,60 @@ private fun repo(cache: MemoryCache, handler: io.ktor.client.engine.mock.MockReq
     TimelineRepository(ChangeloomApi(ChangeloomApi.createClient("http://api.test", MockEngine(handler)), TokenAuth), cache)
 
 class TimelineRepositoryTest {
+    @Test
+    fun filterIsSentToTheServerAndKeptAcrossPaging() = runTest {
+        val cache = MemoryCache(timeline = listOf(StorySummary(99, "cached", "s", "release", null, 3, "2026-09-01T10:00:00Z", listOf("x"), false, null, false)))
+        val queries = mutableListOf<io.ktor.http.Parameters>()
+        val repo = repo(cache) { request ->
+            queries += request.url.parameters
+            respond(page(item(5, "2026-09-03T10:00:00Z", false), next = if (request.url.parameters["cursor"] == null) "c1" else null), headers = json)
+        }
+        repo.setFilter(TimelineFilter(kinds = setOf("security", "deprecation"), read = ReadFilter.Unread))
+        repo.loadMore()
+        assertEquals(2, queries.size)
+        for (q in queries) {
+            assertEquals(listOf("security", "deprecation"), q.getAll("kind"))
+            assertEquals("false", q["read"])
+        }
+        assertEquals("c1", queries[1]["cursor"])
+        // The cache keeps the unfiltered timeline.
+        assertEquals(listOf(99L), cache.timeline.map { it.id })
+    }
+
+    @Test
+    fun defaultFilterSendsNoFilterParameters() = runTest {
+        var query: io.ktor.http.Parameters? = null
+        val repo = repo(MemoryCache()) { request ->
+            query = request.url.parameters
+            respond(firstPage, headers = json)
+        }
+        repo.refresh()
+        assertNull(query!!["kind"])
+        assertNull(query!!["read"])
+    }
+
+    @Test
+    fun markingReadDropsTheStoryUnderTheUnreadFilter() = runTest {
+        val repo = repo(MemoryCache()) { request ->
+            if (request.method == HttpMethod.Put) respond("", HttpStatusCode.NoContent)
+            else respond(page(item(1, "2026-09-03T10:00:00Z", false), item(2, "2026-09-02T10:00:00Z", false)), headers = json)
+        }
+        repo.setFilter(TimelineFilter(read = ReadFilter.Unread))
+        repo.setRead(1, true)
+        assertEquals(listOf(2L), repo.state.value.items.map { it.id })
+    }
+
+    @Test
+    fun failedReadRestoresAStoryTheFilterDropped() = runTest {
+        val repo = repo(MemoryCache()) { request ->
+            if (request.method == HttpMethod.Put) respondError(HttpStatusCode.InternalServerError)
+            else respond(page(item(1, "2026-09-03T10:00:00Z", false), item(2, "2026-09-02T10:00:00Z", false)), headers = json)
+        }
+        repo.setFilter(TimelineFilter(read = ReadFilter.Unread))
+        repo.setRead(1, true)
+        assertEquals(listOf(1L, 2L), repo.state.value.items.map { it.id })
+    }
+
     @Test
     fun refreshLoadsAndCachesFirstPage() = runTest {
         val cache = MemoryCache()

@@ -9,7 +9,19 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.time.Instant
 
+/** Which stories the timeline shows; the server applies it, so paging stays correct. */
+enum class ReadFilter { All, Unread, Read }
+
+/** Story kinds the api knows, in the order the filter lists them. */
+val STORY_KINDS = listOf("release", "breaking", "security", "deprecation", "announcement", "article", "research", "policy", "deal")
+
+/** [kinds] empty means every kind. */
+data class TimelineFilter(val kinds: Set<String> = emptySet(), val read: ReadFilter = ReadFilter.All) {
+    val isDefault: Boolean get() = kinds.isEmpty() && read == ReadFilter.All
+}
+
 data class TimelineState(
+    val filter: TimelineFilter = TimelineFilter(),
     val items: List<StorySummary> = emptyList(),
     val nextCursor: String? = null,
     val refreshing: Boolean = false,
@@ -49,32 +61,46 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
 
     /** Shows the cached timeline immediately (if nothing is loaded yet), then fetches the first page. */
     suspend fun refresh() {
+        val filter = _state.value.filter
         // Refreshing before the cache read: an empty list that isn't refreshing shows the "no stories" state.
         _state.update { it.copy(refreshing = true, error = null) }
-        if (_state.value.items.isEmpty()) {
-            _state.update { it.copy(items = cache.loadTimeline()) }
+        // The cache holds the unfiltered timeline.
+        if (_state.value.items.isEmpty() && filter.isDefault) {
+            _state.update { if (it.filter == filter && it.items.isEmpty()) it.copy(items = cache.loadTimeline()) else it }
         }
         try {
-            val page = api.timeline()
+            val page = api.timeline(filter = filter)
             val items = withPendingBookmarks(page.items)
-            cache.saveTimeline(items)
-            _state.value = TimelineState(items = items, nextCursor = page.nextCursor)
+            // A newer filter owns the state now; this answer is for the old one.
+            if (_state.value.filter != filter) return
+            if (filter.isDefault) cache.saveTimeline(items)
+            _state.value = TimelineState(filter = filter, items = items, nextCursor = page.nextCursor)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             _state.update {
-                it.copy(refreshing = false, offline = it.items.isNotEmpty(), error = userMessage(e, "Couldn't load your timeline"))
+                if (it.filter != filter) it
+                else it.copy(refreshing = false, offline = it.items.isNotEmpty(), error = userMessage(e, "Couldn't load your timeline"))
             }
         }
     }
 
+    /** Switches the filter and reloads from the first page; the old filter's stories are dropped at once. */
+    suspend fun setFilter(filter: TimelineFilter) {
+        if (_state.value.filter == filter) return
+        _state.value = TimelineState(filter = filter, refreshing = true)
+        refresh()
+    }
+
     suspend fun loadMore() {
         val cursor = _state.value.nextCursor ?: return
+        val filter = _state.value.filter
         if (_state.value.loadingMore || _state.value.refreshing) return
         _state.update { it.copy(loadingMore = true, error = null) }
         try {
-            val page = api.timeline(cursor)
+            val page = api.timeline(cursor, filter = filter)
             _state.update { s ->
+                if (s.filter != filter) return@update s
                 val known = s.items.mapTo(HashSet()) { it.id }
                 s.copy(
                     items = s.items + withPendingBookmarks(page.items).filter { it.id !in known },
@@ -85,7 +111,7 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            _state.update { it.copy(loadingMore = false, error = userMessage(e, "Couldn't load more stories")) }
+            _state.update { if (it.filter != filter) it else it.copy(loadingMore = false, error = userMessage(e, "Couldn't load more stories")) }
         }
     }
 
@@ -96,13 +122,14 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
         applyRead(id, read)
         try {
             if (read) api.markRead(id) else api.markUnread(id)
-            cache.saveTimeline(_state.value.items)
+            persist()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             _state.update { s ->
                 s.copy(
-                    items = s.items.map { if (it.id == id) before else it }.sortedForTimeline(),
+                    // Back in place, also when the read filter had already dropped it.
+                    items = (s.items.filter { it.id != id } + before).sortedForTimeline(),
                     error = userMessage(e, "Couldn't update the read state"),
                 )
             }
@@ -118,7 +145,7 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
         bookmarkMutex.withLock {
             if (pendingBookmarks[id] == !on) pendingBookmarks.remove(id) else pendingBookmarks[id] = on
         }
-        cache.saveTimeline(_state.value.items)
+        persist()
     }
 
     /** Sends the queued bookmark changes, if any, in as few calls as possible. Failed changes stay queued for the next flush. */
@@ -145,9 +172,22 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
         s.copy(items = s.items.map { if (it.id == id) it.copy(isBookmarked = on) else it })
     }
 
+    /** Caches the timeline, unless a filter is on: the cache holds the unfiltered one. */
+    private suspend fun persist() {
+        val s = _state.value
+        if (s.filter.isDefault) cache.saveTimeline(s.items)
+    }
+
+    /** A story that no longer fits the read filter leaves the list. */
     private fun applyRead(id: Long, read: Boolean) = _state.update { s ->
-        s.copy(items = s.items.map { if (it.id == id) it.copy(isRead = read, readAt = if (read) it.readAt else null) else it }
-            .sortedForTimeline())
+        val items = s.items.map { if (it.id == id) it.copy(isRead = read, readAt = if (read) it.readAt else null) else it }
+        s.copy(items = items.filter { s.filter.read.allows(it.isRead) }.sortedForTimeline())
+    }
+
+    private fun ReadFilter.allows(isRead: Boolean) = when (this) {
+        ReadFilter.All -> true
+        ReadFilter.Unread -> !isRead
+        ReadFilter.Read -> isRead
     }
 
     /** Drops in-memory and cached data (on sign-out, so the next user never sees it). */

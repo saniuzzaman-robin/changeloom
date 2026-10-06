@@ -48,6 +48,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
@@ -105,6 +106,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -151,7 +153,10 @@ import dev.changeloom.android.ui.theme.Radius
 import dev.changeloom.android.ui.theme.Spacing
 import dev.changeloom.android.ui.theme.ThemeMode
 import dev.changeloom.android.ui.theme.expoTween
+import dev.changeloom.shared.data.ReadFilter
+import dev.changeloom.shared.data.STORY_KINDS
 import dev.changeloom.shared.data.StorySummary
+import dev.changeloom.shared.data.TimelineFilter
 import dev.changeloom.shared.data.TimelineState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -387,6 +392,7 @@ private fun FeedScreen(
             adRepository.refresh()
         },
         onLoadMore = vm::loadMore,
+        onFilter = vm::setFilter,
         onSetRead = vm::setRead,
         onSetSaved = vm::setBookmarked,
         onDismissError = vm::dismissError,
@@ -409,6 +415,7 @@ internal fun FeedContent(
     onSetRead: (Long, Boolean) -> Unit,
     onSetSaved: (Long, Boolean) -> Unit,
     onDismissError: () -> Unit,
+    onFilter: (TimelineFilter) -> Unit = {},
     ads: FeedAds? = null,
     photo: ImageBitmap? = null,
     onSeen: (Long) -> Unit = {},
@@ -450,8 +457,18 @@ internal fun FeedContent(
                         StatusBanner(state.error, Icons.Rounded.ErrorOutline, tone = BannerTone.Error, actionLabel = stringResource(R.string.dismiss), onAction = onDismissError)
                     }
                 }
+                if (state.items.isNotEmpty() || !state.filter.isDefault) {
+                    stickyHeader(key = "filters", contentType = FILTER_CHIP) { FeedFilters(state.filter, onFilter) }
+                }
                 when {
                     state.items.isEmpty() && state.refreshing -> items(LIST_SKELETON_CARDS) { SkeletonStoryCard() }
+                    state.items.isEmpty() && !state.filter.isDefault -> item(key = "empty_filtered") {
+                        EmptyState(
+                            title = stringResource(R.string.filter_no_match_title),
+                            message = stringResource(R.string.filter_no_match_body),
+                            action = { SecondaryButton(stringResource(R.string.filter_clear), { onFilter(TimelineFilter()) }) },
+                        )
+                    }
                     state.items.isEmpty() -> item(key = "empty") {
                         EmptyState(
                             title = stringResource(R.string.feed_empty_title),
@@ -485,6 +502,50 @@ internal fun FeedContent(
         BackToTopButton(listState, Modifier.align(Alignment.BottomEnd))
     }
 }
+
+/** Read state (one of unread/read, or neither for all) and story kinds (any number); the server applies them. */
+@Composable
+private fun FeedFilters(filter: TimelineFilter, onChange: (TimelineFilter) -> Unit) {
+    val gutter = Spacing.gutter
+    LazyRow(
+        Modifier
+            // Pinned to the top of the list: opaque so stories scroll underneath, and out to the screen edges past the list's gutter.
+            .layout { measurable, constraints ->
+                val bleed = gutter.roundToPx()
+                val placeable = measurable.measure(constraints.copy(minWidth = constraints.maxWidth + 2 * bleed, maxWidth = constraints.maxWidth + 2 * bleed))
+                layout(constraints.maxWidth, placeable.height) { placeable.place(-bleed, 0) }
+            }
+            .background(ChangeloomTheme.colors.navGlass)
+            .padding(vertical = 6.dp)
+            .testTag("feed_filters"),
+        contentPadding = PaddingValues(horizontal = gutter),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item(key = "unread", contentType = FILTER_CHIP) {
+            TopicChip(
+                stringResource(R.string.filter_unread),
+                selected = filter.read == ReadFilter.Unread,
+                onClick = { onChange(filter.copy(read = if (filter.read == ReadFilter.Unread) ReadFilter.All else ReadFilter.Unread)) },
+            )
+        }
+        item(key = "read", contentType = FILTER_CHIP) {
+            TopicChip(
+                stringResource(R.string.filter_read),
+                selected = filter.read == ReadFilter.Read,
+                onClick = { onChange(filter.copy(read = if (filter.read == ReadFilter.Read) ReadFilter.All else ReadFilter.Read)) },
+            )
+        }
+        items(STORY_KINDS, key = { it }, contentType = { FILTER_CHIP }) { kind ->
+            TopicChip(
+                kind.replaceFirstChar { it.uppercase() },
+                selected = kind in filter.kinds,
+                onClick = { onChange(filter.copy(kinds = if (kind in filter.kinds) filter.kinds - kind else filter.kinds + kind)) },
+            )
+        }
+    }
+}
+
+private const val FILTER_CHIP = "filter_chip"
 
 /**
  * True only when the server has said there are no more pages: not while refreshing or loading more, and not for

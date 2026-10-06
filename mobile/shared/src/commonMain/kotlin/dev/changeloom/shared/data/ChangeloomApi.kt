@@ -117,11 +117,17 @@ class ChangeloomApi(
             setBody(SyncBookmarksRequest(add, remove))
         }.checkSuccess()
 
-    suspend fun timeline(cursor: String? = null, limit: Int = TIMELINE_PAGE_SIZE): TimelinePage =
+    suspend fun timeline(cursor: String? = null, limit: Int = TIMELINE_PAGE_SIZE, filter: TimelineFilter = TimelineFilter()): TimelinePage =
         client.get("v1/timeline") {
             authorize()
             parameter("limit", limit)
             cursor?.let { parameter("cursor", it) }
+            filter.kinds.forEach { parameter("kind", it) }
+            when (filter.read) {
+                ReadFilter.All -> Unit
+                ReadFilter.Unread -> parameter("read", false)
+                ReadFilter.Read -> parameter("read", true)
+            }
         }.parse()
 
     suspend fun story(id: Long): Story = client.get("v1/stories/$id") { authorize() }.parse()

@@ -387,6 +387,12 @@ type GetTimelineParams struct {
 	// Cursor Opaque `next_cursor` from the previous page.
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Kind Only stories of these kinds (repeat the parameter for several). Absent means every kind.
+	Kind *[]StoryKind `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// Read `true` returns only read stories, `false` only unread ones. Absent returns both.
+	Read *bool `form:"read,omitempty" json:"read,omitempty"`
 }
 
 // CreateTopicRequestJSONBody defines parameters for CreateTopicRequest.
@@ -951,6 +957,32 @@ func (siw *ServerInterfaceWrapper) GetTimeline(w http.ResponseWriter, r *http.Re
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "read" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "read", r.URL.Query(), &params.Read, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "read"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "read", Err: err})
 		}
 		return
 	}

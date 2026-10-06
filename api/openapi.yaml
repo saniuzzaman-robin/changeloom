@@ -214,6 +214,21 @@ paths:
           in: query
           required: false
           schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+        - name: kind
+          in: query
+          required: false
+          description: Only stories of these kinds (repeat the parameter for several). Absent means every kind.
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 9
+            items: {$ref: "#/components/schemas/StoryKind"}
+        - name: read
+          in: query
+          required: false
+          description: "`true` returns only read stories, `false` only unread ones. Absent returns both."
+          schema: {type: boolean}
       responses:
         "200":
           description: One page of the timeline.

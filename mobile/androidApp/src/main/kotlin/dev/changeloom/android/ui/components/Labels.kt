@@ -38,10 +38,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -111,11 +113,23 @@ fun SeverityDot(severity: String?, modifier: Modifier = Modifier, dotSize: Dp = 
 /** The top of the api's 1–5 importance scale. */
 const val MAX_IMPORTANCE = 5
 
-/** Five rising bars; the first [importance] are lit with the brand gradient. */
+/** Red for the top level, amber for high-ish, green for the rest, so the urgent ones stand out in a feed. */
+@Composable
+@ReadOnlyComposable
+private fun importanceColor(importance: Int): Color {
+    val c = ChangeloomTheme.colors
+    return when {
+        importance >= MAX_IMPORTANCE -> c.red
+        importance >= 3 -> c.amber
+        else -> c.success
+    }
+}
+
+/** Five rising bars; the first [importance] are lit in [importanceColor]. */
 @Composable
 fun ImportanceMeter(importance: Int, modifier: Modifier = Modifier) {
     val c = ChangeloomTheme.colors
-    val brand = ChangeloomTheme.gradients.brandHorizontal
+    val lit = SolidColor(importanceColor(importance))
     val description = stringResource(R.string.importance_label, importance, MAX_IMPORTANCE)
     Row(
         modifier.semantics { contentDescription = description },
@@ -128,7 +142,7 @@ fun ImportanceMeter(importance: Int, modifier: Modifier = Modifier) {
                     .width(3.dp)
                     .height((4 + i * 2).dp)
                     .clip(Radius.pill)
-                    .background(if (i <= importance) brand else SolidColor(c.lineStrong)),
+                    .background(if (i <= importance) lit else SolidColor(c.lineStrong)),
             )
         }
     }
