@@ -78,6 +78,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -515,7 +516,7 @@ private fun StatTile(label: String, value: Long?, icon: ImageVector, tint: Color
     val c = ChangeloomTheme.colors
     val inspection = LocalInspectionMode.current
     val shown = remember { Animatable(if (inspection) (value ?: 0).toFloat() else 0f) }
-    val locale = Locale.getDefault()
+    val locale = LocalLocale.current.platformLocale
     val formatter = remember(locale) { StatFormatter(locale) }
     LaunchedEffect(value) { if (value != null) shown.animateTo(value.toFloat(), expoTween(Durations.SLOW + 600)) }
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
