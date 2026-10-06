@@ -5,6 +5,8 @@ import java.time.Duration
 import java.time.LocalDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class DailyDigestTest {
     private fun at(hour: Int, minute: Int = 0) = LocalDateTime.of(2026, 10, 4, hour, minute)
@@ -44,5 +46,35 @@ class DailyDigestTest {
     fun `digest falls back to any unread story`() {
         val items = listOf(story(1, "explore"), story(2, "related", read = true))
         assertEquals(listOf(1L), digestStories(items).map { it.id })
+    }
+
+    @Test
+    fun `next slot is the following digest time`() {
+        assertEquals(at(9), nextDigestSlot(at(7)))
+        assertEquals(at(17), nextDigestSlot(at(9)))
+        assertEquals(at(21, 30), nextDigestSlot(at(17, 1)))
+        assertEquals(at(9).plusDays(1), nextDigestSlot(at(21, 30)))
+    }
+
+    @Test
+    fun `a run is on time shortly before or within half an hour after its slot`() {
+        assertTrue(isOnTime(at(9), at(9, 0)))
+        assertTrue(isOnTime(at(9), at(9, 29)))
+        assertTrue(isOnTime(at(9), at(8, 56)))
+    }
+
+    @Test
+    fun `a run far from its slot is skipped, so a delayed or time-zone-shifted one never shows at the wrong time`() {
+        assertFalse(isOnTime(at(9), at(9, 31)))
+        assertFalse(isOnTime(at(9), at(11, 40)))
+        assertFalse(isOnTime(at(9), at(8, 50)))
+        assertFalse(isOnTime(at(17), at(12, 0)))
+    }
+
+    @Test
+    fun `the greeting follows the slot, not the time the run happens`() {
+        assertEquals(DigestPeriod.Morning, digestPeriod(at(9)))
+        assertEquals(DigestPeriod.Evening, digestPeriod(at(17)))
+        assertEquals(DigestPeriod.Night, digestPeriod(at(21, 30)))
     }
 }

@@ -25,6 +25,15 @@
             </intent-filter>
         </activity>
 
+        <receiver
+            android:name=".push.DigestClockReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".push.ChangeloomMessagingService"
             android:exported="false">
