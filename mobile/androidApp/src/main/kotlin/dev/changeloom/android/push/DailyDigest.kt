@@ -53,11 +53,14 @@ private fun enqueue(context: Context, policy: ExistingWorkPolicy) {
     WorkManager.getInstance(context).enqueueUniqueWork(WORK_NAME, policy, request)
 }
 
-/** Unread stories matching the user's topics and professions come first; with none, any unread story. */
+/**
+ * Unread stories matching the user's topics and professions, or any unread story when none match; most important
+ * first, ties in timeline order, so the previews are the stories that matter most.
+ */
 internal fun digestStories(items: List<StorySummary>): List<StorySummary> {
     val unread = items.filter { !it.isRead }
     val mine = unread.filter { it.match == "followed" || it.match == "profession" }
-    return mine.ifEmpty { unread }
+    return mine.ifEmpty { unread }.sortedByDescending { it.importance }
 }
 
 /**

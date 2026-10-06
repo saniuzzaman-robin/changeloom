@@ -9,6 +9,8 @@ data class Topic(
     val name: String,
     val parent: String? = null,
     val description: String,
+    /** Important stories in a headline topic (or below it) reach every user's timeline. */
+    val headline: Boolean = false,
 )
 
 @Serializable
@@ -18,6 +20,8 @@ data class Profession(
     val description: String = "",
     /** Root topic slugs (areas) this profession suggests, in display order. */
     val topics: List<String> = emptyList(),
+    /** False when not yet offered at onboarding; it stays valid for users who already picked it. */
+    val launched: Boolean = true,
 )
 
 @Serializable
@@ -36,6 +40,7 @@ data class Me(
     /** ISO 3166-1 alpha-2 code the user chose; null until set. */
     val country: String? = null,
     val stats: MeStats = MeStats(),
+    @SerialName("muted_topics") val mutedTopics: List<String> = emptyList(),
 )
 
 @Serializable

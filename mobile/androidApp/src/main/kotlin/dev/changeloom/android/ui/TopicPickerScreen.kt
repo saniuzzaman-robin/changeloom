@@ -212,11 +212,17 @@ internal fun TopicPickerContent(
     val rows = remember(selection?.tree, query, suggested, savedRoots) {
         selection?.tree?.let { topicRows(it, query, suggested, savedRoots) }.orEmpty()
     }
-    val professionList = remember(state.professions, query, state.savedProfessions) {
-        state.professions
+    // Professions not launched yet are offered only to users who already picked them.
+    val offered = remember(state.professions, state.savedProfessions) {
+        state.professions.filter { it.launched || it.slug in state.savedProfessions }
+    }
+    val professionList = remember(offered, query, state.savedProfessions) {
+        offered
             .filter { query.isEmpty() || it.name.contains(query, ignoreCase = true) }
             .sortedByDescending { it.slug in state.savedProfessions } // stable: the rest keep catalog order
     }
+    val moreComing = offered.size < state.professions.size
+    val headlineAreas = remember(selection?.tree) { selection?.tree?.let(::headlineAreas).orEmpty() }
     val listState = rememberLazyListState()
     val staggered = rememberStaggered(listState)
     // The two steps share one list, so moving between them starts from the top.
@@ -274,6 +280,16 @@ internal fun TopicPickerContent(
                                 )
                             }
                         }
+                        if (query.isEmpty() && moreComing) {
+                            item(key = "coming") {
+                                Text(
+                                    stringResource(R.string.professions_coming_soon),
+                                    Modifier.padding(top = 4.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = c.fgSubtle,
+                                )
+                            }
+                        }
                     }
                     rows.isEmpty() -> item {
                         EmptyState(
@@ -283,6 +299,11 @@ internal fun TopicPickerContent(
                         )
                     }
                     else -> {
+                        if (query.isEmpty() && headlineAreas.isNotEmpty()) {
+                            item(key = "headlines") {
+                                StatusBanner(stringResource(R.string.headlines_note, headlineAreas), Icons.Rounded.Public)
+                            }
+                        }
                         // Sections only when something is saved or suggested and nothing is being searched.
                         val sections = query.isEmpty() && rows.any { it.group != TopicGroup.Other } && rows.any { it.group == TopicGroup.Other }
                         rows.forEachIndexed { index, row ->
@@ -413,6 +434,10 @@ private fun savedRoots(tree: TopicTree, followed: List<String>): Set<String> {
     val saved = TopicSelection.fromFollowed(tree, followed)
     return tree.roots.mapNotNullTo(mutableSetOf()) { root -> root.slug.takeIf { saved.stateOf(it) != CheckState.Unchecked } }
 }
+
+/** Names of the areas holding headline topics, in catalog order, joined for display; empty when there are none. */
+private fun headlineAreas(tree: TopicTree): String =
+    tree.roots.filter { root -> tree.subtree(root.slug).any { tree.topic(it)?.headline == true } }.joinToString(", ") { it.name }
 
 /** Root slugs of the chosen professions, in the order the professions were picked, then each profession's display order. */
 private fun suggestedRoots(professions: List<Profession>, chosen: List<String>): List<String> {

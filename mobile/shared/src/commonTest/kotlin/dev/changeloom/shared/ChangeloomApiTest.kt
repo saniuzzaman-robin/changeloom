@@ -23,7 +23,9 @@ import kotlinx.coroutines.yield
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 private class FakeAuth(private val token: String?) : AuthRepository {
     override val currentUser: StateFlow<AuthUser?> = MutableStateFlow(null)
@@ -284,6 +286,23 @@ class ChangeloomApiTest {
         val list = api.topicList()
         assertEquals(listOf("frontend", "backend"), list.professions.single().topics)
         assertEquals("frontend", list.items.single().slug)
+        // Older servers send neither flag: launched by default, not a headline.
+        assertTrue(list.professions.single().launched)
+        assertFalse(list.items.single().headline)
+    }
+
+    @Test
+    fun topicListParsesHeadlinesAndLaunches() = runTest {
+        val engine = MockEngine {
+            respond(
+                """{"items":[{"slug":"cricket","name":"Cricket","description":"d","headline":true}],"professions":[{"slug":"lawyer","name":"Lawyer","description":"d","topics":["law"],"launched":false}]}""",
+                headers = jsonHeaders,
+            )
+        }
+        val api = ChangeloomApi(ChangeloomApi.createClient("http://api.test", engine), FakeAuth("tok"))
+        val list = api.topicList()
+        assertTrue(list.items.single().headline)
+        assertFalse(list.professions.single().launched)
     }
 
     @Test

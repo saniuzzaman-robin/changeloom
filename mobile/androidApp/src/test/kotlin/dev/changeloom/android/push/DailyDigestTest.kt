@@ -20,8 +20,8 @@ class DailyDigestTest {
         assertEquals(Duration.ofHours(10), delayUntilNextDigest(at(23)))
     }
 
-    private fun story(id: Long, match: String?, read: Boolean = false) = StorySummary(
-        id = id, title = "t$id", summary = "", kind = "update", importance = 1,
+    private fun story(id: Long, match: String?, read: Boolean = false, importance: Int = 1) = StorySummary(
+        id = id, title = "t$id", summary = "", kind = "update", importance = importance,
         publishedAt = "2026-10-04T00:00:00Z", topics = emptyList(), isRead = read, match = match,
     )
 
@@ -29,6 +29,15 @@ class DailyDigestTest {
     fun `digest prefers unread stories matching interests`() {
         val items = listOf(story(1, "explore"), story(2, "followed"), story(3, "profession", read = true), story(4, "profession"))
         assertEquals(listOf(2L, 4L), digestStories(items).map { it.id })
+    }
+
+    @Test
+    fun `digest previews the most important stories first, ties in timeline order`() {
+        val items = listOf(
+            story(1, "followed", importance = 2), story(2, "profession", importance = 5), story(3, "followed", importance = 2),
+            story(4, "explore", importance = 5), story(5, "followed", read = true, importance = 5),
+        )
+        assertEquals(listOf(2L, 1L, 3L), digestStories(items).map { it.id })
     }
 
     @Test

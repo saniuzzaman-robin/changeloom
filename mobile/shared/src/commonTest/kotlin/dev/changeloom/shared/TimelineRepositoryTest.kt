@@ -15,6 +15,7 @@ import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,8 +61,8 @@ private class MemoryCache(var timeline: List<StorySummary> = emptyList()) : Stor
 
 private val json = headersOf(HttpHeaders.ContentType, "application/json")
 
-private fun item(id: Long, at: String, read: Boolean, match: String? = null) =
-    """{"id":$id,"title":"t$id","summary":"s","kind":"release","importance":3,"published_at":"$at","topics":["x"],"is_read":$read${match?.let { ""","match":"$it"""" } ?: ""}}"""
+private fun item(id: Long, at: String, read: Boolean, match: String? = null, topics: List<String> = listOf("x")) =
+    """{"id":$id,"title":"t$id","summary":"s","kind":"release","importance":3,"published_at":"$at","topics":[${topics.joinToString(",") { "\"$it\"" }}],"is_read":$read${match?.let { ""","match":"$it"""" } ?: ""}}"""
 
 private fun page(vararg items: String, next: String? = null) =
     """{"items":[${items.joinToString(",")}]${next?.let { ""","next_cursor":"$it"""" } ?: ""}}"""
@@ -156,22 +157,37 @@ class TimelineRepositoryTest {
     }
 
     @Test
-    fun markReadKeepsMatchTierOrder() = runTest {
+    fun localReadChangesKeepServerOrder() = runTest {
+        // The server ranks unread stories by a score it doesn't send, so its order isn't by tier or date.
         val body = page(
-            item(1, "2026-09-01T10:00:00Z", false, "followed"),
-            item(2, "2026-09-05T10:00:00Z", false, "related"),
-            item(3, "2026-09-06T10:00:00Z", false, "explore"),
-            item(4, "2026-09-07T10:00:00Z", true, "followed"),
+            item(1, "2026-09-01T10:00:00Z", false, "explore"),
+            item(2, "2026-09-06T10:00:00Z", false, "followed"),
+            item(3, "2026-09-05T10:00:00Z", false, "related"),
+            item(4, "2026-09-08T10:00:00Z", true, "followed"),
+            item(5, "2026-09-07T10:00:00Z", true, "explore"),
+            next = "c1",
         )
         val repo = repo(MemoryCache()) { req ->
-            if (req.method == HttpMethod.Put) respond("", HttpStatusCode.NoContent) else respond(body, headers = json)
+            when {
+                req.method != HttpMethod.Get -> respond("", HttpStatusCode.NoContent)
+                req.url.parameters["cursor"] == "c1" -> respond(page(item(6, "2026-09-09T10:00:00Z", false, "followed")), headers = json)
+                else -> respond(body, headers = json)
+            }
         }
         repo.refresh()
-        assertEquals("related", repo.state.value.items[1].match)
-        repo.setRead(3, true)
-        repo.setRead(3, false)
-        // Unread first (followed, related, explore by tier even though explore is newest), then read.
-        assertEquals(listOf(1L, 2L, 3L, 4L), repo.state.value.items.map { it.id })
+        repo.setRead(2, true)
+        // 2 joins the read group, newest first.
+        assertEquals(listOf(1L, 3L, 4L, 5L, 2L), repo.state.value.items.map { it.id })
+        repo.setRead(2, false)
+        assertEquals(listOf(1L, 2L, 3L, 4L, 5L), repo.state.value.items.map { it.id })
+        // A story the server sent as read has no unread position: it ends the unread group.
+        repo.setRead(5, false)
+        assertEquals(listOf(1L, 2L, 3L, 5L, 4L), repo.state.value.items.map { it.id })
+        // A later page's story keeps its place after every story of the first page.
+        repo.loadMore()
+        repo.setRead(6, true)
+        repo.setRead(6, false)
+        assertEquals(listOf(1L, 2L, 3L, 5L, 6L, 4L), repo.state.value.items.map { it.id })
     }
 
     @Test
@@ -206,7 +222,8 @@ class TimelineRepositoryTest {
         }
         repo.refresh()
         repo.setRead(3, false)
-        assertEquals(listOf(3L, 1L, 2L), repo.state.value.items.map { it.id })
+        // The server's score for it isn't known, so it ends the unread group.
+        assertEquals(listOf(1L, 2L, 3L), repo.state.value.items.map { it.id })
         assertNull(repo.state.value.items.first().readAt)
     }
 
@@ -287,26 +304,105 @@ class TimelineRepositoryTest {
     }
 
     @Test
-    fun professionTierSortsBetweenFollowedAndRelated() = runTest {
-        val at = "2026-09-03T10:00:00Z"
+    fun dismissHidesTheStoryAndUndoPutsItBackInPlace() = runTest {
+        val cache = MemoryCache()
+        val calls = mutableListOf<String>()
+        val repo = repo(cache) { req ->
+            if (req.url.encodedPath.endsWith("/dismiss")) {
+                calls += "${req.method.value} ${req.url.encodedPath}"
+                respond("", HttpStatusCode.NoContent)
+            } else respond(firstPage, headers = json)
+        }
+        repo.refresh()
+        val story = repo.state.value.items.first { it.id == 1L }
+        assertTrue(repo.dismiss(1))
+        assertEquals(listOf(2L, 3L), repo.state.value.items.map { it.id })
+        assertEquals(listOf(2L, 3L), cache.timeline.map { it.id })
+
+        repo.undismiss(story)
+        assertEquals(listOf(1L, 2L, 3L), repo.state.value.items.map { it.id })
+        assertEquals(listOf("PUT /v1/stories/1/dismiss", "DELETE /v1/stories/1/dismiss"), calls)
+    }
+
+    @Test
+    fun failedDismissPutsTheStoryBack() = runTest {
         val repo = repo(MemoryCache()) { req ->
-            if (req.method == HttpMethod.Get) {
-                respond(
+            if (req.method == HttpMethod.Put) respondError(HttpStatusCode.InternalServerError) else respond(firstPage, headers = json)
+        }
+        repo.refresh()
+        assertFalse(repo.dismiss(1))
+        assertEquals(listOf(1L, 2L, 3L), repo.state.value.items.map { it.id })
+        assertTrue(repo.state.value.error != null)
+    }
+
+    @Test
+    fun muteHidesCoveredStoriesSendsTheWholeSetAndUndoes() = runTest {
+        val cache = MemoryCache().apply { followed = listOf("web/react") }
+        var muted = listOf("cloud")
+        val sent = mutableListOf<String>()
+        val repo = repo(cache) { req ->
+            when (req.url.encodedPath) {
+                "/v1/me" -> respond("""{"id":1,"topics":["web/react"],"muted_topics":[${muted.joinToString(",") { "\"$it\"" }}]}""", headers = json)
+                "/v1/me/muted-topics" -> {
+                    val body = (req.body as TextContent).text
+                    sent += body
+                    muted = Regex("\"([^\"]+)\"").findAll(body.substringAfter(":")).map { it.groupValues[1] }.toList()
+                    respond("""{"id":1,"topics":["web/react"],"muted_topics":[${muted.joinToString(",") { "\"$it\"" }}]}""", headers = json)
+                }
+                else -> respond(
                     page(
-                        item(1, at, false, "explore"),
-                        item(2, at, false, "related"),
-                        item(3, at, false, "profession"),
-                        item(4, at, false, "followed"),
+                        item(1, "2026-09-03T10:00:00Z", false, topics = listOf("web/vue")),
+                        item(2, "2026-09-02T10:00:00Z", false, topics = listOf("web/react")),
+                        item(3, "2026-09-01T10:00:00Z", false, topics = listOf("web/vue", "databases")),
+                        item(4, "2026-08-31T10:00:00Z", false, topics = listOf("web")),
                     ),
                     headers = json,
                 )
-            } else {
-                respond("", HttpStatusCode.NoContent)
             }
         }
         repo.refresh()
-        repo.setRead(1, true) // local changes re-sort the list with the same order as the server
-        repo.setRead(1, false)
-        assertEquals(listOf(4L, 3L, 2L, 1L), repo.state.value.items.map { it.id })
+        // web covers web/vue and web itself, but not the followed web/react; story 3 has another topic.
+        val hidden = repo.muteTopic("web")
+        assertEquals(listOf(1L, 4L), hidden?.map { it.id })
+        assertEquals(listOf(2L, 3L), repo.state.value.items.map { it.id })
+        assertEquals(listOf("cloud", "web"), muted)
+
+        repo.undoMute("web", hidden!!)
+        assertEquals(listOf("cloud"), muted)
+        assertEquals(listOf(1L, 2L, 3L, 4L), repo.state.value.items.map { it.id })
+        assertEquals(2, sent.size)
+    }
+
+    @Test
+    fun failedMutePutsTheStoriesBack() = runTest {
+        val repo = repo(MemoryCache()) { req ->
+            when (req.url.encodedPath) {
+                "/v1/me" -> respond("""{"id":1,"topics":[]}""", headers = json)
+                "/v1/me/muted-topics" -> respondError(HttpStatusCode.InternalServerError)
+                else -> respond(firstPage, headers = json)
+            }
+        }
+        repo.refresh()
+        assertNull(repo.muteTopic("x"))
+        assertEquals(listOf(1L, 2L, 3L), repo.state.value.items.map { it.id })
+        assertTrue(repo.state.value.error != null)
+    }
+
+    @Test
+    fun unmuteReloadsTheTimeline() = runTest {
+        var timelineCalls = 0
+        val repo = repo(MemoryCache()) { req ->
+            when (req.url.encodedPath) {
+                "/v1/me" -> respond("""{"id":1,"topics":[],"muted_topics":["x","y"]}""", headers = json)
+                "/v1/me/muted-topics" -> respond("""{"id":1,"topics":[],"muted_topics":["y"]}""", headers = json)
+                else -> {
+                    timelineCalls++
+                    respond(firstPage, headers = json)
+                }
+            }
+        }
+        assertEquals(listOf("y"), repo.unmuteTopic("x"))
+        assertEquals(1, timelineCalls)
+        assertEquals(listOf(1L, 2L, 3L), repo.state.value.items.map { it.id })
     }
 }
