@@ -14,7 +14,6 @@ import (
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/catalog"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/claude"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/config"
-	"github.com/saniuzzaman-robin/changeloom/curator/internal/db"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/dbtest"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/fetch"
 )
@@ -85,7 +84,6 @@ func testConfig() config.Config {
 		MergeWindow: 14 * 24 * time.Hour, StoriesPerTopic: 5, Concurrency: 1,
 		HotMinEngaged: 1, WarmInterval: 24 * time.Hour,
 		PriorityIntervals: [5]time.Duration{48 * time.Hour, 96 * time.Hour, 168 * time.Hour, 336 * time.Hour, 672 * time.Hour},
-		BackfillTarget:    20, BackfillTopicsPerCall: 2,
 		DealsMaxCountries: 5, DealsMaxCallsPerRun: 4, DealsMaxAge: 7 * 24 * time.Hour,
 	}
 }
@@ -220,45 +218,6 @@ func TestFetchRecordsFailure(t *testing.T) {
 	}
 }
 
-func TestBackfill(t *testing.T) {
-	pool := setup(t)
-	ctx := t.Context()
-	cfg := testConfig()
-	cfg.BackfillTopicsPerCall = 1
-	now := time.Now()
-
-	fake := &fakeClaude{responses: []any{
-		map[string]any{"stories": []any{story("Go 1.26", "https://go.dev/blog/go1.26", now.Add(-24*time.Hour), nil)}},
-		map[string]any{"stories": []any{}},
-	}}
-	f := fetch.New(pool, fake, cfg)
-
-	// One call covers one topic, the first by slug since nothing is in demand.
-	sum, err := f.Backfill(ctx, 1)
-	if err != nil || sum.Calls != 1 || sum.Added != 1 {
-		t.Fatalf("first backfill: %+v, %v", sum, err)
-	}
-	if !strings.Contains(fake.prompts[0], "at most 20 stories per topic") || !strings.Contains(fake.prompts[0], "- languages/go:") {
-		t.Errorf("prompt:\n%s", fake.prompts[0])
-	}
-	if n := count(t, pool, `SELECT count(*) FROM fetch_runs WHERE group_slug = 'backfill:languages/go' AND status = 'succeeded'`); n != 1 {
-		t.Errorf("backfill runs = %d", n)
-	}
-
-	// The next call moves on to the other topic, even though the first is still short of 20.
-	if sum, err = f.Backfill(ctx, 5); err != nil || sum.Calls != 1 {
-		t.Fatalf("second backfill: %+v, %v", sum, err)
-	}
-	if !strings.Contains(fake.prompts[1], "- security:") || strings.Contains(fake.prompts[1], "- languages/go:") {
-		t.Errorf("second prompt:\n%s", fake.prompts[1])
-	}
-
-	// Every short topic was tried: nothing left.
-	if sum, err = f.Backfill(ctx, 5); err != nil || sum.Calls != 0 {
-		t.Fatalf("third backfill: %+v, %v", sum, err)
-	}
-}
-
 func exec(t *testing.T, pool *pgxpool.Pool, sql string) {
 	t.Helper()
 	if _, err := pool.Exec(t.Context(), sql); err != nil {
@@ -266,102 +225,6 @@ func exec(t *testing.T, pool *pgxpool.Pool, sql string) {
 	}
 }
 
-func TestBackfillOrdersByPriority(t *testing.T) {
-	ctx := t.Context()
-	backfillOne := func(t *testing.T, pool *pgxpool.Pool) string {
-		t.Helper()
-		cfg := testConfig()
-		cfg.BackfillTopicsPerCall = 1
-		fake := &fakeClaude{responses: []any{map[string]any{"stories": []any{}}}}
-		if sum, err := fetch.New(pool, fake, cfg).Backfill(ctx, 1); err != nil || sum.Calls != 1 {
-			t.Fatalf("backfill: %+v, %v", sum, err)
-		}
-		return fake.prompts[0]
-	}
-
-	t.Run("higher priority first", func(t *testing.T) {
-		pool := setup(t)
-		exec(t, pool, `UPDATE topic_priority SET priority = 1 WHERE topic_id = (SELECT id FROM topics WHERE slug = 'security')`)
-		// security (1) goes before languages/go (3), although go sorts first by slug.
-		if p := backfillOne(t, pool); !strings.Contains(p, "- security:") || strings.Contains(p, "- languages/go:") {
-			t.Errorf("prompt:\n%s", p)
-		}
-	})
-
-	t.Run("no priority row counts as the default", func(t *testing.T) {
-		pool := setup(t)
-		exec(t, pool, `DELETE FROM topic_priority WHERE topic_id = (SELECT id FROM topics WHERE slug = 'languages/go')`)
-		exec(t, pool, `UPDATE topic_priority SET priority = 4 WHERE topic_id = (SELECT id FROM topics WHERE slug = 'security')`)
-		rows, err := db.New(pool).ListFetchTopics(ctx, catalog.DefaultPriority)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, r := range rows {
-			if r.Slug == "languages/go" && r.Priority != catalog.DefaultPriority {
-				t.Errorf("languages/go priority = %d, want the default %d", r.Priority, catalog.DefaultPriority)
-			}
-		}
-		// languages/go (default 3) goes before security (4) rather than being dropped or put last.
-		if p := backfillOne(t, pool); !strings.Contains(p, "- languages/go:") || strings.Contains(p, "- security:") {
-			t.Errorf("prompt:\n%s", p)
-		}
-	})
-}
-
-func TestBackfillOnlyWantedTopics(t *testing.T) {
-	pool := setup(t)
-	ctx := t.Context()
-	cfg := testConfig()
-	backfill := func() []string {
-		t.Helper()
-		fake := &fakeClaude{responses: []any{map[string]any{"stories": []any{}}}}
-		if _, err := fetch.New(pool, fake, cfg).Backfill(ctx, 1); err != nil {
-			t.Fatalf("backfill: %v", err)
-		}
-		return fake.prompts
-	}
-
-	// No launched profession, headline or demand: nothing is wanted, so no call is made.
-	exec(t, pool, `UPDATE professions SET launched = false`)
-	if prompts := backfill(); len(prompts) != 0 {
-		t.Fatalf("backfill with nothing wanted made %d calls", len(prompts))
-	}
-
-	// A headline is wanted without demand; so is a topic whose parent has followers.
-	exec(t, pool, `UPDATE topics SET headline = true WHERE slug = 'security'`)
-	exec(t, pool, `INSERT INTO topic_stats (topic_id, env, followers, profession_users, views_7d)
-		SELECT id, 'staging', 1, 0, 0 FROM topics WHERE slug = 'languages'`)
-	prompts := backfill()
-	if len(prompts) != 1 || !strings.Contains(prompts[0], "- security:") || !strings.Contains(prompts[0], "- languages/go:") {
-		t.Fatalf("backfill prompts:\n%s", strings.Join(prompts, "\n---\n"))
-	}
-}
-
-func TestBackfillSkipsFilledTopics(t *testing.T) {
-	pool := setup(t)
-	ctx := t.Context()
-	cfg := testConfig()
-	cfg.BackfillTarget = 1
-	now := time.Now()
-
-	fake := &fakeClaude{responses: []any{
-		map[string]any{"stories": []any{story("Go 1.26", "https://go.dev/blog/go1.26", now.Add(-time.Hour), nil)}},
-		map[string]any{"stories": []any{}},
-	}}
-	f := fetch.New(pool, fake, cfg)
-	if _, err := f.Run(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.Backfill(ctx, 1); err != nil {
-		t.Fatal(err)
-	}
-	// languages/go already has the one story the target asks for.
-	if strings.Contains(fake.prompts[1], "- languages/go:") || !strings.Contains(fake.prompts[1], "- security:") {
-		t.Errorf("backfill prompt:\n%s", fake.prompts[1])
-	}
-}
-
-// overlapClaude answers every call with the same story and records how many calls overlapped.
 type overlapClaude struct {
 	inflight, maxInflight atomic.Int32
 	story                 map[string]any
@@ -475,5 +338,65 @@ topics:
 	f = fetch.New(pool, &fakeClaude{}, testConfig())
 	if sum, err := f.Run(ctx); err != nil || sum.Calls != 0 {
 		t.Fatalf("second run: summary %+v, err %v", sum, err)
+	}
+}
+
+func TestFetchStaysInTheRankBand(t *testing.T) {
+	// Both leaf topics have priority 3 and no demand, so the rank is by slug: languages/go, then security.
+	pool := setup(t)
+	empty := func() *fakeClaude { return &fakeClaude{responses: []any{map[string]any{"stories": []any{}}}} }
+
+	tests := []struct {
+		band         string
+		wantGo, want bool
+	}{
+		{band: "1-1", wantGo: true},
+		{band: "2-", want: true},
+	}
+	for _, tc := range tests {
+		band, err := fetch.ParseBand(tc.band)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// A fetch marks its topics fetched, so reset that for the next case.
+		exec(t, pool, `DELETE FROM fetch_runs`)
+		fake := empty()
+		if sum, err := fetch.New(pool, fake, testConfig()).WithBand(band).Run(t.Context()); err != nil || sum.Calls != 1 {
+			t.Fatalf("fetch %s: %+v, %v", tc.band, sum, err)
+		}
+		p := fake.prompts[0]
+		if got := strings.Contains(p, "- languages/go:"); got != tc.wantGo {
+			t.Errorf("fetch %s: prompt has languages/go = %v, want %v:\n%s", tc.band, got, tc.wantGo, p)
+		}
+		if got := strings.Contains(p, "- security:"); got != tc.want {
+			t.Errorf("fetch %s: prompt has security = %v, want %v:\n%s", tc.band, got, tc.want, p)
+		}
+	}
+
+	exec(t, pool, `DELETE FROM fetch_runs`)
+	fake := empty()
+	if sum, err := fetch.New(pool, fake, testConfig()).WithBand(fetch.Band{From: 3}).Run(t.Context()); err != nil || sum.Calls != 0 || len(fake.prompts) != 0 {
+		t.Errorf("fetch beyond the last rank: %+v, %v, %d prompts", sum, err, len(fake.prompts))
+	}
+}
+
+func TestLeastFirstTakesTheLowestPriorityTopicFirst(t *testing.T) {
+	pool := setup(t)
+	// languages/go keeps priority 3; security becomes priority 1, so it is the more important one.
+	exec(t, pool, `UPDATE topic_priority SET priority = 1 WHERE topic_id = (SELECT id FROM topics WHERE slug = 'security')`)
+	cfg := testConfig()
+	cfg.MaxCallsPerRun, cfg.TopicsPerCall = 1, 1
+
+	for _, leastFirst := range []bool{false, true} {
+		exec(t, pool, `DELETE FROM fetch_runs`)
+		fake := &fakeClaude{responses: []any{map[string]any{"stories": []any{}}}}
+		f := fetch.New(pool, fake, cfg).WithBand(fetch.Band{LeastFirst: leastFirst})
+		if sum, err := f.Run(t.Context()); err != nil || sum.Calls != 1 {
+			t.Fatalf("least-first=%v: %+v, %v", leastFirst, sum, err)
+		}
+		wantSecurity := !leastFirst
+		if got := strings.Contains(fake.prompts[0], "- security:"); got != wantSecurity {
+			t.Errorf("least-first=%v: prompt has security = %v, want %v", leastFirst, got, wantSecurity)
+		}
 	}
 }

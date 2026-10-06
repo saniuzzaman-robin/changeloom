@@ -4,14 +4,9 @@ package prune
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/saniuzzaman-robin/changeloom/curator/internal/config"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/db"
 )
 
@@ -41,30 +36,4 @@ func Run(ctx context.Context, remote db.DBTX, s Settings, now time.Time) (int64,
 			return total, nil
 		}
 	}
-}
-
-func watermarkKey(env config.Env) string { return string(env) + ":pruned" }
-
-// Due reports whether env was last pruned more than interval ago, or never.
-func Due(ctx context.Context, local *pgxpool.Pool, env config.Env, interval time.Duration, now time.Time) (bool, error) {
-	var last time.Time
-	err := local.QueryRow(ctx, `SELECT value FROM sync_state WHERE key = $1`, watermarkKey(env)).Scan(&last)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return true, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("read prune watermark: %w", err)
-	}
-	return now.Sub(last) >= interval, nil
-}
-
-// MarkDone records that env was pruned at now.
-func MarkDone(ctx context.Context, local *pgxpool.Pool, env config.Env, now time.Time) error {
-	_, err := local.Exec(ctx, `
-		INSERT INTO sync_state (key, value) VALUES ($1, $2)
-		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, watermarkKey(env), now)
-	if err != nil {
-		return fmt.Errorf("record prune watermark: %w", err)
-	}
-	return nil
 }

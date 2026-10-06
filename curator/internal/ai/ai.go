@@ -1,5 +1,5 @@
 // Package ai picks the backend that answers the curator's calls (Claude, an OpenAI-compatible
-// API or Gemini) and spaces the calls out so a provider's rate limit is not hit.
+// API, Gemini or a local Ollama model) and spaces the calls out so a provider's rate limit is not hit.
 package ai
 
 import (
@@ -11,7 +11,9 @@ import (
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/claude"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/config"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/gemini"
+	"github.com/saniuzzaman-robin/changeloom/curator/internal/ollama"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/openai"
+	"github.com/saniuzzaman-robin/changeloom/curator/internal/web"
 )
 
 // Runner makes one call; fetch.Runner and requests.Runner are satisfied by it.
@@ -24,6 +26,9 @@ var providers = map[config.Provider]func(cfg config.Config) Runner{
 	config.ProviderClaude: func(cfg config.Config) Runner { return claude.New(cfg.Claude) },
 	config.ProviderOpenAI: func(cfg config.Config) Runner { return openai.New(cfg.OpenAI) },
 	config.ProviderGemini: func(cfg config.Config) Runner { return gemini.New(cfg.Gemini) },
+	config.ProviderLocal: func(cfg config.Config) Runner {
+		return ollama.New(cfg.Ollama, web.New(cfg.SearxngURL, cfg.SearchMaxResults, cfg.PageMaxChars))
+	},
 }
 
 // New returns the runner for cfg.Provider, wrapped to leave cfg.CallDelay between call starts.

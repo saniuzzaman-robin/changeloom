@@ -1,0 +1,11 @@
+# SearXNG settings for the curator's local search (make searxng-up). Only the JSON API is used.
+use_default_settings: true
+server:
+  # Local-only instance; the key just has to be set. Override with SEARXNG_SECRET if you expose it.
+  secret_key: "changeloom-local-only"
+  limiter: false
+  image_proxy: false
+search:
+  formats:
+    - html
+    - json

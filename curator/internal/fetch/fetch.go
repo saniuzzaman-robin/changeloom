@@ -25,6 +25,9 @@ import (
 // maxKnownStories caps the existing stories listed in a prompt.
 const maxKnownStories = 200
 
+// maxLoggedOutput bounds the model answer written to the debug log (LOG_LEVEL=debug).
+const maxLoggedOutput = 4000
+
 // tools are the only tools a fetch call may use.
 var tools = []string{"WebSearch", "WebFetch"}
 
@@ -39,6 +42,8 @@ type Fetcher struct {
 	claude Runner
 	cfg    config.Config
 	now    func() time.Time
+	// band limits a run to the topics ranked inside it; the zero Band is every topic.
+	band Band
 	// storeMu serialises the store transactions of concurrent calls, so dedupe cannot race.
 	storeMu sync.Mutex
 }
@@ -46,6 +51,32 @@ type Fetcher struct {
 // New returns a fetcher that writes to pool.
 func New(pool *pgxpool.Pool, runner Runner, cfg config.Config) *Fetcher {
 	return &Fetcher{pool: pool, claude: runner, cfg: cfg, now: time.Now}
+}
+
+// WithBand limits the fetcher's runs to the topics ranked inside b (see Rank) and returns it.
+func (f *Fetcher) WithBand(b Band) *Fetcher {
+	f.band = b
+	return f
+}
+
+// inBand keeps the topics ranked inside the fetcher's band, and every parent topic, whose demand
+// planning reads.
+func (f *Fetcher) inBand(ctx context.Context, topics []Topic) []Topic {
+	if f.band.IsZero() {
+		return topics
+	}
+	keep := make(map[string]bool)
+	for _, slug := range f.band.Slugs(topics) {
+		keep[slug] = true
+	}
+	slog.InfoContext(ctx, "limiting the run to a rank band", "band", f.band.String(), "topics", len(keep))
+	kept := make([]Topic, 0, len(keep))
+	for _, t := range topics {
+		if t.HasChildren || keep[t.Slug] {
+			kept = append(kept, t)
+		}
+	}
+	return kept
 }
 
 // Summary describes a fetch run.
@@ -160,7 +191,7 @@ func (f *Fetcher) Run(ctx context.Context) (Summary, error) {
 	}
 
 	var global, deals []Topic
-	for _, t := range topics {
+	for _, t := range f.inBand(ctx, topics) {
 		if isDealSlug(t.Slug) {
 			deals = append(deals, t)
 		} else {
@@ -172,6 +203,8 @@ func (f *Fetcher) Run(ctx context.Context) (Summary, error) {
 		MaxCalls:          f.cfg.MaxCallsPerRun,
 		StoriesPerTopic:   f.cfg.StoriesPerTopic,
 		HotMinEngaged:     f.cfg.HotMinEngaged,
+		HotInterval:       f.cfg.HotMinInterval,
+		LeastFirst:        f.band.LeastFirst,
 		WarmInterval:      f.cfg.WarmInterval,
 		PriorityIntervals: f.cfg.PriorityIntervals,
 		MaxAge:            f.cfg.ItemMaxAge,
@@ -246,46 +279,6 @@ func (f *Fetcher) planDeals(ctx context.Context, deals []Topic, s PlanSettings) 
 		groups, deferred = append(groups, gs...), append(deferred, d...)
 	}
 	return groups, deferred, nil
-}
-
-// Backfill fills leaf topics that have fewer than CURATOR_BACKFILL_TARGET recent stories, with
-// CURATOR_BACKFILL_TOPICS_PER_CALL topics per call and at most maxCalls calls. A topic a backfill
-// call already covered within the item window is skipped, so repeated runs move on to the topics
-// that are still short.
-func (f *Fetcher) Backfill(ctx context.Context, maxCalls int) (Summary, error) {
-	_, cat, err := f.load(ctx)
-	if err != nil {
-		return Summary{}, err
-	}
-	now := f.now()
-	since := now.Add(-f.cfg.ItemMaxAge)
-	rows, err := db.New(f.pool).ListBackfillTopics(ctx, db.ListBackfillTopicsParams{
-		Since: since, Target: int64(f.cfg.BackfillTarget), MaxRows: int32(maxCalls * f.cfg.BackfillTopicsPerCall), //nolint:gosec // bounded by config
-		DefaultPriority: topiccatalog.DefaultPriority,
-	})
-	if err != nil {
-		return Summary{}, fmt.Errorf("list topics to backfill: %w", err)
-	}
-	if len(rows) == 0 {
-		slog.InfoContext(ctx, "no topics need a backfill")
-		return Summary{}, nil
-	}
-
-	var groups []Group
-	for chunk := range slices.Chunk(rows, f.cfg.BackfillTopicsPerCall) {
-		g := Group{Since: since, PerTopic: f.cfg.BackfillTarget}
-		slugs := make([]string, len(chunk))
-		for i, r := range chunk {
-			slugs[i] = r.Slug
-			g.Topics = append(g.Topics, Topic{
-				ID: r.ID, Slug: r.Slug, Name: r.Name, Description: r.Description, ParentSlug: deref(r.ParentSlug),
-				Priority: int(r.Priority), Hints: r.Hints, Professions: r.Professions,
-			})
-		}
-		g.Slug = "backfill:" + strings.Join(slugs, "+")
-		groups = append(groups, g)
-	}
-	return f.runGroups(ctx, groups, cat)
 }
 
 // runGroups makes the calls of groups, at most CURATOR_CONCURRENCY at once.
@@ -376,6 +369,7 @@ func (f *Fetcher) runGroup(ctx context.Context, g Group, cat catalog) (groupResu
 		return fail(err)
 	}
 	res.cost = out.CostUSD
+	slog.DebugContext(ctx, "fetch call answer", "group", g.Slug, "output", truncate(string(out.Output), maxLoggedOutput), "turns", out.Turns)
 
 	maxAge := f.cfg.ItemMaxAge
 	if g.Country != "" {
@@ -424,4 +418,12 @@ func (f *Fetcher) runGroup(ctx context.Context, g Group, cat catalog) (groupResu
 		"rejected", res.rejected, "cost_usd", out.CostUSD, "turns", out.Turns, "duration", out.Duration.Round(time.Second),
 		"output_tokens", out.Usage.OutputTokens, "model", out.Model, "account", out.Account)
 	return res, nil
+}
+
+// truncate cuts s to at most n bytes for logging, marking the cut.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }

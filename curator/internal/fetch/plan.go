@@ -64,7 +64,13 @@ type PlanSettings struct {
 	// HotMinEngaged is the recent users who opened or saved a story that make a topic hot;
 	// WarmInterval is the least time between fetches of a warm topic, and PriorityIntervals[p-1]
 	// that of a cold topic of priority p.
-	HotMinEngaged     int
+	HotMinEngaged int
+	// HotInterval is the least time between fetches of a hot topic, so repeated passes of one run
+	// do not fetch it again.
+	HotInterval time.Duration
+	// LeastFirst reverses the order topics are taken in: cold before warm before hot, the lowest
+	// priority and least engaged first, so a run capped by MaxCalls starts with the least important.
+	LeastFirst        bool
 	WarmInterval      time.Duration
 	PriorityIntervals [topiccatalog.MaxPriority]time.Duration
 	MaxAge            time.Duration
@@ -129,7 +135,7 @@ func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferr
 		var interval time.Duration
 		switch {
 		case engaged >= s.HotMinEngaged:
-			tr = tierHot
+			tr, interval = tierHot, s.HotInterval
 		case views > 0 && engaged == 0:
 			tr, interval = tierCold, s.PriorityIntervals[p-1]
 		case engaged > 0 || t.Headline || t.Followers+parent.Followers+t.ProfessionUsers+parent.ProfessionUsers > 0:
@@ -159,7 +165,7 @@ func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferr
 		}
 	}
 	slices.SortFunc(families, func(a, b *family) int {
-		return cmp.Or(
+		c := cmp.Or(
 			cmp.Compare(a.tier, b.tier),
 			cmp.Compare(a.priority, b.priority),
 			cmp.Compare(b.engaged, a.engaged),
@@ -167,6 +173,10 @@ func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferr
 			a.oldest.Compare(b.oldest),
 			cmp.Compare(a.key, b.key),
 		)
+		if s.LeastFirst {
+			return -c
+		}
+		return c
 	})
 
 	// First fit: a family's chunk joins the first group with room, so small families share calls.

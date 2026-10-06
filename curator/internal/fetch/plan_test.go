@@ -185,6 +185,22 @@ func TestPlanFamilyTakesBestPriority(t *testing.T) {
 	}
 }
 
+func TestPlanHotMinInterval(t *testing.T) {
+	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	settings := fetch.PlanSettings{
+		TopicsPerCall: 1, MaxCalls: 10, StoriesPerTopic: 5, HotMinEngaged: 1, HotInterval: time.Hour,
+		WarmInterval: 24 * time.Hour, PriorityIntervals: hours(48, 96, 168, 336, 672), MaxAge: 14 * 24 * time.Hour,
+	}
+	topics := []fetch.Topic{
+		{Slug: "justfetched", Priority: 3, Engaged7d: 3, LastFetchedAt: now.Add(-3 * time.Minute)},
+		{Slug: "due", Priority: 3, Engaged7d: 3, LastFetchedAt: now.Add(-2 * time.Hour)},
+	}
+	groups, _ := fetch.Plan(topics, settings, now)
+	if len(groups) != 1 || groups[0].Topics[0].Slug != "due" {
+		t.Fatalf("groups = %+v, want only the topic not fetched in the last hour", groups)
+	}
+}
+
 func TestPlanEngagement(t *testing.T) {
 	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
 	never := time.Unix(0, 0)
@@ -219,5 +235,31 @@ func TestPlanEngagement(t *testing.T) {
 	}
 	if len(deferred) != 0 {
 		t.Errorf("deferred = %v", deferred)
+	}
+}
+
+func TestPlanLeastFirst(t *testing.T) {
+	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	never := time.Unix(0, 0)
+	settings := fetch.PlanSettings{
+		TopicsPerCall: 1, MaxCalls: 2, StoriesPerTopic: 5, HotMinEngaged: 1, LeastFirst: true,
+		WarmInterval: 24 * time.Hour, PriorityIntervals: hours(1, 1, 1, 1, 1), MaxAge: 14 * 24 * time.Hour,
+	}
+	topics := []fetch.Topic{
+		{Slug: "hot", Priority: 1, Engaged7d: 4, LastFetchedAt: never},
+		{Slug: "warm", Priority: 1, Followers: 2, LastFetchedAt: never},
+		{Slug: "coldlow", Priority: 5, Views7d: 1, LastFetchedAt: never},
+		{Slug: "coldhigh", Priority: 2, Views7d: 1, LastFetchedAt: never},
+	}
+	groups, deferred := fetch.Plan(topics, settings, now)
+	var got []string
+	for _, g := range groups {
+		got = append(got, slugsOf(g)...)
+	}
+	if want := []string{"coldlow", "coldhigh"}; !slices.Equal(got, want) {
+		t.Errorf("planned = %v, want %v", got, want)
+	}
+	if want := []string{"warm", "hot"}; !slices.Equal(deferred, want) {
+		t.Errorf("deferred = %v, want %v", deferred, want)
 	}
 }

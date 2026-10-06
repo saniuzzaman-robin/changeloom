@@ -41,7 +41,6 @@ export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-personal}"
 ./bin/curator run                    # everything, in order (real claude -p calls)
 ./bin/curator migrate [--remote --env <env>]
 ./bin/curator seed | requests | fetch | sync [--env <env>]
-./bin/curator backfill [--max-calls N]
 ./bin/curator prune [--env <env>]
 ```
 
