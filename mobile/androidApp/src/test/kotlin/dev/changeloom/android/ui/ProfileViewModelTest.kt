@@ -14,6 +14,7 @@ import io.ktor.client.request.HttpResponseData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -123,25 +124,36 @@ class ProfileViewModelTest {
         assertNull(f.vm.state.value.delete)
     }
 
-    /** /v1/me says [muted]; muted-topics answers [putStatus], and on success with "b" and "c" (another device muted c). */
-    private fun mutesApi(muted: String, putStatus: HttpStatusCode = HttpStatusCode.OK): suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData = { request ->
+    /**
+     * /v1/me says [muted]; muted-topics answers [putStatus], and on success with "b" and "c" (another device muted c).
+     * The PUT waits for [putGate] when given, so a test can look at the state before the server answers.
+     */
+    private fun mutesApi(
+        muted: String,
+        putStatus: HttpStatusCode = HttpStatusCode.OK,
+        putGate: CompletableDeferred<Unit>? = null,
+    ): suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData = { request ->
         val json = headersOf(HttpHeaders.ContentType, "application/json")
         when (request.url.encodedPath) {
             // A country, so refresh doesn't save the device's and race the unmute.
             "/v1/me" -> respond("""{"id":1,"topics":[],"country":"BD","muted_topics":$muted}""", headers = json)
-            "/v1/me/muted-topics" ->
+            "/v1/me/muted-topics" -> {
+                putGate?.await()
                 if (putStatus.value >= 400) respondError(putStatus) else respond("""{"id":1,"topics":[],"muted_topics":["b","c"]}""", headers = json)
+            }
             else -> respond("""{"items":[]}""", headers = json)
         }
     }
 
     @Test
     fun unmutingSavesTheSetAndReloadsTheTimeline() = runTest {
-        val f = Fixture(this, FakeAuth(), handler = mutesApi("""["a","b"]"""))
+        val gate = CompletableDeferred<Unit>()
+        val f = Fixture(this, FakeAuth(), handler = mutesApi("""["a","b"]""", putGate = gate))
         f.vm.refresh()
         f.vm.state.await { it.muted == listOf("a", "b") }
         f.vm.unmute("a")
         assertEquals(listOf("b"), f.vm.state.value.muted)
+        gate.complete(Unit)
         // The server's set wins, and the timeline reloads before it lands.
         f.vm.state.await { it.muted == listOf("b", "c") }
         assertTrue("PUT /v1/me/muted-topics" in f.requests)
