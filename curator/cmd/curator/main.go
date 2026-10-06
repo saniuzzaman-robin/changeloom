@@ -58,10 +58,11 @@ commands:
                                    hosted DBs of ENVS (comma-separated, default staging,prod; list
                                    every env that has users). Anything a user follows, muted, picked
                                    or requested is kept. Without --apply it only reports.
-  run [--full]                     requests pull, requests group, fetch, backfill, then sync and
-                                   (daily) prune, for each env in CURATOR_RUN_ENVS (default prod);
-                                   --full is the one-shot version: fetch and backfill repeat until
-                                   every topic is covered, and prune always runs
+  run [--full]                     pull demand, fetch, backfill, then sync and (daily) prune, for
+                                   each env in CURATOR_RUN_ENVS (default prod); --full is the
+                                   one-shot version: fetch and backfill repeat until every topic is
+                                   covered, and prune always runs. User topic requests are not
+                                   handled: use requests pull, requests group, then sync
 
 Configuration comes from the environment; see curator/.env.example.
 `
@@ -284,6 +285,21 @@ func pullRequests(ctx context.Context, cfg config.Config, local *pgxpool.Pool, e
 	}
 	slog.InfoContext(ctx, "requests pulled", "env", env, "pending", res.Requests, "new", res.New,
 		"topics_with_demand", res.Topics, "unknown_topics", res.Unknown)
+	return nil
+}
+
+// pullDemand refreshes env's per-topic and per-country demand, which fetch plans with.
+func pullDemand(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env config.Env) error {
+	remote, err := openPool(ctx, "REMOTE_DATABASE_URL_"+env.Suffix(), cfg.Remotes[env].DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer remote.Close()
+	res, err := requests.PullDemand(ctx, local, remote, env)
+	if err != nil {
+		return err
+	}
+	slog.InfoContext(ctx, "demand pulled", "env", env, "topics_with_demand", res.Topics, "unknown_topics", res.Unknown)
 	return nil
 }
 
@@ -539,10 +555,10 @@ func runAll(ctx context.Context, cfg config.Config, full bool) error {
 			errs = append(errs, fmt.Errorf("%s: %w", name, err))
 		}
 	}
+	// Demand only: user topic requests are handled apart (`requests pull`, `requests group`, then sync).
 	for _, env := range envs {
-		step("requests pull "+string(env), func() error { return pullRequests(ctx, cfg, local, env) })
+		step("demand pull "+string(env), func() error { return pullDemand(ctx, cfg, local, env) })
 	}
-	step("requests group", func() error { return runGroup(ctx, cfg, local, false) })
 	step("fetch", func() error { return runFetch(ctx, cfg, full) })
 	step("backfill", func() error { return runBackfill(ctx, cfg, cfg.BackfillCallsPerRun, full) })
 	for _, env := range envs {

@@ -164,6 +164,37 @@ func TestPull(t *testing.T) {
 	}
 }
 
+// curator run pulls demand only, and the requests flow pulls requests only: neither touches the other's data.
+func TestPullDemandAndRequestsApart(t *testing.T) {
+	ctx := t.Context()
+	local := seeded(t)
+	remote := dbtest.New(t)
+	exec(t, remote, `INSERT INTO topics (slug, name) VALUES ('security', 'Security')`)
+	exec(t, remote, `INSERT INTO users (firebase_uid, country) VALUES ('a', 'BD')`)
+	exec(t, remote, `INSERT INTO user_topics SELECT u.id, t.id FROM users u, topics t`)
+	exec(t, remote, `INSERT INTO topic_requests (user_id, text, status) SELECT id, 'Zig', 'pending' FROM users`)
+
+	demand, err := requests.PullDemand(ctx, local, remote, config.EnvStaging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if demand.Topics != 1 || count(t, local, `SELECT count(*) FROM request_inbox`) != 0 {
+		t.Fatalf("demand pull = %+v with %d inbox rows, want 1 topic and no requests", demand, count(t, local, `SELECT count(*) FROM request_inbox`))
+	}
+	if n := count(t, local, `SELECT users FROM country_stats WHERE env = 'staging' AND country = 'BD'`); n != 1 {
+		t.Errorf("BD users = %d, want 1", n)
+	}
+
+	exec(t, local, `DELETE FROM topic_stats`)
+	pulled, err := requests.PullRequests(ctx, local, remote, config.EnvStaging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pulled.New != 1 || count(t, local, `SELECT count(*) FROM topic_stats`) != 0 {
+		t.Fatalf("requests pull = %+v with %d topic stats, want 1 new request and no demand", pulled, count(t, local, `SELECT count(*) FROM topic_stats`))
+	}
+}
+
 // Users who muted a topic, or its root, are no demand for it.
 func TestPullIgnoresMutedTopics(t *testing.T) {
 	local := seeded(t)
