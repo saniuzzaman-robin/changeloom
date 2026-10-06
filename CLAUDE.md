@@ -8,6 +8,7 @@ no guesswork.
 
 ## Status
 - P0–P8 done (backend, ingestion, AI, auth, deploy, Android app, FCM/discovery/dedupe/search/bookmarks).
+- Relevance & retention (feedback, mutes, affinity, topic mixing) done; its measurement phase (open rate by tier via `story_views.match` and a curator `stats` command) is **deferred** until there are enough users.
 - **P9 iOS: deferred** by the user. Not started; don't work on it unless asked (iOS targets, SwiftUI/CMP app, Sign in with Apple, APNs, TestFlight).
 - Local Claude curator + Neon/Cloud Run done in code (hosted setup is the user's Phase 8); production hardening H1–H9 done in code (user steps in `deploy/README.md`). The RSS/Gemini worker pipeline is deleted; the backend is the `api` binary only, and content comes from the curator (`curator/`, separate Go module; `migrate`/`seed`/`fetch`/`requests`/`sync`/`run` all implemented).
 - Never verified live: real Firebase tokens/FCM sends, Android emulator/lint, CI workflow, real deploy (Neon, Cloud Run), ads/UMP consent, in-app update/review, App Check tokens, account deletion against real Firebase. Still pending for the user: Macrobenchmark numbers and baseline profile; App Links (`/s/{id}`, host `saniuzzaman.dev`) are served by the sibling `portfolio` project (`public/.well-known/assetlinks.json` plus a Play Store redirect in `next.config.ts`); deploy it and confirm the Play app-signing fingerprint is listed.
