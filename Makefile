@@ -123,8 +123,8 @@ CURATOR_CLAUDE_TOP ?= 100
 CURATOR_CLAUDE_TO := $(CURATOR_CLAUDE_TOP)
 CURATOR_LOCAL_FROM := $(shell echo $$(($(CURATOR_CLAUDE_TOP) + 1)))
 
-curator-full-claude: ## Tier 1: pull demand and fetch the top CURATOR_CLAUDE_TOP ranked topics with Claude; no sync or prune (optional MODEL= PROMPT=)
-	cd $(CURATOR) && CURATOR_AI_PROVIDER=claude $(if $(MODEL),CURATOR_AI_MODEL=$(MODEL)) $(if $(PROMPT),CURATOR_PROMPT_STYLE=$(PROMPT)) go run ./cmd/curator run --full --rank 1-$(CURATOR_CLAUDE_TO)
+curator-full-claude: ## Tier 1: pull demand and fetch the top CURATOR_CLAUDE_TOP ranked topics with Claude; no sync or prune (optional FROM= TO= rank band, default 1-CURATOR_CLAUDE_TOP; MODEL= PROMPT=)
+	cd $(CURATOR) && CURATOR_AI_PROVIDER=claude $(if $(MODEL),CURATOR_AI_MODEL=$(MODEL)) $(if $(PROMPT),CURATOR_PROMPT_STYLE=$(PROMPT)) go run ./cmd/curator run --full --rank $(or $(FROM),1)-$(or $(TO),$(CURATOR_CLAUDE_TO))
 
 searxng-up: ## Start SearXNG (web search for CURATOR_AI_PROVIDER=local) on 127.0.0.1:SEARXNG_PORT (default 8080)
 	docker compose --profile curator up -d searxng
