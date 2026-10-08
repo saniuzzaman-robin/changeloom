@@ -204,6 +204,7 @@ func (f *Fetcher) Run(ctx context.Context) (Summary, error) {
 		StoriesPerTopic:   f.cfg.StoriesPerTopic,
 		HotMinEngaged:     f.cfg.HotMinEngaged,
 		HotInterval:       f.cfg.HotMinInterval,
+		Cooldown:          f.cfg.FetchCooldown,
 		WarmInterval:      f.cfg.WarmInterval,
 		PriorityIntervals: f.cfg.PriorityIntervals,
 		MaxAge:            f.cfg.ItemMaxAge,

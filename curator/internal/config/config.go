@@ -94,6 +94,9 @@ type Config struct {
 	// HotMinInterval is the least time between fetches of a hot topic (CURATOR_HOT_MIN_INTERVAL, a
 	// Go duration); it keeps the repeated passes of one run from fetching hot topics again.
 	HotMinInterval time.Duration
+	// FetchCooldown is the least time between fetches of any topic (CURATOR_FETCH_COOLDOWN, a Go
+	// duration): a topic fetched within it is skipped, whatever its demand.
+	FetchCooldown time.Duration
 	// WarmInterval is the least time between fetches of a topic that is followed or serves a user's
 	// profession but is not hot (CURATOR_WARM_INTERVAL_HOURS).
 	WarmInterval time.Duration
@@ -215,6 +218,11 @@ func Load() (Config, error) {
 		errs = append(errs, fmt.Errorf("CURATOR_HOT_MIN_INTERVAL must be a non-negative Go duration such as 1h, got %q", os.Getenv("CURATOR_HOT_MIN_INTERVAL")))
 	}
 
+	fetchCooldown, err := time.ParseDuration(getenv("CURATOR_FETCH_COOLDOWN", "8h"))
+	if err != nil || fetchCooldown < 0 {
+		errs = append(errs, fmt.Errorf("CURATOR_FETCH_COOLDOWN must be a non-negative Go duration such as 8h, got %q", os.Getenv("CURATOR_FETCH_COOLDOWN")))
+	}
+
 	callDelay, err := time.ParseDuration(getenv("CURATOR_CALL_DELAY", "0s"))
 	if err != nil || callDelay < 0 {
 		errs = append(errs, fmt.Errorf("CURATOR_CALL_DELAY must be a non-negative Go duration such as 5s, got %q", os.Getenv("CURATOR_CALL_DELAY")))
@@ -278,6 +286,7 @@ func Load() (Config, error) {
 		MergeWindow:        time.Duration(envInt(&errs, "CURATOR_MERGE_WINDOW_DAYS", 14)) * 24 * time.Hour,
 		HotMinEngaged:      envInt(&errs, "CURATOR_HOT_MIN_ENGAGED", 1),
 		HotMinInterval:     hotMinInterval,
+		FetchCooldown:      fetchCooldown,
 		WarmInterval:       time.Duration(envInt(&errs, "CURATOR_WARM_INTERVAL_HOURS", 24)) * time.Hour,
 		PriorityIntervals:  envHours(&errs, "CURATOR_PRIORITY_INTERVAL_HOURS", [5]int{48, 96, 168, 336, 672}),
 		StoriesPerTopic:    envInt(&errs, "CURATOR_STORIES_PER_TOPIC", 5),

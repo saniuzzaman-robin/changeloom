@@ -201,6 +201,22 @@ func TestPlanHotMinInterval(t *testing.T) {
 	}
 }
 
+func TestPlanCooldown(t *testing.T) {
+	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	settings := fetch.PlanSettings{
+		TopicsPerCall: 1, MaxCalls: 10, StoriesPerTopic: 5, HotMinEngaged: 1, HotInterval: time.Hour,
+		Cooldown: 8 * time.Hour, WarmInterval: 24 * time.Hour, PriorityIntervals: hours(48, 96, 168, 336, 672), MaxAge: 14 * 24 * time.Hour,
+	}
+	topics := []fetch.Topic{
+		{Slug: "cooling", Priority: 3, Engaged7d: 3, LastFetchedAt: now.Add(-7 * time.Hour)},
+		{Slug: "due", Priority: 3, Engaged7d: 3, LastFetchedAt: now.Add(-9 * time.Hour)},
+	}
+	groups, _ := fetch.Plan(topics, settings, now)
+	if len(groups) != 1 || groups[0].Topics[0].Slug != "due" {
+		t.Fatalf("groups = %+v, want only the topic fetched over 8h ago", groups)
+	}
+}
+
 func TestPlanEngagement(t *testing.T) {
 	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
 	never := time.Unix(0, 0)

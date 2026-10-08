@@ -67,7 +67,10 @@ type PlanSettings struct {
 	HotMinEngaged int
 	// HotInterval is the least time between fetches of a hot topic, so repeated passes of one run
 	// do not fetch it again.
-	HotInterval       time.Duration
+	HotInterval time.Duration
+	// Cooldown is the least time between fetches of any topic, whatever its tier: a topic fetched
+	// more recently (even with no new stories) is skipped.
+	Cooldown          time.Duration
 	WarmInterval      time.Duration
 	PriorityIntervals [topiccatalog.MaxPriority]time.Duration
 	MaxAge            time.Duration
@@ -142,7 +145,7 @@ func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferr
 		default:
 			continue
 		}
-		if now.Sub(t.LastFetchedAt) < interval {
+		if now.Sub(t.LastFetchedAt) < max(interval, s.Cooldown) {
 			continue
 		}
 		key := cmp.Or(t.ParentSlug, t.Slug)
