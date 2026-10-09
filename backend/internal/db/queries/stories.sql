@@ -7,13 +7,14 @@
 -- tier 5 (explore) with anything else, and only when of at least explore_min_importance or the user
 -- follows nothing and has no profession. Unread first, by score: tier, importance and severity points minus
 -- one point per decay_hours of age at as_of, minus seen_penalty for a story first seen before
--- seen_before and not saved. Read stories (score 0) follow, newest first. Every input is fixed
+-- seen_before and not saved (never for a followed topic). Read stories (score 0) follow, newest first. Every input is fixed
 -- for a given as_of, so later views or new stories don't move rows across a page boundary.
 -- Feedback: dismissed stories are left out. A muted topic covers its descendants down to (not
 -- including) a followed one, and following likewise stops at a muted descendant, so the most
 -- specific choice wins. Muted topics give no tier, and a story whose every topic is muted is left out.
 -- Optional filters: kinds (empty means all) and read_filter (NULL both, true read only, false unread only).
--- Keyset pagination on (is_read, score, published_at, id).
+-- Unread stories of a followed topic (tier 0) come before every other unread story, whatever their score.
+-- Keyset pagination on (is_read, is_followed, score, published_at, id).
 -- Tiers come from one aggregate over the in-tier topics' story_topics rows instead of per-story
 -- subqueries, and topic slugs are built only for the page: per-row subplans over the whole window
 -- inflated the plan cost past jit_above_cost, and JIT compilation took ~90% of the query time.
@@ -112,9 +113,10 @@ WITH RECURSIVE followed AS (
                 * CASE r.severity WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'medium' THEN 1 ELSE 0 END
             - extract(epoch FROM greatest(sqlc.arg(as_of)::timestamptz - r.published_at, interval '0'))
                 / 3600 / sqlc.arg(decay_hours)::float8
-            - CASE WHEN r.seen_at < sqlc.arg(seen_before)::timestamptz AND NOT r.is_bookmarked
+            - CASE WHEN r.seen_at < sqlc.arg(seen_before)::timestamptz AND NOT r.is_bookmarked AND r.tier > 0
                 THEN sqlc.arg(seen_penalty)::float8 ELSE 0 END
-        END::float8 AS score
+        END::float8 AS score,
+        (NOT r.is_read AND r.tier = 0) AS is_followed
     FROM ranked r
     WHERE r.tier < 5 OR r.importance >= sqlc.arg(explore_min_importance)::smallint
         OR NOT (
@@ -127,11 +129,17 @@ WITH RECURSIVE followed AS (
         OR sc.is_read > sqlc.narg(cursor_read)::boolean
         OR (
             sc.is_read = sqlc.narg(cursor_read)::boolean
-            AND (sc.score, sc.published_at, sc.id) < (
-                sqlc.narg(cursor_score)::float8, sqlc.narg(cursor_published_at)::timestamptz, sqlc.narg(cursor_id)::bigint
+            AND (
+                sc.is_followed < sqlc.narg(cursor_followed)::boolean
+                OR (
+                    sc.is_followed = sqlc.narg(cursor_followed)::boolean
+                    AND (sc.score, sc.published_at, sc.id) < (
+                        sqlc.narg(cursor_score)::float8, sqlc.narg(cursor_published_at)::timestamptz, sqlc.narg(cursor_id)::bigint
+                    )
+                )
             )
         )
-    ORDER BY sc.is_read ASC, sc.score DESC, sc.published_at DESC, sc.id DESC
+    ORDER BY sc.is_read ASC, sc.is_followed DESC, sc.score DESC, sc.published_at DESC, sc.id DESC
     LIMIT @page_size
 )
 SELECT p.id, p.title, p.summary, p.kind, p.severity, p.importance, p.published_at, p.read_at,
@@ -143,7 +151,7 @@ SELECT p.id, p.title, p.summary, p.kind, p.severity, p.importance, p.published_a
         WHERE stp.story_id = p.id ORDER BY tp.slug
     )::text[] AS topics
 FROM page p
-ORDER BY p.is_read ASC, p.score DESC, p.published_at DESC, p.id DESC;
+ORDER BY p.is_read ASC, p.is_followed DESC, p.score DESC, p.published_at DESC, p.id DESC;
 
 -- name: GetStory :one
 SELECT s.id, s.title, s.summary, s.body_md, s.kind, s.severity, s.importance, s.published_at, uss.read_at,

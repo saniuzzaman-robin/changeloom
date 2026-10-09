@@ -35,8 +35,8 @@ func TestMixPage(t *testing.T) {
 		{
 			name: "breaks a run of one root after two",
 			rows: []db.ListTimelineRow{
-				mixRow(1, tierFollowed, false, "web/react"), mixRow(2, tierFollowed, false, "web/vue"),
-				mixRow(3, tierFollowed, false, "web"), mixRow(4, tierProfession, false, "cloud/aws"),
+				mixRow(1, tierProfession, false, "web/react"), mixRow(2, tierProfession, false, "web/vue"),
+				mixRow(3, tierProfession, false, "web"), mixRow(4, tierProfession, false, "cloud/aws"),
 				mixRow(5, tierProfession, false, "web/react"),
 			},
 			mix:  TimelineMix{MaxTopicRun: 2},
@@ -45,8 +45,8 @@ func TestMixPage(t *testing.T) {
 		{
 			name: "a story shares a root through any of its topics",
 			rows: []db.ListTimelineRow{
-				mixRow(1, tierFollowed, false, "web/react", "cloud/aws"), mixRow(2, tierFollowed, false, "cloud/gcp"),
-				mixRow(3, tierFollowed, false, "databases/postgres", "cloud"), mixRow(4, tierRelated, false, "languages/go"),
+				mixRow(1, tierProfession, false, "web/react", "cloud/aws"), mixRow(2, tierProfession, false, "cloud/gcp"),
+				mixRow(3, tierProfession, false, "databases/postgres", "cloud"), mixRow(4, tierRelated, false, "languages/go"),
 			},
 			mix:  TimelineMix{MaxTopicRun: 2},
 			want: []int64{1, 2, 4, 3},
@@ -55,7 +55,7 @@ func TestMixPage(t *testing.T) {
 			name: "spaces headlines",
 			rows: []db.ListTimelineRow{
 				mixRow(1, tierHeadline, false, "world/politics"), mixRow(2, tierHeadline, false, "sports/football"),
-				mixRow(3, tierFollowed, false, "web/react"), mixRow(4, tierRelated, false, "cloud/aws"),
+				mixRow(3, tierProfession, false, "web/react"), mixRow(4, tierRelated, false, "cloud/aws"),
 				mixRow(5, tierHeadline, false, "world/economy"), mixRow(6, tierExplore, false, "languages/go"),
 			},
 			mix:  TimelineMix{HeadlineSpacing: 3},
@@ -65,11 +65,20 @@ func TestMixPage(t *testing.T) {
 			name: "spaces explore stories apart from headlines",
 			rows: []db.ListTimelineRow{
 				mixRow(1, tierExplore, false, "web/react"), mixRow(2, tierExplore, false, "cloud/aws"),
-				mixRow(3, tierHeadline, false, "world/politics"), mixRow(4, tierFollowed, false, "languages/go"),
+				mixRow(3, tierHeadline, false, "world/politics"), mixRow(4, tierProfession, false, "languages/go"),
 				mixRow(5, tierExplore, false, "databases/postgres"),
 			},
 			mix:  TimelineMix{HeadlineSpacing: 2, ExploreSpacing: 3},
 			want: []int64{1, 3, 4, 2, 5},
+		},
+		{
+			name: "followed stories are never mixed with the others",
+			rows: []db.ListTimelineRow{
+				mixRow(1, tierFollowed, false, "web/react"), mixRow(2, tierFollowed, false, "web/vue"),
+				mixRow(3, tierFollowed, false, "web/angular"), mixRow(4, tierProfession, false, "cloud/aws"),
+			},
+			mix:  TimelineMix{MaxTopicRun: 2},
+			want: []int64{1, 2, 3, 4},
 		},
 		{
 			name: "a page that can't be spread keeps its order",

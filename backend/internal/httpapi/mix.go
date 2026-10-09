@@ -11,8 +11,8 @@ import (
 // root topic and headline and explore stories are at least mix.HeadlineSpacing and
 // mix.ExploreSpacing apart. Each slot takes the
 // highest-ranked remaining story that keeps both limits, or the highest-ranked one when none
-// does, so a page that can't be spread keeps its order. Unread and read stories are mixed
-// separately and stay in their sections. The page's set of stories never changes, so the cursor
+// does, so a page that can't be spread keeps its order. Read stories, unread followed-topic
+// stories and the other unread stories are mixed separately and stay in their sections. The page's set of stories never changes, so the cursor
 // taken from the ranked page stays valid.
 func mixPage(rows []db.ListTimelineRow, mix TimelineMix) []db.ListTimelineRow {
 	if len(rows) < 2 || (mix.MaxTopicRun < 1 && mix.HeadlineSpacing < 2 && mix.ExploreSpacing < 2) {
@@ -21,13 +21,18 @@ func mixPage(rows []db.ListTimelineRow, mix TimelineMix) []db.ListTimelineRow {
 	out := make([]db.ListTimelineRow, 0, len(rows))
 	for start := 0; start < len(rows); {
 		end := start + 1
-		for end < len(rows) && (rows[end].ReadAt != nil) == (rows[start].ReadAt != nil) {
+		for end < len(rows) && sameSection(rows[end], rows[start]) {
 			end++
 		}
 		out = append(out, mixSection(rows[start:end], mix)...)
 		start = end
 	}
 	return out
+}
+
+// sameSection reports whether a and b are ranked in the same section of the timeline.
+func sameSection(a, b db.ListTimelineRow) bool {
+	return (a.ReadAt != nil) == (b.ReadAt != nil) && (a.Tier == tierFollowed) == (b.Tier == tierFollowed)
 }
 
 func mixSection(rows []db.ListTimelineRow, mix TimelineMix) []db.ListTimelineRow {

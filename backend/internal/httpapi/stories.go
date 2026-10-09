@@ -14,9 +14,9 @@ import (
 )
 
 // cursorVersion marks timeline cursors whose score matches the current ranking; older ones (tier
-// cursors, or scores from before the affinity tier) are rejected so the client reloads from the
+// cursors, scores from before the affinity tier, or cursors without the followed flag) are rejected so the client reloads from the
 // first page.
-const cursorVersion = 3
+const cursorVersion = 4
 
 // cursor is the keyset position of the last item on a page. Timeline cursors also carry their
 // version and the time the first page was ranked at, which fixes every score for the pages that
@@ -25,6 +25,7 @@ type cursor struct {
 	Version     int       `json:"v,omitzero"`
 	AsOf        time.Time `json:"a,omitzero"`
 	IsRead      bool      `json:"r"`
+	IsFollowed  bool      `json:"f,omitzero"`
 	Score       float64   `json:"s,omitzero"`
 	PublishedAt time.Time `json:"p"`
 	ID          int64     `json:"i"`
@@ -130,7 +131,8 @@ func (s *Server) GetTimeline(w http.ResponseWriter, r *http.Request, params GetT
 		SeenBefore:            asOf.Add(-score.SeenGrace),
 	}
 	if c != nil {
-		arg.CursorRead, arg.CursorScore, arg.CursorPublishedAt, arg.CursorID = &c.IsRead, &c.Score, &c.PublishedAt, &c.ID
+		arg.CursorRead, arg.CursorFollowed, arg.CursorScore, arg.CursorPublishedAt, arg.CursorID =
+			&c.IsRead, &c.IsFollowed, &c.Score, &c.PublishedAt, &c.ID
 	}
 
 	rows, err := s.q.ListTimeline(r.Context(), arg)
@@ -144,7 +146,8 @@ func (s *Server) GetTimeline(w http.ResponseWriter, r *http.Request, params GetT
 		rows = rows[:limit]
 		last := rows[limit-1]
 		c := cursor{
-			Version: cursorVersion, AsOf: asOf, IsRead: last.ReadAt != nil, Score: last.Score,
+			Version: cursorVersion, AsOf: asOf, IsRead: last.ReadAt != nil, IsFollowed: last.ReadAt == nil && last.Tier == tierFollowed,
+			Score:       last.Score,
 			PublishedAt: last.PublishedAt, ID: last.ID,
 		}.encode()
 		next = &c
