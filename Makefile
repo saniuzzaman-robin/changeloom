@@ -48,8 +48,8 @@ GRADLE ?= ./gradlew
 CHROME ?= /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 BRANDING := $(MOBILE)/branding
 
-.PHONY: db-up db-down migrate migrate-down migrate-status migrate-remote generate run-api build test lint fmt \
-	curator-db curator-migrate curator-seed curator-fetch curator-backfill curator-full curator-requests curator-clean curator-sync curator-generate curator-build curator-test curator-lint curator-fmt \
+.PHONY: searxng-up searxng-down db-up db-down migrate migrate-down migrate-status migrate-remote generate run-api build test lint fmt \
+	curator-db curator-migrate curator-seed curator-fetch curator-full curator-full-claude curator-requests curator-clean curator-sync curator-prune curator-generate curator-build curator-test curator-lint curator-fmt \
 	deploy-api android-apk android-bundle brand-assets release
 
 db-up: ## Start the dev Postgres (docker), or check the installed one is reachable (local)
@@ -110,7 +110,7 @@ curator-migrate: ## Apply the backend and curator migrations to the curator's lo
 curator-seed: ## Load curator/seed/catalog/ into the curator's local DB
 	$(CURATOR_RUN) seed
 
-# For one run, AI=claude|openai, MODEL=<name> and PROMPT=frontier|compact override
+# For one run, AI=claude|openai|local, MODEL=<name> and PROMPT=frontier|compact override
 # CURATOR_AI_PROVIDER, CURATOR_AI_MODEL and CURATOR_PROMPT_STYLE from curator/.env.
 CURATOR_AI_RUN = cd $(CURATOR) && $(if $(AI),CURATOR_AI_PROVIDER=$(AI)) $(if $(MODEL),CURATOR_AI_MODEL=$(MODEL)) \
 	$(if $(PROMPT),CURATOR_PROMPT_STYLE=$(PROMPT)) go run ./cmd/curator
@@ -118,11 +118,22 @@ CURATOR_AI_RUN = cd $(CURATOR) && $(if $(AI),CURATOR_AI_PROVIDER=$(AI)) $(if $(M
 curator-fetch: ## Fetch stories for due topics with real AI calls (optional AI= MODEL= PROMPT=)
 	$(CURATOR_AI_RUN) fetch
 
-curator-backfill: ## Fill thin topics with real AI calls (optional MAX_CALLS=N, default CURATOR_BACKFILL_CALLS_PER_RUN; AI= MODEL= PROMPT=)
-	$(CURATOR_AI_RUN) backfill $(if $(MAX_CALLS),--max-calls $(MAX_CALLS))
+# Ranked tiers (see `fetch.Rank`): the top CURATOR_CLAUDE_TOP topics use Claude, `curator-full` (local LLM) takes the rest, most important first.
+CURATOR_CLAUDE_TOP ?= 100
+CURATOR_CLAUDE_TO := $(CURATOR_CLAUDE_TOP)
+CURATOR_LOCAL_FROM := $(shell echo $$(($(CURATOR_CLAUDE_TOP) + 1)))
 
-curator-full: ## One shot: pull demand, fetch and backfill every topic until covered, sync and prune all CURATOR_RUN_ENVS; user topic requests are left to curator-requests (long; real AI calls; optional AI= MODEL= PROMPT=)
-	$(CURATOR_AI_RUN) run --full
+curator-full-claude: ## Tier 1: pull demand and fetch the top CURATOR_CLAUDE_TOP ranked topics with Claude; no sync or prune (optional FROM= TO= rank band, default 1-CURATOR_CLAUDE_TOP; MODEL= PROMPT=)
+	cd $(CURATOR) && CURATOR_AI_PROVIDER=claude $(if $(MODEL),CURATOR_AI_MODEL=$(MODEL)) $(if $(PROMPT),CURATOR_PROMPT_STYLE=$(PROMPT)) go run ./cmd/curator run --full --rank $(or $(FROM),1)-$(or $(TO),$(CURATOR_CLAUDE_TO))
+
+searxng-up: ## Start SearXNG (web search for CURATOR_AI_PROVIDER=local) on 127.0.0.1:SEARXNG_PORT (default 8080)
+	docker compose --profile curator up -d searxng
+
+searxng-down: ## Stop SearXNG
+	docker compose --profile curator stop searxng
+
+curator-full: searxng-up ## Tier 2: same for every topic ranked after the Claude tier (from rank CURATOR_CLAUDE_TOP+1 on) with the local LLM, most important first (starts SearXNG itself; needs `ollama serve`); no sync or prune (curator-sync, curator-prune); user topic requests are left to curator-requests (long; optional MODEL= PROMPT=)
+	cd $(CURATOR) && CURATOR_AI_PROVIDER=local $(if $(MODEL),CURATOR_AI_MODEL=$(MODEL)) $(if $(PROMPT),CURATOR_PROMPT_STYLE=$(PROMPT)) go run ./cmd/curator run --full --rank $(CURATOR_LOCAL_FROM)-
 
 curator-requests: ## Handle user topic requests for DEPLOY_ENV: pull pending ones, group them into topics with real AI calls, then sync DEPLOY_ENV so users see the new topics and decisions (DRY_RUN=1 only prints the proposal; optional AI= MODEL= PROMPT=)
 	$(CURATOR_RUN) requests pull --env $(DEPLOY_ENV)
@@ -132,6 +143,9 @@ curator-requests: ## Handle user topic requests for DEPLOY_ENV: pull pending one
 curator-clean: ENVS ?= staging,prod
 curator-clean: ## Delete topics/professions no longer in the catalog (and unsaved stories only in them) from the local DB and each hosted DB in ENVS (default staging,prod), keeping anything users still use; reports only unless APPLY=1
 	$(CURATOR_RUN) clean --envs $(ENVS) $(if $(APPLY),--apply)
+
+curator-prune: ## Delete old unsaved stories from each hosted DB in CURATOR_RUN_ENVS (DEPLOY_ENV=<env> for one; saved stories are never deleted)
+	$(foreach e,$(if $(filter command line environment,$(origin DEPLOY_ENV)),$(DEPLOY_ENV),$(subst $(comma), ,$(CURATOR_RUN_ENVS))),$(CURATOR_RUN) prune --env $(e) &&) true
 
 curator-sync: ## Push the curator's local catalog and stories to DEPLOY_ENV's hosted DB (REMOTE_DATABASE_URL_<ENV> in curator/.env)
 	$(CURATOR_RUN) sync --env $(DEPLOY_ENV)

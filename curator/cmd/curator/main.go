@@ -41,11 +41,10 @@ commands:
                                    --remote applies only the backend migrations to the hosted DB
                                    of ENV (staging, the default, or prod): REMOTE_DATABASE_URL_<ENV>
   seed                             load the profession and topic catalog (seed/catalog/) into the local DB
-  fetch [--all]                    fetch new stories with Claude into the local DB; --all repeats
-                                   until every due topic has been fetched
-  backfill [--max-calls N] [--all] fill topics that have fewer than CURATOR_BACKFILL_TARGET recent
-                                   stories with Claude (default N: CURATOR_BACKFILL_CALLS_PER_RUN);
-                                   --all repeats until no topic is short
+  fetch [--all] [--rank FROM-TO]   fetch new stories with Claude into the local DB; --all repeats
+                                   until every due topic has been fetched; --rank limits it to the
+                                   topics ranked FROM-TO (e.g. 1-100, or 401- for the rest) by
+                                   priority, then demand
   requests pull [--env ENV]        copy pending topic requests and follower counts from the hosted
                                    DB of ENV (staging, the default, or prod)
   requests group [--dry-run]       turn pending requests into topics with Claude
@@ -58,11 +57,10 @@ commands:
                                    hosted DBs of ENVS (comma-separated, default staging,prod; list
                                    every env that has users). Anything a user follows, muted, picked
                                    or requested is kept. Without --apply it only reports.
-  run [--full]                     pull demand, fetch, backfill, then sync and (daily) prune, for
-                                   each env in CURATOR_RUN_ENVS (default prod); --full is the
-                                   one-shot version: fetch and backfill repeat until every topic is
-                                   covered, and prune always runs. User topic requests are not
-                                   handled: use requests pull, requests group, then sync
+  run [--full] [--rank FROM-TO]    pull demand and fetch, for each env in CURATOR_RUN_ENVS
+                                   (default prod); --full repeats fetch until every topic is covered. It neither syncs nor prunes: use sync and
+                                   prune. User topic requests are not handled: use requests pull,
+                                   requests group, then sync. --rank as in fetch
 
 Configuration comes from the environment; see curator/.env.example.
 `
@@ -119,21 +117,15 @@ func run(args []string) error {
 	case "fetch":
 		fs := flag.NewFlagSet("fetch", flag.ContinueOnError)
 		all := fs.Bool("all", false, "repeat until every due topic has been fetched")
+		rank := fs.String("rank", "", rankUsage)
 		if err := parse(fs, rest); err != nil {
 			return err
 		}
-		return runFetch(ctx, cfg, *all)
-	case "backfill":
-		fs := flag.NewFlagSet("backfill", flag.ContinueOnError)
-		maxCalls := fs.Int("max-calls", cfg.BackfillCallsPerRun, "most Claude calls to make per pass")
-		all := fs.Bool("all", false, "repeat passes until no topic is short")
-		if err := parse(fs, rest); err != nil {
+		band, err := parseBand(*rank)
+		if err != nil {
 			return err
 		}
-		if *maxCalls < 1 {
-			return fmt.Errorf("%w: backfill --max-calls must be at least 1", errUsage)
-		}
-		return runBackfill(ctx, cfg, *maxCalls, *all)
+		return runFetch(ctx, cfg, *all, band)
 	case "prune":
 		fs := flag.NewFlagSet("prune", flag.ContinueOnError)
 		envName := fs.String("env", string(config.EnvStaging), "hosted environment to prune: staging or prod")
@@ -176,14 +168,30 @@ func run(args []string) error {
 		return runClean(ctx, cfg, envs, *apply)
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ContinueOnError)
-		full := fs.Bool("full", false, "repeat fetch and backfill until every topic is covered, and always prune")
+		full := fs.Bool("full", false, "repeat fetch until every topic is covered")
+		rank := fs.String("rank", "", rankUsage)
 		if err := parse(fs, rest); err != nil {
 			return err
 		}
-		return runAll(ctx, cfg, *full)
+		band, err := parseBand(*rank)
+		if err != nil {
+			return err
+		}
+		return runAll(ctx, cfg, *full, band)
 	default:
 		return fmt.Errorf("%w: unknown command %q", errUsage, cmd)
 	}
+}
+
+const rankUsage = "only the topics ranked inside FROM-TO (1-100) or FROM- (401-), by priority then demand; default every topic"
+
+// parseBand reads a --rank value.
+func parseBand(value string) (fetch.Band, error) {
+	band, err := fetch.ParseBand(value)
+	if err != nil {
+		return fetch.Band{}, fmt.Errorf("%w: --rank: %w", errUsage, err)
+	}
+	return band, nil
 }
 
 // parse parses a subcommand's flags and rejects positional arguments.
@@ -326,7 +334,7 @@ func runGroup(ctx context.Context, cfg config.Config, local *pgxpool.Pool, dryRu
 	return nil
 }
 
-func runFetch(ctx context.Context, cfg config.Config, all bool) error {
+func runFetch(ctx context.Context, cfg config.Config, all bool, band fetch.Band) error {
 	pool, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
 	if err != nil {
 		return err
@@ -337,7 +345,7 @@ func runFetch(ctx context.Context, cfg config.Config, all bool) error {
 	if err != nil {
 		return err
 	}
-	f := fetch.New(pool, runner, cfg)
+	f := fetch.New(pool, runner, cfg).WithBand(band)
 	var errs []error
 	for pass := 1; ; pass++ {
 		sum, err := f.Run(ctx)
@@ -347,33 +355,6 @@ func runFetch(ctx context.Context, cfg config.Config, all bool) error {
 			errs = append(errs, err)
 		}
 		if !all || len(sum.Deferred) == 0 || noProgress(ctx, sum) {
-			break
-		}
-	}
-	return errors.Join(errs...)
-}
-
-func runBackfill(ctx context.Context, cfg config.Config, maxCalls int, all bool) error {
-	pool, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
-	if err != nil {
-		return err
-	}
-	defer pool.Close()
-
-	runner, err := ai.New(cfg)
-	if err != nil {
-		return err
-	}
-	f := fetch.New(pool, runner, cfg)
-	var errs []error
-	for pass := 1; ; pass++ {
-		sum, err := f.Backfill(ctx, maxCalls)
-		slog.InfoContext(ctx, "backfill finished", "pass", pass, "calls", sum.Calls, "failed", sum.Failed, "added", sum.Added,
-			"merged", sum.Merged, "rejected", sum.Rejected, "cost_usd", sum.CostUSD)
-		if err != nil {
-			errs = append(errs, err)
-		}
-		if !all || sum.Calls == 0 || noProgress(ctx, sum) {
 			break
 		}
 	}
@@ -394,40 +375,22 @@ func noProgress(ctx context.Context, sum fetch.Summary) bool {
 }
 
 func runPrune(ctx context.Context, cfg config.Config, env config.Env) error {
-	local, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
-	if err != nil {
-		return err
-	}
-	defer local.Close()
-	return pruneEnv(ctx, cfg, local, env)
+	return pruneEnv(ctx, cfg, env)
 }
 
-// pruneEnv deletes the stories env's hosted DB no longer needs and records when it did.
-func pruneEnv(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env config.Env) error {
+// pruneEnv deletes the stories env's hosted DB no longer needs.
+func pruneEnv(ctx context.Context, cfg config.Config, env config.Env) error {
 	remote, err := openPool(ctx, "REMOTE_DATABASE_URL_"+env.Suffix(), cfg.Remotes[env].DatabaseURL)
 	if err != nil {
 		return err
 	}
 	defer remote.Close()
 
-	now := time.Now()
 	deleted, err := prune.Run(ctx, remote, prune.Settings{
 		MaxAge: cfg.PruneMaxAge,
-	}, now)
+	}, time.Now())
 	slog.InfoContext(ctx, "pruned", "env", env, "deleted_stories", deleted)
-	if err != nil {
-		return err
-	}
-	return prune.MarkDone(ctx, local, env, now)
-}
-
-// pruneIfDue prunes env when CURATOR_PRUNE_INTERVAL_DAYS have passed since the last prune.
-func pruneIfDue(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env config.Env) error {
-	due, err := prune.Due(ctx, local, env, cfg.PruneInterval, time.Now())
-	if err != nil || !due {
-		return err
-	}
-	return pruneEnv(ctx, cfg, local, env)
+	return err
 }
 
 // runClean deletes what left the catalog from the local DB, then from each hosted DB in envs, keeping
@@ -522,11 +485,10 @@ func syncEnv(ctx context.Context, cfg config.Config, local *pgxpool.Pool, env co
 	return nil
 }
 
-// runAll is requests pull, requests group, fetch, backfill, then sync and a prune. With full, fetch
-// and backfill repeat until every topic is covered and the prune is not skipped. Pull,
-// sync and prune run for each hosted env with a database URL. A failing step is logged and the run continues where that is safe, so a
-// failed fetch still pushes request decisions; the error returned lists every failed step.
-func runAll(ctx context.Context, cfg config.Config, full bool) error {
+// runAll is a demand pull and fetch. With full, fetch repeats until every topic is covered. The pull runs for each hosted env with a database URL. Sync and prune are separate
+// commands. A failing step is logged and the run continues where that is safe; the error returned
+// lists every failed step.
+func runAll(ctx context.Context, cfg config.Config, full bool, band fetch.Band) error {
 	local, err := openPool(ctx, "LOCAL_DATABASE_URL", cfg.LocalDatabaseURL)
 	if err != nil {
 		return err
@@ -559,19 +521,7 @@ func runAll(ctx context.Context, cfg config.Config, full bool) error {
 	for _, env := range envs {
 		step("demand pull "+string(env), func() error { return pullDemand(ctx, cfg, local, env) })
 	}
-	step("fetch", func() error { return runFetch(ctx, cfg, full) })
-	step("backfill", func() error { return runBackfill(ctx, cfg, cfg.BackfillCallsPerRun, full) })
-	for _, env := range envs {
-		step("sync "+string(env), func() error { return syncEnv(ctx, cfg, local, env) })
-	}
-	for _, env := range envs {
-		step("prune "+string(env), func() error {
-			if full {
-				return pruneEnv(ctx, cfg, local, env)
-			}
-			return pruneIfDue(ctx, cfg, local, env)
-		})
-	}
+	step("fetch", func() error { return runFetch(ctx, cfg, full, band) })
 	return errors.Join(errs...)
 }
 

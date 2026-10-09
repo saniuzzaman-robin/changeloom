@@ -9,7 +9,7 @@ idempotent steps, bounded work, validated data, explicit errors and tests.
   Rerun `make curator-generate` after backend migrations or `internal/db/queries` change.
 - Bug fix: write the failing test first. `internal/dbtest` gives a throwaway database.
 - Tests never call a real model: fake the CLI or API (see `fakeCLI` in `internal/claude/claude_test.go`).
-- Never run `fetch`, `backfill`, `sync`, `prune --env` or `migrate --remote` yourself. Real fetches use the user's
+- Never run `fetch`, `sync`, `prune --env` or `migrate --remote` yourself. Real fetches use the user's
   subscription, and the others touch hosted databases. Show the command instead.
 - Report what you couldn't verify. Check a claim before stating it.
 

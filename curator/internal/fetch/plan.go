@@ -64,7 +64,13 @@ type PlanSettings struct {
 	// HotMinEngaged is the recent users who opened or saved a story that make a topic hot;
 	// WarmInterval is the least time between fetches of a warm topic, and PriorityIntervals[p-1]
 	// that of a cold topic of priority p.
-	HotMinEngaged     int
+	HotMinEngaged int
+	// HotInterval is the least time between fetches of a hot topic, so repeated passes of one run
+	// do not fetch it again.
+	HotInterval time.Duration
+	// Cooldown is the least time between fetches of any topic, whatever its tier: a topic fetched
+	// more recently (even with no new stories) is skipped.
+	Cooldown          time.Duration
 	WarmInterval      time.Duration
 	PriorityIntervals [topiccatalog.MaxPriority]time.Duration
 	MaxAge            time.Duration
@@ -129,7 +135,7 @@ func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferr
 		var interval time.Duration
 		switch {
 		case engaged >= s.HotMinEngaged:
-			tr = tierHot
+			tr, interval = tierHot, s.HotInterval
 		case views > 0 && engaged == 0:
 			tr, interval = tierCold, s.PriorityIntervals[p-1]
 		case engaged > 0 || t.Headline || t.Followers+parent.Followers+t.ProfessionUsers+parent.ProfessionUsers > 0:
@@ -139,7 +145,7 @@ func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferr
 		default:
 			continue
 		}
-		if now.Sub(t.LastFetchedAt) < interval {
+		if now.Sub(t.LastFetchedAt) < max(interval, s.Cooldown) {
 			continue
 		}
 		key := cmp.Or(t.ParentSlug, t.Slug)

@@ -311,9 +311,10 @@ WITH RECURSIVE followed AS (
                 * CASE r.severity WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'medium' THEN 1 ELSE 0 END
             - extract(epoch FROM greatest($3::timestamptz - r.published_at, interval '0'))
                 / 3600 / $11::float8
-            - CASE WHEN r.seen_at < $12::timestamptz AND NOT r.is_bookmarked
+            - CASE WHEN r.seen_at < $12::timestamptz AND NOT r.is_bookmarked AND r.tier > 0
                 THEN $13::float8 ELSE 0 END
-        END::float8 AS score
+        END::float8 AS score,
+        (NOT r.is_read AND r.tier = 0) AS is_followed
     FROM ranked r
     WHERE r.tier < 5 OR r.importance >= $14::smallint
         OR NOT (
@@ -321,17 +322,23 @@ WITH RECURSIVE followed AS (
             OR EXISTS (SELECT 1 FROM user_professions up WHERE up.user_id = $1)
         )
 ), page AS (
-    SELECT sc.id, sc.title, sc.summary, sc.kind, sc.severity, sc.importance, sc.published_at, sc.read_at, sc.is_read, sc.is_bookmarked, sc.tier, sc.seen_at, sc.score FROM scored sc
+    SELECT sc.id, sc.title, sc.summary, sc.kind, sc.severity, sc.importance, sc.published_at, sc.read_at, sc.is_read, sc.is_bookmarked, sc.tier, sc.seen_at, sc.score, sc.is_followed FROM scored sc
     WHERE $15::bigint IS NULL
         OR sc.is_read > $16::boolean
         OR (
             sc.is_read = $16::boolean
-            AND (sc.score, sc.published_at, sc.id) < (
-                $17::float8, $18::timestamptz, $15::bigint
+            AND (
+                sc.is_followed < $17::boolean
+                OR (
+                    sc.is_followed = $17::boolean
+                    AND (sc.score, sc.published_at, sc.id) < (
+                        $18::float8, $19::timestamptz, $15::bigint
+                    )
+                )
             )
         )
-    ORDER BY sc.is_read ASC, sc.score DESC, sc.published_at DESC, sc.id DESC
-    LIMIT $19
+    ORDER BY sc.is_read ASC, sc.is_followed DESC, sc.score DESC, sc.published_at DESC, sc.id DESC
+    LIMIT $20
 )
 SELECT p.id, p.title, p.summary, p.kind, p.severity, p.importance, p.published_at, p.read_at,
     p.is_bookmarked::boolean AS is_bookmarked,
@@ -342,7 +349,7 @@ SELECT p.id, p.title, p.summary, p.kind, p.severity, p.importance, p.published_a
         WHERE stp.story_id = p.id ORDER BY tp.slug
     )::text[] AS topics
 FROM page p
-ORDER BY p.is_read ASC, p.score DESC, p.published_at DESC, p.id DESC
+ORDER BY p.is_read ASC, p.is_followed DESC, p.score DESC, p.published_at DESC, p.id DESC
 `
 
 type ListTimelineParams struct {
@@ -362,6 +369,7 @@ type ListTimelineParams struct {
 	ExploreMinImportance  int16
 	CursorID              *int64
 	CursorRead            *bool
+	CursorFollowed        *bool
 	CursorScore           *float64
 	CursorPublishedAt     *time.Time
 	PageSize              int32
@@ -390,13 +398,14 @@ type ListTimelineRow struct {
 // tier 5 (explore) with anything else, and only when of at least explore_min_importance or the user
 // follows nothing and has no profession. Unread first, by score: tier, importance and severity points minus
 // one point per decay_hours of age at as_of, minus seen_penalty for a story first seen before
-// seen_before and not saved. Read stories (score 0) follow, newest first. Every input is fixed
+// seen_before and not saved (never for a followed topic). Read stories (score 0) follow, newest first. Every input is fixed
 // for a given as_of, so later views or new stories don't move rows across a page boundary.
 // Feedback: dismissed stories are left out. A muted topic covers its descendants down to (not
 // including) a followed one, and following likewise stops at a muted descendant, so the most
 // specific choice wins. Muted topics give no tier, and a story whose every topic is muted is left out.
 // Optional filters: kinds (empty means all) and read_filter (NULL both, true read only, false unread only).
-// Keyset pagination on (is_read, score, published_at, id).
+// Unread stories of a followed topic (tier 0) come before every other unread story, whatever their score.
+// Keyset pagination on (is_read, is_followed, score, published_at, id).
 // Tiers come from one aggregate over the in-tier topics' story_topics rows instead of per-story
 // subqueries, and topic slugs are built only for the page: per-row subplans over the whole window
 // inflated the plan cost past jit_above_cost, and JIT compilation took ~90% of the query time.
@@ -418,6 +427,7 @@ func (q *Queries) ListTimeline(ctx context.Context, arg ListTimelineParams) ([]L
 		arg.ExploreMinImportance,
 		arg.CursorID,
 		arg.CursorRead,
+		arg.CursorFollowed,
 		arg.CursorScore,
 		arg.CursorPublishedAt,
 		arg.PageSize,

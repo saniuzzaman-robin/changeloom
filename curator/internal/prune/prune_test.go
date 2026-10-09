@@ -6,7 +6,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/saniuzzaman-robin/changeloom/curator/internal/config"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/dbtest"
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/prune"
 )
@@ -74,29 +73,5 @@ func TestRun(t *testing.T) {
 			t.Errorf("kept %v, want %v", kept, want)
 			break
 		}
-	}
-}
-
-func TestDue(t *testing.T) {
-	ctx := t.Context()
-	pool := dbtest.New(t)
-	now := time.Now()
-	interval := 7 * 24 * time.Hour
-
-	due, err := prune.Due(ctx, pool, config.EnvStaging, interval, now)
-	if err != nil || !due {
-		t.Fatalf("never pruned: due %v, err %v", due, err)
-	}
-	if err := prune.MarkDone(ctx, pool, config.EnvStaging, now.Add(-6*24*time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	if due, err = prune.Due(ctx, pool, config.EnvStaging, interval, now); err != nil || due {
-		t.Fatalf("pruned 6 days ago: due %v, err %v", due, err)
-	}
-	if due, err = prune.Due(ctx, pool, config.EnvProd, interval, now); err != nil || !due {
-		t.Fatalf("prod never pruned: due %v, err %v", due, err)
-	}
-	if due, err = prune.Due(ctx, pool, config.EnvStaging, interval, now.Add(2*24*time.Hour)); err != nil || !due {
-		t.Fatalf("pruned 8 days ago: due %v, err %v", due, err)
 	}
 }

@@ -1029,7 +1029,7 @@ func TestTimelineScore(t *testing.T) {
 		t.Fatalf("put professions: status %d", code)
 	}
 
-	// A fresh, important profession story outranks a stale, minor followed one.
+	// A stale, minor followed story still comes before a fresh, important profession one.
 	stale := e.insertStory("stale followed", now.Add(-13*24*time.Hour), "web/react")
 	fresh := e.insertStory("fresh profession", now.Add(-1*time.Hour), "databases/postgres")
 	e.exec(`UPDATE stories SET importance = 1 WHERE id = $1`, stale)
@@ -1040,7 +1040,8 @@ func TestTimelineScore(t *testing.T) {
 	plain := e.insertStory("plain", now.Add(-2*time.Hour), "security/advisories")
 	e.exec(`UPDATE stories SET kind = 'security', severity = 'critical' WHERE id = $1`, critical)
 
-	// A story seen long ago but never opened or saved sinks; recent views and saved stories don't.
+	// A story seen long ago but never opened or saved sinks, unless it is of a followed topic;
+	// recent views and saved stories don't.
 	unseen := e.insertStory("unseen", now.Add(-4*time.Hour), "web/react")
 	seenLongAgo := e.insertStory("seen long ago", now.Add(-3*time.Hour), "web/react")
 	seenRecently := e.insertStory("seen recently", now.Add(-3*time.Hour), "web/react")
@@ -1048,14 +1049,22 @@ func TestTimelineScore(t *testing.T) {
 	if code := e.do(http.MethodPost, "/v1/stories/views", aliceToken, map[string]any{"ids": []int64{seenLongAgo, seenRecently, seenSaved}}, nil); code != http.StatusNoContent {
 		t.Fatalf("record views: status %d", code)
 	}
-	e.exec(`UPDATE story_views SET seen_at = $2 WHERE story_id = ANY($1)`, []int64{seenLongAgo, seenSaved}, now.Add(-testScore.SeenGrace-time.Hour))
+	// Outside the followed topics the same long-ago view sinks a story below an unseen twin.
+	profUnseen := e.insertStory("profession unseen", now.Add(-5*time.Hour), "databases/postgres")
+	profSeen := e.insertStory("profession seen long ago", now.Add(-5*time.Hour), "databases/postgres")
+	if code := e.do(http.MethodPost, "/v1/stories/views", aliceToken, map[string]any{"ids": []int64{profSeen}}, nil); code != http.StatusNoContent {
+		t.Fatalf("record views: status %d", code)
+	}
+	e.exec(`UPDATE story_views SET seen_at = $2 WHERE story_id = ANY($1)`, []int64{seenLongAgo, seenSaved, profSeen}, now.Add(-testScore.SeenGrace-time.Hour))
 	if code := e.do(http.MethodPut, "/v1/stories/"+strconv.FormatInt(seenSaved, 10)+"/bookmark", aliceToken, nil, nil); code != http.StatusNoContent {
 		t.Fatalf("bookmark: status %d", code)
 	}
 
-	// Scores: fresh 5-2-1/24; seen recently and saved 3-3/24 (tie: highest id first); unseen
-	// 3-4/24; seen long ago 3-3/24-3; critical 3-8+1.5-2/24; plain 3-8-2/24; stale 1-13.
-	want := []int64{fresh, seenSaved, seenRecently, unseen, seenLongAgo, critical, plain, stale}
+	// Unread followed stories first, by score: seen recently, seen long ago (no penalty for a
+	// followed topic) and saved 3-3/24 (tie: highest id first); unseen 3-4/24; stale 1-13. Then
+	// the rest: fresh 5-2-1/24; profession unseen 3-2-5/24; profession seen long ago the same -3;
+	// critical 3-8+1.5-2/24; plain 3-8-2/24.
+	want := []int64{seenSaved, seenRecently, seenLongAgo, unseen, stale, fresh, profUnseen, profSeen, critical, plain}
 	if got := ids(e.timeline(aliceToken, 50, "").Items); !slices.Equal(got, want) {
 		t.Fatalf("timeline order = %v, want %v", got, want)
 	}

@@ -62,3 +62,30 @@ func TestPriorityIntervals(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalNeedsAModel(t *testing.T) {
+	t.Setenv("CURATOR_AI_PROVIDER", "local")
+	t.Setenv("OLLAMA_MODEL", "")
+	t.Setenv("CURATOR_AI_MODEL", "")
+	if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), "OLLAMA_MODEL") {
+		t.Fatalf("err = %v", err)
+	}
+	t.Setenv("CURATOR_AI_MODEL", "model-test")
+	cfg, err := config.Load()
+	if err != nil || cfg.Ollama.Model != "model-test" || cfg.PromptStyle != config.PromptCompact {
+		t.Fatalf("model %q, style %q, err %v", cfg.Ollama.Model, cfg.PromptStyle, err)
+	}
+}
+
+func TestLocalSpeedDefaults(t *testing.T) {
+	t.Setenv("CURATOR_AI_PROVIDER", "local")
+	t.Setenv("CURATOR_AI_MODEL", "model-test")
+	cfg, err := config.Load()
+	if err != nil || cfg.Ollama.Think || cfg.Ollama.MaxTurns != 5 || cfg.SearchMaxResults != 5 || cfg.PageMaxChars != 6000 {
+		t.Fatalf("think %v, turns %d, results %d, chars %d, err %v", cfg.Ollama.Think, cfg.Ollama.MaxTurns, cfg.SearchMaxResults, cfg.PageMaxChars, err)
+	}
+	t.Setenv("OLLAMA_THINK", "maybe")
+	if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), "OLLAMA_THINK") {
+		t.Fatalf("err = %v", err)
+	}
+}

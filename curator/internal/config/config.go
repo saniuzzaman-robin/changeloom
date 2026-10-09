@@ -63,6 +63,13 @@ type Config struct {
 	Provider Provider
 	Claude   Claude
 	OpenAI   OpenAI
+	Ollama   Ollama
+	// SearxngURL is the SearXNG instance the local provider searches with (SEARXNG_URL).
+	SearxngURL string
+	// SearchMaxResults bounds the hits one local web search returns (SEARXNG_MAX_RESULTS).
+	SearchMaxResults int
+	// PageMaxChars bounds the text one fetched page returns to the local model (WEB_PAGE_MAX_CHARS).
+	PageMaxChars int
 	// PromptStyle selects the prompt wording (CURATOR_PROMPT_STYLE; defaults to frontier for claude
 	// and compact for openai).
 	PromptStyle PromptStyle
@@ -84,6 +91,12 @@ type Config struct {
 	// HotMinEngaged is how many distinct users who opened or saved one of a topic's stories in the
 	// last week make the topic hot, fetched on every run (CURATOR_HOT_MIN_ENGAGED).
 	HotMinEngaged int
+	// HotMinInterval is the least time between fetches of a hot topic (CURATOR_HOT_MIN_INTERVAL, a
+	// Go duration); it keeps the repeated passes of one run from fetching hot topics again.
+	HotMinInterval time.Duration
+	// FetchCooldown is the least time between fetches of any topic (CURATOR_FETCH_COOLDOWN, a Go
+	// duration): a topic fetched within it is skipped, whatever its demand.
+	FetchCooldown time.Duration
 	// WarmInterval is the least time between fetches of a topic that is followed or serves a user's
 	// profession but is not hot (CURATOR_WARM_INTERVAL_HOURS).
 	WarmInterval time.Duration
@@ -106,19 +119,10 @@ type Config struct {
 	// DealsMaxAge drops deals published longer ago than this (CURATOR_DEALS_MAX_AGE_DAYS).
 	DealsMaxAge time.Duration
 
-	// BackfillTarget is the story count per topic that backfill aims for (CURATOR_BACKFILL_TARGET).
-	BackfillTarget int
-	// BackfillTopicsPerCall is the topics per backfill call (CURATOR_BACKFILL_TOPICS_PER_CALL).
-	BackfillTopicsPerCall int
-	// BackfillCallsPerRun is the backfill calls `curator run` makes (CURATOR_BACKFILL_CALLS_PER_RUN).
-	BackfillCallsPerRun int
-
-	// RunEnvs are the hosted envs `curator run` pulls from, syncs to and prunes (CURATOR_RUN_ENVS,
+	// RunEnvs are the hosted envs `curator run` pulls from (CURATOR_RUN_ENVS,
 	// comma-separated; default prod).
 	RunEnvs []Env
 
-	// PruneInterval is how often `curator run` prunes a hosted DB (CURATOR_PRUNE_INTERVAL_DAYS).
-	PruneInterval time.Duration
 	// PruneMaxAge: unsaved stories published longer ago than this are deleted
 	// (CURATOR_PRUNE_MAX_AGE_DAYS). Sync also skips stories older than this.
 	PruneMaxAge time.Duration
@@ -131,6 +135,8 @@ type Provider string
 const (
 	ProviderClaude Provider = "claude"
 	ProviderOpenAI Provider = "openai"
+	// ProviderLocal runs a local open-source model through Ollama, with web search through SearXNG.
+	ProviderLocal Provider = "local"
 )
 
 // PromptStyle is a wording of the curator's prompts.
@@ -147,7 +153,7 @@ const (
 var PromptStyles = []PromptStyle{PromptFrontier, PromptCompact}
 
 // Providers lists the supported providers.
-var Providers = []Provider{ProviderClaude, ProviderOpenAI}
+var Providers = []Provider{ProviderClaude, ProviderOpenAI, ProviderLocal}
 
 // OpenAI configures calls to an OpenAI-compatible /chat/completions API. The curator gives the
 // model no tools, so the model must search the web on its own.
@@ -160,6 +166,23 @@ type OpenAI struct {
 	Model string
 	// Timeout bounds one call, including its format retries (OPENAI_TIMEOUT, a Go duration).
 	Timeout time.Duration
+}
+
+// Ollama configures the local provider's calls to an Ollama server.
+type Ollama struct {
+	// URL is the Ollama server (OLLAMA_URL).
+	URL string
+	// Model is the model tag to run (OLLAMA_MODEL); required with this provider.
+	Model string
+	// Timeout bounds one call, including its tool turns (OLLAMA_TIMEOUT, a Go duration).
+	Timeout time.Duration
+	// MaxTurns caps the model's tool-calling rounds in one call (OLLAMA_MAX_TURNS).
+	MaxTurns int
+	// ContextTokens is the model's context window (OLLAMA_NUM_CTX).
+	ContextTokens int
+	// Think lets a reasoning model think before each reply (OLLAMA_THINK); off by default because
+	// it costs many tokens per turn.
+	Think bool
 }
 
 // Claude configures the `claude -p` calls.
@@ -190,6 +213,16 @@ func Load() (Config, error) {
 		errs = append(errs, fmt.Errorf("CLAUDE_TIMEOUT must be a positive Go duration such as 10m, got %q", os.Getenv("CLAUDE_TIMEOUT")))
 	}
 
+	hotMinInterval, err := time.ParseDuration(getenv("CURATOR_HOT_MIN_INTERVAL", "1h"))
+	if err != nil || hotMinInterval < 0 {
+		errs = append(errs, fmt.Errorf("CURATOR_HOT_MIN_INTERVAL must be a non-negative Go duration such as 1h, got %q", os.Getenv("CURATOR_HOT_MIN_INTERVAL")))
+	}
+
+	fetchCooldown, err := time.ParseDuration(getenv("CURATOR_FETCH_COOLDOWN", "8h"))
+	if err != nil || fetchCooldown < 0 {
+		errs = append(errs, fmt.Errorf("CURATOR_FETCH_COOLDOWN must be a non-negative Go duration such as 8h, got %q", os.Getenv("CURATOR_FETCH_COOLDOWN")))
+	}
+
 	callDelay, err := time.ParseDuration(getenv("CURATOR_CALL_DELAY", "0s"))
 	if err != nil || callDelay < 0 {
 		errs = append(errs, fmt.Errorf("CURATOR_CALL_DELAY must be a non-negative Go duration such as 5s, got %q", os.Getenv("CURATOR_CALL_DELAY")))
@@ -198,6 +231,11 @@ func Load() (Config, error) {
 	openaiTimeout, err := time.ParseDuration(getenv("OPENAI_TIMEOUT", "10m"))
 	if err != nil || openaiTimeout <= 0 {
 		errs = append(errs, fmt.Errorf("OPENAI_TIMEOUT must be a positive Go duration such as 10m, got %q", os.Getenv("OPENAI_TIMEOUT")))
+	}
+
+	ollamaTimeout, err := time.ParseDuration(getenv("OLLAMA_TIMEOUT", "20m"))
+	if err != nil || ollamaTimeout <= 0 {
+		errs = append(errs, fmt.Errorf("OLLAMA_TIMEOUT must be a positive Go duration such as 20m, got %q", os.Getenv("OLLAMA_TIMEOUT")))
 	}
 
 	provider := Provider(getenv("CURATOR_AI_PROVIDER", string(ProviderClaude)))
@@ -222,7 +260,18 @@ func Load() (Config, error) {
 			Model:   getenv("OPENAI_MODEL", ""),
 			Timeout: openaiTimeout,
 		},
-		CallDelay: callDelay,
+		Ollama: Ollama{
+			URL:           strings.TrimRight(getenv("OLLAMA_URL", "http://127.0.0.1:11434"), "/"),
+			Model:         getenv("OLLAMA_MODEL", ""),
+			Timeout:       ollamaTimeout,
+			MaxTurns:      envInt(&errs, "OLLAMA_MAX_TURNS", 5),
+			ContextTokens: envInt(&errs, "OLLAMA_NUM_CTX", 16384),
+			Think:         envBool(&errs, "OLLAMA_THINK", false),
+		},
+		SearxngURL:       strings.TrimRight(getenv("SEARXNG_URL", "http://127.0.0.1:8080"), "/"),
+		SearchMaxResults: envInt(&errs, "SEARXNG_MAX_RESULTS", 5),
+		PageMaxChars:     envInt(&errs, "WEB_PAGE_MAX_CHARS", 6000),
+		CallDelay:        callDelay,
 		Claude: Claude{
 			Bin:     getenv("CLAUDE_BIN", "claude"),
 			Model:   getenv("CLAUDE_MODEL", "sonnet"),
@@ -236,6 +285,8 @@ func Load() (Config, error) {
 		ItemMaxAge:         time.Duration(envInt(&errs, "CURATOR_ITEM_MAX_AGE_DAYS", 14)) * 24 * time.Hour,
 		MergeWindow:        time.Duration(envInt(&errs, "CURATOR_MERGE_WINDOW_DAYS", 14)) * 24 * time.Hour,
 		HotMinEngaged:      envInt(&errs, "CURATOR_HOT_MIN_ENGAGED", 1),
+		HotMinInterval:     hotMinInterval,
+		FetchCooldown:      fetchCooldown,
 		WarmInterval:       time.Duration(envInt(&errs, "CURATOR_WARM_INTERVAL_HOURS", 24)) * time.Hour,
 		PriorityIntervals:  envHours(&errs, "CURATOR_PRIORITY_INTERVAL_HOURS", [5]int{48, 96, 168, 336, 672}),
 		StoriesPerTopic:    envInt(&errs, "CURATOR_STORIES_PER_TOPIC", 5),
@@ -245,12 +296,7 @@ func Load() (Config, error) {
 		DealsMaxCallsPerRun: envInt(&errs, "CURATOR_DEALS_MAX_CALLS_PER_RUN", 4),
 		DealsMaxAge:         time.Duration(envInt(&errs, "CURATOR_DEALS_MAX_AGE_DAYS", 7)) * 24 * time.Hour,
 
-		BackfillTarget:        envInt(&errs, "CURATOR_BACKFILL_TARGET", 20),
-		BackfillTopicsPerCall: envInt(&errs, "CURATOR_BACKFILL_TOPICS_PER_CALL", 2),
-		BackfillCallsPerRun:   envInt(&errs, "CURATOR_BACKFILL_CALLS_PER_RUN", 2),
-
-		PruneInterval: time.Duration(envInt(&errs, "CURATOR_PRUNE_INTERVAL_DAYS", 1)) * 24 * time.Hour,
-		PruneMaxAge:   time.Duration(envInt(&errs, "CURATOR_PRUNE_MAX_AGE_DAYS", 14)) * 24 * time.Hour,
+		PruneMaxAge: time.Duration(envInt(&errs, "CURATOR_PRUNE_MAX_AGE_DAYS", 14)) * 24 * time.Hour,
 	}
 
 	for _, env := range Envs {
@@ -268,10 +314,16 @@ func Load() (Config, error) {
 			cfg.Claude.Model = model
 		case ProviderOpenAI:
 			cfg.OpenAI.Model = model
+		case ProviderLocal:
+			cfg.Ollama.Model = model
 		}
 	}
 	if provider == ProviderOpenAI && cfg.OpenAI.Model == "" {
 		errs = append(errs, errors.New("OPENAI_MODEL (or CURATOR_AI_MODEL) is required with CURATOR_AI_PROVIDER=openai"))
+	}
+
+	if provider == ProviderLocal && cfg.Ollama.Model == "" {
+		errs = append(errs, errors.New("OLLAMA_MODEL (or CURATOR_AI_MODEL) is required with CURATOR_AI_PROVIDER=local"))
 	}
 
 	defaultStyle := PromptCompact
@@ -314,6 +366,17 @@ func envInt(errs *[]error, key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// envBool reads a boolean setting, appending to errs when it is invalid.
+func envBool(errs *[]error, key string, fallback bool) bool {
+	raw := getenv(key, strconv.FormatBool(fallback))
+	b, err := strconv.ParseBool(raw)
+	if err != nil {
+		*errs = append(*errs, fmt.Errorf("%s must be true or false, got %q", key, raw))
+		return fallback
+	}
+	return b
 }
 
 // envHours reads exactly five comma-separated positive hour counts, appending to errs when they are
