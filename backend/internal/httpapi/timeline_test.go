@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,7 +42,27 @@ func TestTimelinePagesKeepFirstPageTime(t *testing.T) {
 		if err != nil {
 			t.Fatalf("insert story: %v", err)
 		}
+		if _, err := pool.Exec(t.Context(),
+			`INSERT INTO story_topics (story_id, topic_id) SELECT $1, id FROM topics WHERE slug = 'languages/go'`, id); err != nil {
+			t.Fatalf("tag story: %v", err)
+		}
 		want = append(want, id)
+	}
+
+	// Only stories of a followed topic reach the timeline.
+	put, err := http.NewRequestWithContext(t.Context(), http.MethodPut, ts.URL+"/v1/me/topics", strings.NewReader(`{"topics":["languages/go"]}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	put.Header.Set("Authorization", "Bearer "+auth.DevTokenPrefix+"alice")
+	put.Header.Set("Content-Type", "application/json")
+	resp, err := ts.Client().Do(put)
+	if err != nil {
+		t.Fatalf("follow: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("follow: status %d", resp.StatusCode)
 	}
 
 	page := func(cursor string) (items []int64, next string) {

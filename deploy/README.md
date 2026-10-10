@@ -170,6 +170,48 @@ The topic catalog (`curator/seed/catalog/`) and the keys below are tuned in `cur
 - **User topic requests** are not handled by `curator run` or `make curator-full` (they only pull each env's demand). Run `make curator-requests DEPLOY_ENV=<env>` to pull that env's pending requests, group them into topics with AI (real calls; `DRY_RUN=1` only prints the proposal) and sync, so users see the new topics and the decisions.
 - **Removed catalog entries.** Seed and sync never delete. `make curator-clean` reports topics and professions no longer in the catalog (with the unsaved stories only in them) for the local DB and `ENVS` (default `staging,prod`); `APPLY=1` deletes them. Anything a user follows, muted, picked or requested is kept.
 
+### Curator: daily fetch on Cloud Run (prod, fetch only)
+
+A Cloud Run Job runs `curator run --full --rank 1-$CURATOR_CLAUDE_TOP` with Claude every morning (`curator/Dockerfile`,
+`curator/deploy/job.sh`: migrate, seed, run; never sync or prune). It fetches into its own Postgres schema
+`curator_job` in the prod Neon database and only reads prod's demand. **Nothing reaches users until you run
+`make curator-sync`**, and `curator sync` reads `LOCAL_DATABASE_URL`, so point your laptop's `LOCAL_DATABASE_URL`
+in `curator/.env` at the same schema (below) before syncing, or the stories fetched in the cloud are not seen.
+These commands create cloud resources and may cost money. Read them, then run them yourself. `P` is the prod
+project, `R` its region, `TZ` your IANA time zone (e.g. `Asia/Dhaka`).
+
+1. **Schema.** Create it once with the direct (non-pooled) Neon URL: `psql "$DIRECT_URL" -c 'CREATE SCHEMA curator_job'`.
+   The job's `LOCAL_DATABASE_URL` is that URL plus `search_path=curator_job` (e.g. `...?sslmode=require&search_path=curator_job`),
+   so every table lands in the schema, not in `public`. After the first run check that `public` has no new tables.
+2. **Secrets** (Secret Manager in `P`): `curator-local-database-url`, `curator-remote-database-url-prod` (the prod direct URL)
+   and the Claude credential `curator-claude-token`: either `claude setup-token` output as `CLAUDE_CODE_OAUTH_TOKEN`, or an API key
+   as `ANTHROPIC_API_KEY`. Anthropic's terms say Pro/Max limits assume ordinary individual use and that products should use API
+   keys, so an unattended job feeding a production app is a grey area for the subscription token: an API key is the clearly
+   allowed option (metered per token). Check [the terms](https://code.claude.com/docs/en/legal-and-compliance) before choosing.
+3. **Image** (pin the Claude CLI version; `A` is `$R-docker.pkg.dev/$P/<ARTIFACT_REPO>`):
+   ```sh
+   gcloud builds submit --project "$P" --config /dev/stdin . <<EOF
+   steps:
+   - name: gcr.io/cloud-builders/docker
+     args: [build, -f, curator/Dockerfile, --build-arg, CLAUDE_CODE_VERSION=<x.y.z>, -t, $A/curator:latest, .]
+   images: [$A/curator:latest]
+   EOF
+   ```
+4. **Job + schedule.** Use a dedicated service account `curator-job@$P` with `roles/secretmanager.secretAccessor` on those
+   secrets, and a scheduler account allowed to run the job (`roles/run.invoker` on it):
+   ```sh
+   gcloud run jobs deploy curator-fetch --project "$P" --region "$R" --image "$A/curator:latest" \
+     --service-account "curator-job@$P.iam.gserviceaccount.com" --cpu 1 --memory 2Gi --task-timeout 4h --max-retries 0 \
+     --set-env-vars CURATOR_CLAUDE_TOP=100,CURATOR_CONCURRENCY=2 \
+     --set-secrets LOCAL_DATABASE_URL=curator-local-database-url:1,REMOTE_DATABASE_URL_PROD=curator-remote-database-url-prod:1,CLAUDE_CODE_OAUTH_TOKEN=curator-claude-token:1
+   gcloud scheduler jobs create http curator-fetch-daily --project "$P" --location "$R" --schedule "0 7 * * *" --time-zone "$TZ" \
+     --uri "https://$R-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/$P/jobs/curator-fetch:run" --http-method POST \
+     --oauth-service-account-email "curator-scheduler@$P.iam.gserviceaccount.com"
+   ```
+   (Use `ANTHROPIC_API_KEY=...` instead of `CLAUDE_CODE_OAUTH_TOKEN=...` in `--set-secrets` for an API key.)
+5. **First run:** `gcloud run jobs execute curator-fetch --project "$P" --region "$R" --wait`, read the logs, then trigger the scheduler once
+   before relying on 07:00. Then `make curator-sync DEPLOY_ENV=prod` from a `curator/.env` whose `LOCAL_DATABASE_URL` is the schema URL.
+
 ## Android app
 
 Per-env api URLs go in `~/.gradle/gradle.properties` (or `-P` on the command line):

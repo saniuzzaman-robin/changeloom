@@ -27,6 +27,8 @@ func TestDealsFilteredByCountry(t *testing.T) {
 	e.makeDeal(us, "US")
 	e.makeDeal(bd, "BD", "IN")
 	e.makeDeal(global)
+	e.follow(aliceToken, "languages/go")
+	e.follow(bobToken, "languages/go")
 
 	visible := func(token string) []int64 {
 		got := ids(e.timeline(token, 50, "").Items)

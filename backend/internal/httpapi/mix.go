@@ -8,14 +8,12 @@ import (
 )
 
 // mixPage re-orders one timeline page so that at most mix.MaxTopicRun stories in a row share a
-// root topic and headline and explore stories are at least mix.HeadlineSpacing and
-// mix.ExploreSpacing apart. Each slot takes the
-// highest-ranked remaining story that keeps both limits, or the highest-ranked one when none
-// does, so a page that can't be spread keeps its order. Read stories, unread followed-topic
+// root topic. Each slot takes the highest-ranked remaining story that keeps the limit, or the
+// highest-ranked one when none does, so a page that can't be spread keeps its order. Read stories, unread followed-topic
 // stories and the other unread stories are mixed separately and stay in their sections. The page's set of stories never changes, so the cursor
 // taken from the ranked page stays valid.
 func mixPage(rows []db.ListTimelineRow, mix TimelineMix) []db.ListTimelineRow {
-	if len(rows) < 2 || (mix.MaxTopicRun < 1 && mix.HeadlineSpacing < 2 && mix.ExploreSpacing < 2) {
+	if len(rows) < 2 || mix.MaxTopicRun < 1 {
 		return rows
 	}
 	out := make([]db.ListTimelineRow, 0, len(rows))
@@ -59,12 +57,6 @@ func mixSection(rows []db.ListTimelineRow, mix TimelineMix) []db.ListTimelineRow
 
 // fitsMix reports whether r can follow placed without breaking a limit.
 func fitsMix(placed []db.ListTimelineRow, r db.ListTimelineRow, roots map[int64][]string, mix TimelineMix) bool {
-	spacing := map[int32]int{tierHeadline: mix.HeadlineSpacing, tierExplore: mix.ExploreSpacing}[r.Tier]
-	for i := len(placed) - 1; spacing > 1 && i >= 0 && i >= len(placed)-(spacing-1); i-- {
-		if placed[i].Tier == r.Tier {
-			return false
-		}
-	}
 	if mix.MaxTopicRun < 1 || len(placed) < mix.MaxTopicRun {
 		return true
 	}
