@@ -114,21 +114,18 @@ func (s *Server) GetTimeline(w http.ResponseWriter, r *http.Request, params GetT
 	}
 	score := s.opts.TimelineScore
 	arg := db.ListTimelineParams{
-		UserID:                user.ID,
-		Kinds:                 kinds,
-		ReadFilter:            params.Read,
-		Since:                 asOf.Add(-s.opts.TimelineWindow),
-		PageSize:              int32(limit + 1), //nolint:gosec // limit is bounded by maxPageSize
-		HeadlineMinImportance: s.opts.HeadlineMinImportance,
-		ExploreMinImportance:  s.opts.ExploreMinImportance,
-		AffinitySince:         asOf.Add(-s.opts.AffinityWindow),
-		AsOf:                  asOf,
-		TierWeight:            score.TierWeight,
-		ImportanceWeight:      score.ImportanceWeight,
-		SeverityWeight:        score.SeverityWeight,
-		DecayHours:            score.AgeDecay.Hours(),
-		SeenPenalty:           score.SeenPenalty,
-		SeenBefore:            asOf.Add(-score.SeenGrace),
+		UserID:           user.ID,
+		Kinds:            kinds,
+		ReadFilter:       params.Read,
+		Since:            asOf.Add(-s.opts.TimelineWindow),
+		PageSize:         int32(limit + 1), //nolint:gosec // limit is bounded by maxPageSize
+		AsOf:             asOf,
+		TierWeight:       score.TierWeight,
+		ImportanceWeight: score.ImportanceWeight,
+		SeverityWeight:   score.SeverityWeight,
+		DecayHours:       score.AgeDecay.Hours(),
+		SeenPenalty:      score.SeenPenalty,
+		SeenBefore:       asOf.Add(-score.SeenGrace),
 	}
 	if c != nil {
 		arg.CursorRead, arg.CursorFollowed, arg.CursorScore, arg.CursorPublishedAt, arg.CursorID =

@@ -226,119 +226,74 @@ WITH RECURSIVE followed AS (
     UNION
     SELECT t.id FROM topics t JOIN muted m ON t.parent_id = m.id
     WHERE NOT EXISTS (SELECT 1 FROM user_topics ut WHERE ut.user_id = $1 AND ut.topic_id = t.id)
-), ancestors AS (
-    SELECT t.parent_id AS id FROM topics t JOIN user_topics ut ON ut.topic_id = t.id
-    WHERE ut.user_id = $1 AND t.parent_id IS NOT NULL
-    UNION
-    SELECT t.parent_id FROM topics t JOIN ancestors a ON a.id = t.id WHERE t.parent_id IS NOT NULL
-), affinity AS (
-    SELECT DISTINCT st.topic_id AS id
-    FROM story_topics st
-    JOIN (
-        SELECT r.story_id FROM user_story_state r
-        WHERE r.user_id = $1 AND r.read_at >= $2::timestamptz AND r.read_at < $3::timestamptz
-        UNION
-        SELECT b.story_id FROM user_bookmarks b
-        WHERE b.user_id = $1 AND b.created_at >= $2::timestamptz AND b.created_at < $3::timestamptz
-    ) e ON e.story_id = st.story_id
 ), profession AS (
     SELECT pt.topic_id AS id
     FROM user_professions up JOIN profession_topics pt ON pt.profession_id = up.profession_id
     WHERE up.user_id = $1
     UNION
     SELECT t.id FROM topics t JOIN profession p ON t.parent_id = p.id
-), headline AS (
-    SELECT t.id FROM topics t WHERE t.headline
-    UNION
-    SELECT t.id FROM topics t JOIN headline h ON t.parent_id = h.id
 ), topic_tier AS (
     SELECT f.id, 0 AS tier FROM followed f
     UNION ALL
-    SELECT af.id, 1 FROM affinity af
-    UNION ALL
     SELECT p.id, 2 FROM profession p
-    UNION ALL
-    SELECT tr.related_id, 3 FROM topic_relations tr JOIN followed f ON f.id = tr.topic_id
-    UNION ALL
-    SELECT tr.topic_id, 3 FROM topic_relations tr JOIN followed f ON f.id = tr.related_id
-    UNION ALL
-    SELECT a.id, 3 FROM ancestors a
-    UNION ALL
-    SELECT h.id, 4 FROM headline h
 ), story_tier AS (
     SELECT st.story_id, min(tt.tier) AS tier
     FROM story_topics st JOIN topic_tier tt ON tt.id = st.topic_id
     WHERE NOT EXISTS (SELECT 1 FROM muted m WHERE m.id = tt.id)
     GROUP BY st.story_id
-), muted_story AS (
-    -- Stories with at least one muted topic, kept when every one of their topics is muted.
-    SELECT st.story_id
-    FROM story_topics st LEFT JOIN muted m ON m.id = st.topic_id
-    WHERE st.story_id IN (SELECT ms.story_id FROM story_topics ms JOIN muted mm ON mm.id = ms.topic_id)
-    GROUP BY st.story_id
-    HAVING count(m.id) = count(*)
 ), ranked AS (
     SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
         (uss.read_at IS NOT NULL) AS is_read,
         (ub.story_id IS NOT NULL) AS is_bookmarked,
-        CASE WHEN stt.tier = 4 AND s.importance < $4::smallint THEN 5
-            ELSE COALESCE(stt.tier, 5) END AS tier,
+        stt.tier,
         sv.seen_at
     FROM stories s
-    LEFT JOIN story_tier stt ON stt.story_id = s.id
+    JOIN story_tier stt ON stt.story_id = s.id
     LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = $1
     LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = $1
     LEFT JOIN story_views sv ON sv.story_id = s.id AND sv.user_id = $1
     LEFT JOIN user_story_dismissals usd ON usd.story_id = s.id AND usd.user_id = $1
-    LEFT JOIN muted_story ms ON ms.story_id = s.id
-    WHERE s.published_at >= $5
+    WHERE s.published_at >= $2
     AND usd.story_id IS NULL
-    AND ms.story_id IS NULL
     AND (
         s.kind <> 'deal' OR cardinality(s.countries) = 0
         OR (SELECT u.country FROM users u WHERE u.id = $1) = ANY(s.countries)
     )
-    AND (cardinality($6::text[]) = 0 OR s.kind = ANY($6::text[]))
-    AND ($7::boolean IS NULL OR (uss.read_at IS NOT NULL) = $7::boolean)
+    AND (cardinality($3::text[]) = 0 OR s.kind = ANY($3::text[]))
+    AND ($4::boolean IS NULL OR (uss.read_at IS NOT NULL) = $4::boolean)
 ), scored AS (
     -- sqlc.arg, not @name: sqlc fails to resolve the ranked alias in arithmetic with @name params.
     SELECT r.id, r.title, r.summary, r.kind, r.severity, r.importance, r.published_at, r.read_at, r.is_read, r.is_bookmarked, r.tier, r.seen_at,
         CASE WHEN r.is_read THEN 0 ELSE
-            $8::float8 * r.importance
-            -- Affinity sits half a step below followed, so every other tier keeps its points.
-            - $9::float8 * CASE r.tier WHEN 0 THEN 0 WHEN 1 THEN 0.5 ELSE r.tier - 1 END
-            + $10::float8
+            $5::float8 * r.importance
+            - $6::float8 * CASE r.tier WHEN 0 THEN 0 ELSE r.tier - 1 END
+            + $7::float8
                 * CASE r.severity WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'medium' THEN 1 ELSE 0 END
-            - extract(epoch FROM greatest($3::timestamptz - r.published_at, interval '0'))
-                / 3600 / $11::float8
-            - CASE WHEN r.seen_at < $12::timestamptz AND NOT r.is_bookmarked AND r.tier > 0
-                THEN $13::float8 ELSE 0 END
+            - extract(epoch FROM greatest($8::timestamptz - r.published_at, interval '0'))
+                / 3600 / $9::float8
+            - CASE WHEN r.seen_at < $10::timestamptz AND NOT r.is_bookmarked AND r.tier > 0
+                THEN $11::float8 ELSE 0 END
         END::float8 AS score,
         (NOT r.is_read AND r.tier = 0) AS is_followed
     FROM ranked r
-    WHERE r.tier < 5 OR r.importance >= $14::smallint
-        OR NOT (
-            EXISTS (SELECT 1 FROM user_topics ut WHERE ut.user_id = $1)
-            OR EXISTS (SELECT 1 FROM user_professions up WHERE up.user_id = $1)
-        )
 ), page AS (
     SELECT sc.id, sc.title, sc.summary, sc.kind, sc.severity, sc.importance, sc.published_at, sc.read_at, sc.is_read, sc.is_bookmarked, sc.tier, sc.seen_at, sc.score, sc.is_followed FROM scored sc
-    WHERE $15::bigint IS NULL
-        OR sc.is_read > $16::boolean
+    WHERE $12::bigint IS NULL
+        OR sc.is_read > $13::boolean
         OR (
-            sc.is_read = $16::boolean
+            sc.is_read = $13::boolean
             AND (
-                sc.is_followed < $17::boolean
+                sc.is_followed < $14::boolean
                 OR (
-                    sc.is_followed = $17::boolean
+                    sc.is_followed = $14::boolean
                     AND (sc.score, sc.published_at, sc.id) < (
-                        $18::float8, $19::timestamptz, $15::bigint
+                        $15::float8, $16::timestamptz, $12::bigint
                     )
                 )
             )
         )
     ORDER BY sc.is_read ASC, sc.is_followed DESC, sc.score DESC, sc.published_at DESC, sc.id DESC
-    LIMIT $20
+    LIMIT $17
 )
 SELECT p.id, p.title, p.summary, p.kind, p.severity, p.importance, p.published_at, p.read_at,
     p.is_bookmarked::boolean AS is_bookmarked,
@@ -353,26 +308,23 @@ ORDER BY p.is_read ASC, p.is_followed DESC, p.score DESC, p.published_at DESC, p
 `
 
 type ListTimelineParams struct {
-	UserID                int64
-	AffinitySince         time.Time
-	AsOf                  time.Time
-	HeadlineMinImportance int16
-	Since                 time.Time
-	Kinds                 []string
-	ReadFilter            *bool
-	ImportanceWeight      float64
-	TierWeight            float64
-	SeverityWeight        float64
-	DecayHours            float64
-	SeenBefore            time.Time
-	SeenPenalty           float64
-	ExploreMinImportance  int16
-	CursorID              *int64
-	CursorRead            *bool
-	CursorFollowed        *bool
-	CursorScore           *float64
-	CursorPublishedAt     *time.Time
-	PageSize              int32
+	UserID            int64
+	Since             time.Time
+	Kinds             []string
+	ReadFilter        *bool
+	ImportanceWeight  float64
+	TierWeight        float64
+	SeverityWeight    float64
+	AsOf              time.Time
+	DecayHours        float64
+	SeenBefore        time.Time
+	SeenPenalty       float64
+	CursorID          *int64
+	CursorRead        *bool
+	CursorFollowed    *bool
+	CursorScore       *float64
+	CursorPublishedAt *time.Time
+	PageSize          int32
 }
 
 type ListTimelineRow struct {
@@ -390,19 +342,17 @@ type ListTimelineRow struct {
 	Topics       []string
 }
 
-// Every story in the window (deals only for the user's country, or global ones), ranked by the user's interest: tier 0 is tagged with a followed
-// topic (or a descendant of one), tier 1 (affinity) with a topic of a story the user read or saved
-// between affinity_since and as_of, tier 2 with an area of one of the user's professions (or a
-// descendant), tier 3 with a related topic (a relation neighbour or an ancestor of a followed
-// topic), tier 4 with a headline topic (or a descendant) and of at least @headline_min_importance,
-// tier 5 (explore) with anything else, and only when of at least explore_min_importance or the user
-// follows nothing and has no profession. Unread first, by score: tier, importance and severity points minus
-// one point per decay_hours of age at as_of, minus seen_penalty for a story first seen before
-// seen_before and not saved (never for a followed topic). Read stories (score 0) follow, newest first. Every input is fixed
-// for a given as_of, so later views or new stories don't move rows across a page boundary.
+// Stories in the window (deals only for the user's country, or global ones) that match the user's
+// interests, and nothing else: tier 0 is tagged with a followed topic (or a descendant of one), tier 2
+// with an area of one of the user's professions (or a descendant). Unread first, by score: tier,
+// importance and severity points minus one point per decay_hours of age at as_of, minus seen_penalty
+// for a story first seen before seen_before and not saved (never for a followed topic). Read stories
+// (score 0) follow, newest first. Every input is fixed for a given as_of, so later views or new stories
+// don't move rows across a page boundary.
 // Feedback: dismissed stories are left out. A muted topic covers its descendants down to (not
 // including) a followed one, and following likewise stops at a muted descendant, so the most
-// specific choice wins. Muted topics give no tier, and a story whose every topic is muted is left out.
+// specific choice wins. Muted topics give no tier, so a story needs a topic that is followed or in a
+// profession and not muted.
 // Optional filters: kinds (empty means all) and read_filter (NULL both, true read only, false unread only).
 // Unread stories of a followed topic (tier 0) come before every other unread story, whatever their score.
 // Keyset pagination on (is_read, is_followed, score, published_at, id).
@@ -412,19 +362,16 @@ type ListTimelineRow struct {
 func (q *Queries) ListTimeline(ctx context.Context, arg ListTimelineParams) ([]ListTimelineRow, error) {
 	rows, err := q.db.Query(ctx, listTimeline,
 		arg.UserID,
-		arg.AffinitySince,
-		arg.AsOf,
-		arg.HeadlineMinImportance,
 		arg.Since,
 		arg.Kinds,
 		arg.ReadFilter,
 		arg.ImportanceWeight,
 		arg.TierWeight,
 		arg.SeverityWeight,
+		arg.AsOf,
 		arg.DecayHours,
 		arg.SeenBefore,
 		arg.SeenPenalty,
-		arg.ExploreMinImportance,
 		arg.CursorID,
 		arg.CursorRead,
 		arg.CursorFollowed,

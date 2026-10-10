@@ -31,18 +31,9 @@ type Config struct {
 	LogLevel    slog.Level
 	// TimelineWindow hides stories published longer ago than this from the timeline.
 	TimelineWindow time.Duration
-	// HeadlineMinImportance is the least importance a headline-topic story needs to reach every
-	// user's timeline.
-	HeadlineMinImportance int16
-	// ExploreMinImportance is the least importance a story outside the user's interests needs to
-	// reach their timeline (TIMELINE_EXPLORE_MIN_IMPORTANCE).
-	ExploreMinImportance int16
-	// AffinityWindow is how far back the stories a user read or saved make their topics affinity
-	// (TIMELINE_AFFINITY_DAYS).
-	AffinityWindow time.Duration
 	// TimelineScore weighs how unread timeline stories are ranked.
 	TimelineScore TimelineScore
-	// TimelineMix spreads topics and headlines within each timeline page.
+	// TimelineMix spreads topics within each timeline page.
 	TimelineMix TimelineMix
 	// FirebaseProjectID is the Firebase project whose ID tokens the api accepts (required unless ENV=dev).
 	FirebaseProjectID string
@@ -95,16 +86,10 @@ type TimelineScore struct {
 	SeenGrace time.Duration
 }
 
-// TimelineMix is the re-order of each timeline page that keeps one topic or headlines from
-// filling it.
+// TimelineMix is the re-order of each timeline page that keeps one topic from filling it.
 type TimelineMix struct {
 	// MaxTopicRun is the most stories in a row that share a root topic (TIMELINE_MAX_TOPIC_RUN).
 	MaxTopicRun int
-	// HeadlineSpacing is the least distance between two headline stories, so at most one in
-	// HeadlineSpacing stories is a headline; 1 means no limit (TIMELINE_HEADLINE_SPACING).
-	HeadlineSpacing int
-	// ExploreSpacing is the same for explore stories (TIMELINE_EXPLORE_SPACING).
-	ExploreSpacing int
 }
 
 // Load reads configuration from the environment and validates it.
@@ -133,17 +118,6 @@ func Load() (Config, error) {
 	if err != nil || windowDays < 1 {
 		errs = append(errs, fmt.Errorf("TIMELINE_WINDOW_DAYS must be a positive integer, got %q", os.Getenv("TIMELINE_WINDOW_DAYS")))
 	}
-	headlineMin, err := strconv.Atoi(getenv("TIMELINE_HEADLINE_MIN_IMPORTANCE", "3"))
-	if err != nil || headlineMin < 1 || headlineMin > 5 {
-		errs = append(errs, fmt.Errorf("TIMELINE_HEADLINE_MIN_IMPORTANCE must be 1 to 5, got %q", os.Getenv("TIMELINE_HEADLINE_MIN_IMPORTANCE")))
-	}
-
-	exploreMin, err := strconv.Atoi(getenv("TIMELINE_EXPLORE_MIN_IMPORTANCE", "4"))
-	if err != nil || exploreMin < 1 || exploreMin > 5 {
-		errs = append(errs, fmt.Errorf("TIMELINE_EXPLORE_MIN_IMPORTANCE must be 1 to 5, got %q", os.Getenv("TIMELINE_EXPLORE_MIN_IMPORTANCE")))
-	}
-	affinityDays := envInt(&errs, "TIMELINE_AFFINITY_DAYS", 30)
-
 	score := TimelineScore{
 		TierWeight:       envWeight(&errs, "TIMELINE_TIER_WEIGHT", 2),
 		ImportanceWeight: envWeight(&errs, "TIMELINE_IMPORTANCE_WEIGHT", 1),
@@ -153,9 +127,7 @@ func Load() (Config, error) {
 		SeenGrace:        time.Duration(envInt(&errs, "TIMELINE_SEEN_GRACE_HOURS", 12)) * time.Hour,
 	}
 	mix := TimelineMix{
-		MaxTopicRun:     envInt(&errs, "TIMELINE_MAX_TOPIC_RUN", 2),
-		HeadlineSpacing: envInt(&errs, "TIMELINE_HEADLINE_SPACING", 5),
-		ExploreSpacing:  envInt(&errs, "TIMELINE_EXPLORE_SPACING", 6),
+		MaxTopicRun: envInt(&errs, "TIMELINE_MAX_TOPIC_RUN", 2),
 	}
 
 	httpAddr := getenv("HTTP_ADDR", ":8080")
@@ -202,16 +174,13 @@ func Load() (Config, error) {
 	}
 
 	return Config{
-		Env:                   env,
-		HTTPAddr:              httpAddr,
-		DatabaseURL:           dbURL,
-		LogLevel:              level,
-		TimelineWindow:        time.Duration(windowDays) * 24 * time.Hour,
-		HeadlineMinImportance: int16(headlineMin), //nolint:gosec // validated to 1..5
-		ExploreMinImportance:  int16(exploreMin),  //nolint:gosec // validated to 1..5
-		AffinityWindow:        time.Duration(affinityDays) * 24 * time.Hour,
-		TimelineScore:         score,
-		TimelineMix:           mix,
+		Env:            env,
+		HTTPAddr:       httpAddr,
+		DatabaseURL:    dbURL,
+		LogLevel:       level,
+		TimelineWindow: time.Duration(windowDays) * 24 * time.Hour,
+		TimelineScore:  score,
+		TimelineMix:    mix,
 
 		FirebaseProjectID: firebaseProjectID,
 		PushEnabled:       pushEnabled,

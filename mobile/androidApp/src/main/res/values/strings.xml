@@ -138,7 +138,7 @@
     <string name="open_profile">Open profile</string>
     <string name="back_to_top">Back to top</string>
     <string name="feed_end_title">You\'ve reached the end</string>
-    <string name="feed_end_body">That\'s every story for your topics so far. New ones appear at the top as they\'re published.</string>
+    <string name="feed_end_body">That\'s every story for your topics so far. Add more topics to see more stories.</string>
     <string name="greeting_morning">Good morning</string>
     <string name="greeting_afternoon">Good afternoon</string>
     <string name="greeting_evening">Good evening</string>
