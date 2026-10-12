@@ -259,21 +259,14 @@ func TestTimelineWithoutInterestsIsEmpty(t *testing.T) {
 
 func TestTimelineCursorPagination(t *testing.T) {
 	e := newEnv(t)
-	e.follow(aliceToken, "languages/go")
-	// data-scientist maps to ai, databases and languages.
-	if code := e.do(http.MethodPut, "/v1/me/professions", aliceToken, map[string]any{"professions": []string{"data-scientist"}}, nil); code != http.StatusOK {
-		t.Fatalf("put professions: status %d", code)
-	}
+	e.follow(aliceToken, "languages/go", "databases/postgres")
 
 	now := time.Now().Truncate(time.Second)
 	tierTopics := []string{"languages/go", "databases/postgres"}
-	tierOf := map[int64]int{}
 	var all []int64
 	for i := range 15 {
-		// Pairs share a published_at so the id tie-breaker is exercised, and tiers interleave
-		// by time so every page boundary can fall inside or between tiers.
+		// Pairs share a published_at so the id tie-breaker is exercised.
 		id := e.insertStory("story", now.Add(-time.Duration(i/2)*time.Hour), tierTopics[i%2])
-		tierOf[id] = i % 2
 		all = append(all, id)
 	}
 	read := map[int64]bool{}
@@ -286,8 +279,8 @@ func TestTimelineCursorPagination(t *testing.T) {
 	if len(full) != len(all) {
 		t.Fatalf("full timeline has %d items, want %d", len(full), len(all))
 	}
-	// Expected order: unread first, then tier (equal importance and only hours apart, so the score
-	// follows the tier), then newest, then highest id; read ones newest first.
+	// Expected order: unread first, then newest (equal importance, so the score follows age), then
+	// highest id; read ones newest first.
 	want := slices.Clone(all)
 	pub := map[int64]time.Time{}
 	for _, it := range full {
@@ -300,8 +293,6 @@ func TestTimelineCursorPagination(t *testing.T) {
 				return 1
 			}
 			return -1
-		case !read[a] && tierOf[a] != tierOf[b]:
-			return tierOf[a] - tierOf[b]
 		case !pub[a].Equal(pub[b]):
 			return pub[b].Compare(pub[a])
 		default:
@@ -462,6 +453,16 @@ func TestMeAndTopics(t *testing.T) {
 	e.do(http.MethodGet, "/v1/me", aliceToken, nil, &me)
 	if len(me.Topics) != 2 {
 		t.Fatalf("topics after reload = %v", me.Topics)
+	}
+
+	// Unselected topics are removed, not kept.
+	e.do(http.MethodPut, "/v1/me/topics", aliceToken, map[string]any{"topics": []string{"security"}}, &me)
+	if want := []string{"security"}; !slices.Equal(me.Topics, want) {
+		t.Fatalf("topics after shrinking = %v, want %v", me.Topics, want)
+	}
+	e.do(http.MethodGet, "/v1/me", aliceToken, nil, &me)
+	if want := []string{"security"}; !slices.Equal(me.Topics, want) {
+		t.Fatalf("topics after reload = %v, want %v", me.Topics, want)
 	}
 }
 
@@ -964,24 +965,16 @@ func TestTimelineScore(t *testing.T) {
 	e := newEnv(t)
 	now := time.Now().Truncate(time.Second)
 	e.follow(aliceToken, "web/react")
-	// data-scientist maps to ai, databases and languages.
-	if code := e.do(http.MethodPut, "/v1/me/professions", aliceToken, map[string]any{"professions": []string{"data-scientist"}}, nil); code != http.StatusOK {
-		t.Fatalf("put professions: status %d", code)
-	}
 
-	// A stale, minor followed story still comes before a fresh, important profession one.
 	stale := e.insertStory("stale followed", now.Add(-13*24*time.Hour), "web/react")
-	fresh := e.insertStory("fresh profession", now.Add(-1*time.Hour), "databases/postgres")
 	e.exec(`UPDATE stories SET importance = 1 WHERE id = $1`, stale)
-	e.exec(`UPDATE stories SET importance = 5 WHERE id = $1`, fresh)
 
 	// Severity lifts an otherwise equal story (the id tie-break alone would put plain first).
-	critical := e.insertStory("critical", now.Add(-2*time.Hour), "databases/postgres")
-	plain := e.insertStory("plain", now.Add(-2*time.Hour), "databases/postgres")
+	critical := e.insertStory("critical", now.Add(-2*time.Hour), "web/react")
+	plain := e.insertStory("plain", now.Add(-2*time.Hour), "web/react")
 	e.exec(`UPDATE stories SET kind = 'security', severity = 'critical' WHERE id = $1`, critical)
 
-	// A story seen long ago but never opened or saved sinks, unless it is of a followed topic;
-	// recent views and saved stories don't.
+	// Views never penalize a story of a followed topic, and neither do saved stories.
 	unseen := e.insertStory("unseen", now.Add(-4*time.Hour), "web/react")
 	seenLongAgo := e.insertStory("seen long ago", now.Add(-3*time.Hour), "web/react")
 	seenRecently := e.insertStory("seen recently", now.Add(-3*time.Hour), "web/react")
@@ -989,22 +982,14 @@ func TestTimelineScore(t *testing.T) {
 	if code := e.do(http.MethodPost, "/v1/stories/views", aliceToken, map[string]any{"ids": []int64{seenLongAgo, seenRecently, seenSaved}}, nil); code != http.StatusNoContent {
 		t.Fatalf("record views: status %d", code)
 	}
-	// Outside the followed topics the same long-ago view sinks a story below an unseen twin.
-	profUnseen := e.insertStory("profession unseen", now.Add(-5*time.Hour), "databases/postgres")
-	profSeen := e.insertStory("profession seen long ago", now.Add(-5*time.Hour), "databases/postgres")
-	if code := e.do(http.MethodPost, "/v1/stories/views", aliceToken, map[string]any{"ids": []int64{profSeen}}, nil); code != http.StatusNoContent {
-		t.Fatalf("record views: status %d", code)
-	}
-	e.exec(`UPDATE story_views SET seen_at = $2 WHERE story_id = ANY($1)`, []int64{seenLongAgo, seenSaved, profSeen}, now.Add(-testScore.SeenGrace-time.Hour))
+	e.exec(`UPDATE story_views SET seen_at = $2 WHERE story_id = ANY($1)`, []int64{seenLongAgo, seenSaved}, now.Add(-testScore.SeenGrace-time.Hour))
 	if code := e.do(http.MethodPut, "/v1/stories/"+strconv.FormatInt(seenSaved, 10)+"/bookmark", aliceToken, nil, nil); code != http.StatusNoContent {
 		t.Fatalf("bookmark: status %d", code)
 	}
 
-	// Unread followed stories first, by score: seen recently, seen long ago (no penalty for a
-	// followed topic) and saved 3-3/24 (tie: highest id first); unseen 3-4/24; stale 1-13. Then
-	// the profession ones: fresh 5-2-1/24; critical 3-2+1.5-2/24; plain 3-2-2/24; profession unseen
-	// 3-2-5/24; profession seen long ago the same -3.
-	want := []int64{seenSaved, seenRecently, seenLongAgo, unseen, stale, fresh, critical, plain, profUnseen, profSeen}
+	// By score: critical 3+1.5-2/24; plain 3-2/24; seen recently, seen long ago and saved 3-3/24
+	// (tie: highest id first); unseen 3-4/24; stale 1-13.
+	want := []int64{critical, plain, seenSaved, seenRecently, seenLongAgo, unseen, stale}
 	if got := ids(e.timeline(aliceToken, 50, "").Items); !slices.Equal(got, want) {
 		t.Fatalf("timeline order = %v, want %v", got, want)
 	}
@@ -1065,48 +1050,26 @@ func TestTopicsMarkHeadlinesAndLaunches(t *testing.T) {
 	}
 }
 
-func TestTimelineProfessionTier(t *testing.T) {
+func TestTimelineIgnoresProfession(t *testing.T) {
 	e := newEnv(t)
 	now := time.Now().Truncate(time.Second)
-	// data-scientist maps to ai, databases and languages. Newer stories sit in lower tiers, so
-	// the expected order can only come from the tiers.
+	// data-scientist maps to ai, databases and languages; the user follows only web/react.
 	followed := e.insertStory("followed", now.Add(-4*time.Hour), "web/react")
-	profession := e.insertStory("profession", now.Add(-3*time.Hour), "databases/postgres")
-	e.insertStory("related", now.Add(-2*time.Hour), "cloud/aws")
+	e.insertStory("profession", now.Add(-3*time.Hour), "databases/postgres")
 	e.insertStory("outside", now.Add(-1*time.Hour), "security/advisories")
 
-	e.follow(aliceToken, "web/react")
-	e.relate("web/react", "cloud/aws")
 	if code := e.do(http.MethodPut, "/v1/me/professions", aliceToken, map[string]any{"professions": []string{"data-scientist"}}, nil); code != http.StatusOK {
 		t.Fatalf("put professions: status %d", code)
 	}
-
-	// Related and unrelated topics don't show up.
-	want := []int64{followed, profession}
-	wantMatch := []httpapi.StorySummaryMatch{httpapi.StorySummaryMatchFollowed, httpapi.StorySummaryMatchProfession}
-	got := e.timeline(aliceToken, 50, "").Items
-	if !slices.Equal(ids(got), want) {
-		t.Fatalf("timeline order = %v, want %v", ids(got), want)
-	}
-	for i, it := range got {
-		if it.Match == nil || *it.Match != wantMatch[i] {
-			t.Errorf("story %d (%s): match = %v, want %s", it.Id, it.Title, it.Match, wantMatch[i])
-		}
+	// A profession alone gives an empty timeline.
+	if got := e.timeline(aliceToken, 50, ""); len(got.Items) != 0 || got.NextCursor != nil {
+		t.Fatalf("timeline = %v, want empty", ids(got.Items))
 	}
 
-	// The cursor carries the profession tier across page boundaries.
-	var paged []int64
-	cursor := ""
-	for range len(want) + 1 {
-		page := e.timeline(aliceToken, 1, cursor)
-		paged = append(paged, ids(page.Items)...)
-		if page.NextCursor == nil {
-			break
-		}
-		cursor = *page.NextCursor
-	}
-	if !slices.Equal(paged, want) {
-		t.Fatalf("paged order = %v, want %v", paged, want)
+	// Once a topic is followed, only its stories show up, not those of the profession's topics.
+	e.follow(aliceToken, "web/react")
+	if got, want := ids(e.timeline(aliceToken, 50, "").Items), []int64{followed}; !slices.Equal(got, want) {
+		t.Fatalf("timeline = %v, want %v", got, want)
 	}
 }
 
@@ -1225,7 +1188,7 @@ func TestTimelineMutedTopics(t *testing.T) {
 	}
 
 	// A muted descendant of a followed topic stays muted; a muted root covers its children; a story
-	// needs a followed or profession topic that isn't muted, so the rest are left out.
+	// needs a followed topic that isn't muted, so the rest are left out.
 	e.follow(aliceToken, "web")
 	mute(aliceToken, "web/vue", "languages")
 	if got, want := ids(e.timeline(aliceToken, 50, "").Items), []int64{react}; !slices.Equal(got, want) {
