@@ -1,15 +1,14 @@
 -- name: ListTimeline :many
 -- Stories in the window (deals only for the user's country, or global ones) that match the user's
--- interests, and nothing else: tier 0 is tagged with a followed topic (or a descendant of one), tier 2
--- with an area of one of the user's professions (or a descendant). Unread first, by score: tier,
+-- followed topics, and nothing else: tier 0 is tagged with a followed topic (or a descendant of one);
+-- professions only suggest topics at onboarding and add no stories. Unread first, by score: tier,
 -- importance and severity points minus one point per decay_hours of age at as_of, minus seen_penalty
 -- for a story first seen before seen_before and not saved (never for a followed topic). Read stories
 -- (score 0) follow, newest first. Every input is fixed for a given as_of, so later views or new stories
 -- don't move rows across a page boundary.
 -- Feedback: dismissed stories are left out. A muted topic covers its descendants down to (not
 -- including) a followed one, and following likewise stops at a muted descendant, so the most
--- specific choice wins. Muted topics give no tier, so a story needs a topic that is followed or in a
--- profession and not muted.
+-- specific choice wins. Muted topics give no tier, so a story needs a followed topic that isn't muted.
 -- Optional filters: kinds (empty means all) and read_filter (NULL both, true read only, false unread only).
 -- Unread stories of a followed topic (tier 0) come before every other unread story, whatever their score.
 -- Keyset pagination on (is_read, is_followed, score, published_at, id).
@@ -26,16 +25,8 @@ WITH RECURSIVE followed AS (
     UNION
     SELECT t.id FROM topics t JOIN muted m ON t.parent_id = m.id
     WHERE NOT EXISTS (SELECT 1 FROM user_topics ut WHERE ut.user_id = @user_id AND ut.topic_id = t.id)
-), profession AS (
-    SELECT pt.topic_id AS id
-    FROM user_professions up JOIN profession_topics pt ON pt.profession_id = up.profession_id
-    WHERE up.user_id = @user_id
-    UNION
-    SELECT t.id FROM topics t JOIN profession p ON t.parent_id = p.id
 ), topic_tier AS (
     SELECT f.id, 0 AS tier FROM followed f
-    UNION ALL
-    SELECT p.id, 2 FROM profession p
 ), story_tier AS (
     SELECT st.story_id, min(tt.tier) AS tier
     FROM story_topics st JOIN topic_tier tt ON tt.id = st.topic_id
