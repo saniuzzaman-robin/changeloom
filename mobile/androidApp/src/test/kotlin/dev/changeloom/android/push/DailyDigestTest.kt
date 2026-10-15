@@ -12,10 +12,9 @@ class DailyDigestTest {
     private fun at(hour: Int, minute: Int = 0) = LocalDateTime.of(2026, 10, 4, hour, minute)
 
     @Test
-    fun `next digest is the following 9am, 5pm or 930pm, else tomorrow 9am`() {
+    fun `next digest is the following 9am or 9-30pm, else tomorrow 9am`() {
         assertEquals(Duration.ofHours(2), delayUntilNextDigest(at(7)))
-        assertEquals(Duration.ofHours(8), delayUntilNextDigest(at(9)))
-        assertEquals(Duration.ofHours(1), delayUntilNextDigest(at(16)))
+        assertEquals(Duration.ofMinutes(12 * 60 + 30), delayUntilNextDigest(at(9)))
         assertEquals(Duration.ofMinutes(4 * 60 + 30), delayUntilNextDigest(at(17)))
         assertEquals(Duration.ofMinutes(30), delayUntilNextDigest(at(21)))
         assertEquals(Duration.ofMinutes(11 * 60 + 30), delayUntilNextDigest(at(21, 30)))
@@ -51,8 +50,7 @@ class DailyDigestTest {
     @Test
     fun `next slot is the following digest time`() {
         assertEquals(at(9), nextDigestSlot(at(7)))
-        assertEquals(at(17), nextDigestSlot(at(9)))
-        assertEquals(at(21, 30), nextDigestSlot(at(17, 1)))
+        assertEquals(at(21, 30), nextDigestSlot(at(9)))
         assertEquals(at(9).plusDays(1), nextDigestSlot(at(21, 30)))
     }
 
@@ -68,13 +66,12 @@ class DailyDigestTest {
         assertFalse(isOnTime(at(9), at(9, 31)))
         assertFalse(isOnTime(at(9), at(11, 40)))
         assertFalse(isOnTime(at(9), at(8, 50)))
-        assertFalse(isOnTime(at(17), at(12, 0)))
+        assertFalse(isOnTime(at(21, 30), at(17, 0)))
     }
 
     @Test
     fun `the greeting follows the slot, not the time the run happens`() {
         assertEquals(DigestPeriod.Morning, digestPeriod(at(9)))
-        assertEquals(DigestPeriod.Evening, digestPeriod(at(17)))
         assertEquals(DigestPeriod.Night, digestPeriod(at(21, 30)))
     }
 }

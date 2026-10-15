@@ -71,9 +71,8 @@
     <string name="story_updates_channel_name">Story updates</string>
     <string name="daily_digest_channel_id" translatable="false">daily_digest</string>
     <string name="daily_digest_channel_name">Daily digest</string>
-    <string name="daily_digest_channel_description">A morning and an evening nudge with what\'s new in your topics.</string>
+    <string name="daily_digest_channel_description">A morning and a night nudge with what\'s new in your topics.</string>
     <string name="digest_title_morning">Good morning ☀️ Your feed is ready</string>
-    <string name="digest_title_evening">Evening catch-up 🌙 See what changed today</string>
     <string name="digest_title_night">Before you wind down 🌌 Tonight\'s top stories</string>
     <plurals name="digest_summary">
         <item quantity="one">%d new story picked for your interests</item>

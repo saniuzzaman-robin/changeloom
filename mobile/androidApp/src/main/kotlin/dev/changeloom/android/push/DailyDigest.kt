@@ -32,8 +32,7 @@ private const val NOTIFICATION_ID = 0x0D16E57
 private const val PREVIEW_COUNT = 3
 
 /** Local times the digest goes out. */
-private val DIGEST_TIMES = listOf(LocalTime.of(9, 0), LocalTime.of(17, 0), LocalTime.of(21, 30))
-private const val EVENING_START_HOUR = 12
+private val DIGEST_TIMES = listOf(LocalTime.of(9, 0), LocalTime.of(21, 30))
 private const val NIGHT_START_HOUR = 20
 private const val SLOT_KEY = "slot"
 
@@ -44,7 +43,7 @@ private const val SLOT_KEY = "slot"
 private val EARLY_TOLERANCE = Duration.ofMinutes(5)
 private val LATE_TOLERANCE = Duration.ofMinutes(30)
 
-/** The first digest time strictly after [now], so a run at 9:00 plans 17:00. */
+/** The first digest time strictly after [now], so a run at 9:00 plans 21:30. */
 internal fun nextDigestSlot(now: LocalDateTime): LocalDateTime {
     val today = now.toLocalDate()
     return DIGEST_TIMES.map { today.atTime(it) }.firstOrNull { it.isAfter(now) }
@@ -58,12 +57,11 @@ internal fun delayUntilNextDigest(now: LocalDateTime): Duration = Duration.betwe
 internal fun isOnTime(slot: LocalDateTime, now: LocalDateTime): Boolean =
     !now.isBefore(slot.minus(EARLY_TOLERANCE)) && !now.isAfter(slot.plus(LATE_TOLERANCE))
 
-internal enum class DigestPeriod { Morning, Evening, Night }
+internal enum class DigestPeriod { Morning, Night }
 
 /** The greeting follows the slot the digest is for, not the moment the run happens to start. */
 internal fun digestPeriod(slot: LocalDateTime): DigestPeriod = when {
     slot.hour >= NIGHT_START_HOUR -> DigestPeriod.Night
-    slot.hour >= EVENING_START_HOUR -> DigestPeriod.Evening
     else -> DigestPeriod.Morning
 }
 
@@ -94,7 +92,7 @@ internal fun digestStories(items: List<StorySummary>): List<StorySummary> {
 }
 
 /**
- * Posts the morning or evening digest: a friendly title, how many unread stories match the user's interests and
+ * Posts the morning or night digest: a friendly title, how many unread stories match the user's interests and
  * the first few titles. It queues the next one itself, so the schedule follows the phone's clock and time zone.
  */
 class DailyDigestWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params), KoinComponent {
@@ -127,7 +125,6 @@ class DailyDigestWorker(context: Context, params: WorkerParameters) : CoroutineW
         val context = applicationContext
         val title = when (digestPeriod(slot)) {
             DigestPeriod.Night -> R.string.digest_title_night
-            DigestPeriod.Evening -> R.string.digest_title_evening
             DigestPeriod.Morning -> R.string.digest_title_morning
         }
         val previews = stories.take(PREVIEW_COUNT).joinToString("\n") { "• ${it.title}" }
