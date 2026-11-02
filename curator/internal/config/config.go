@@ -110,6 +110,9 @@ type Config struct {
 	// Concurrency is how many Claude calls run at once (CURATOR_CONCURRENCY).
 	Concurrency int
 
+	// DealsEnabled turns the per-country deal fetches on (CURATOR_DEALS_ENABLED). Off, deal topics
+	// are never fetched.
+	DealsEnabled bool
 	// DealsMaxCountries is the most countries deal topics are fetched for per run, the ones with the
 	// most users (CURATOR_DEALS_MAX_COUNTRIES).
 	DealsMaxCountries int
@@ -292,6 +295,7 @@ func Load() (Config, error) {
 		StoriesPerTopic:    envInt(&errs, "CURATOR_STORIES_PER_TOPIC", 5),
 		Concurrency:        envInt(&errs, "CURATOR_CONCURRENCY", 2),
 
+		DealsEnabled:        envBool(&errs, "CURATOR_DEALS_ENABLED", false),
 		DealsMaxCountries:   envInt(&errs, "CURATOR_DEALS_MAX_COUNTRIES", 5),
 		DealsMaxCallsPerRun: envInt(&errs, "CURATOR_DEALS_MAX_CALLS_PER_RUN", 4),
 		DealsMaxAge:         time.Duration(envInt(&errs, "CURATOR_DEALS_MAX_AGE_DAYS", 7)) * 24 * time.Hour,
