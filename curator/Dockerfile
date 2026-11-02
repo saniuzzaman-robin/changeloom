@@ -1,6 +1,6 @@
 # The curator plus the Claude CLI, for the daily Cloud Run Job (fetch only; see deploy/README.md).
 # Build from the repo root: docker build -f curator/Dockerfile --build-arg CLAUDE_CODE_VERSION=<x.y.z> .
-FROM golang:1.27.2-alpine AS build
+FROM golang:1.27.3-alpine AS build
 WORKDIR /src
 COPY curator/go.mod curator/go.sum ./
 RUN go mod download
