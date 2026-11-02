@@ -84,7 +84,7 @@ func testConfig() config.Config {
 		MergeWindow: 14 * 24 * time.Hour, StoriesPerTopic: 5, Concurrency: 1,
 		HotMinEngaged: 1, WarmInterval: 24 * time.Hour,
 		PriorityIntervals: [5]time.Duration{48 * time.Hour, 96 * time.Hour, 168 * time.Hour, 336 * time.Hour, 672 * time.Hour},
-		DealsMaxCountries: 5, DealsMaxCallsPerRun: 4, DealsMaxAge: 7 * 24 * time.Hour,
+		DealsEnabled:      true, DealsMaxCountries: 5, DealsMaxCallsPerRun: 4, DealsMaxAge: 7 * 24 * time.Hour,
 	}
 }
 

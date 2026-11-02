@@ -237,7 +237,7 @@ func isDealSlug(slug string) bool {
 // first, sharing CURATOR_DEALS_MAX_CALLS_PER_RUN calls. A topic's last fetch is per country. Deal
 // topics are only fetched for countries users chose, so with none there are no calls.
 func (f *Fetcher) planDeals(ctx context.Context, deals []Topic, s PlanSettings) (groups []Group, deferred []string, err error) {
-	if len(deals) == 0 {
+	if len(deals) == 0 || !f.cfg.DealsEnabled {
 		return nil, nil, nil
 	}
 	q := db.New(f.pool)
