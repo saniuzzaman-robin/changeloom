@@ -253,3 +253,25 @@ func TestPlanEngagement(t *testing.T) {
 		t.Errorf("deferred = %v", deferred)
 	}
 }
+
+func TestPlanMinLookback(t *testing.T) {
+	now := time.Now()
+	topics := []fetch.Topic{{Slug: "a/1", ParentSlug: "a", Engaged7d: 1, LastFetchedAt: now.Add(-48 * time.Hour)}}
+	settings := fetch.PlanSettings{TopicsPerCall: 5, MaxCalls: 10, HotMinEngaged: 1, WarmInterval: time.Hour, PriorityIntervals: hours(1, 1, 1, 1, 1), MaxAge: 14 * 24 * time.Hour}
+
+	for name, tc := range map[string]struct {
+		lookback time.Duration
+		want     time.Time
+	}{
+		"none":          {0, now.Add(-48 * time.Hour)},
+		"widens":        {7 * 24 * time.Hour, now.Add(-7 * 24 * time.Hour)},
+		"keeps older":   {time.Hour, now.Add(-48 * time.Hour)},
+		"capped by age": {30 * 24 * time.Hour, now.Add(-14 * 24 * time.Hour)},
+	} {
+		settings.MinLookback = tc.lookback
+		groups, _ := fetch.Plan(topics, settings, now)
+		if len(groups) != 1 || !groups[0].Since.Equal(tc.want) {
+			t.Errorf("%s: groups = %+v, want since %v", name, groups, tc.want)
+		}
+	}
+}

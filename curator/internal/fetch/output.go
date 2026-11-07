@@ -9,14 +9,18 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/urlnorm"
 )
 
 const (
-	maxTitleRunes   = 100
-	maxSummaryRunes = 280
+	maxTitleRunes = 100
+	// maxTitleRepairRunes is the longest title shortened to fit instead of rejected: a few extra
+	// characters are a miscount, much more is not a headline.
+	maxTitleRepairRunes = 130
+	maxSummaryRunes     = 280
 )
 
 // Allowed values, mirrored in the stories table's CHECK constraints ("none" means no severity).
@@ -130,7 +134,10 @@ func validateStory(so StoryOutput, validTopics map[string]bool, now time.Time, m
 		return Story{}, errors.New("title, summary and body_md must be non-empty")
 	}
 	if n := utf8.RuneCountInString(s.Title); n > maxTitleRunes {
-		return Story{}, fmt.Errorf("title is %d characters, limit is %d", n, maxTitleRunes)
+		if n > maxTitleRepairRunes {
+			return Story{}, fmt.Errorf("title is %d characters, limit is %d", n, maxTitleRunes)
+		}
+		s.Title = shortenTitle(s.Title)
 	}
 	if n := utf8.RuneCountInString(s.Summary); n > maxSummaryRunes {
 		return Story{}, fmt.Errorf("summary is %d characters, limit is %d", n, maxSummaryRunes)
@@ -228,4 +235,18 @@ func normalizeDedupe(d Dedupe) Dedupe {
 		}
 	}
 	return out
+}
+
+// shortenTitle cuts title to maxTitleRunes characters at a word boundary and ends it with an
+// ellipsis. The title must be longer than maxTitleRunes.
+func shortenTitle(title string) string {
+	const ellipsis = "…"
+	runes := []rune(title)[:maxTitleRunes-1]
+	for i := len(runes) - 1; i > 0; i-- {
+		if unicode.IsSpace(runes[i]) {
+			runes = runes[:i]
+			break
+		}
+	}
+	return strings.TrimRight(string(runes), " ,;:-–—") + ellipsis
 }
