@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/fetch"
 )
@@ -58,6 +59,25 @@ func TestParseOutputNormalizes(t *testing.T) {
 	}
 	if s.Dedupe.Project != "go" || s.Dedupe.Version != "1.27.0" || len(s.Dedupe.CVEIDs) != 1 || s.Dedupe.CVEIDs[0] != "CVE-2026-1" {
 		t.Errorf("dedupe = %+v", s.Dedupe)
+	}
+}
+
+func TestParseOutputShortensLongTitle(t *testing.T) {
+	long := "EU enlargement package sets indicative accession roadmaps for Montenegro, Albania, Moldova and Ukraine"
+	st := validStory()
+	st["title"] = long
+	out, rejected := parse(t, st)
+	if len(rejected) != 0 || len(out) != 1 {
+		t.Fatalf("out %d, rejected %v; want the story kept", len(out), rejected)
+	}
+	want := "EU enlargement package sets indicative accession roadmaps for Montenegro, Albania, Moldova and…"
+	if out[0].Title != want || utf8.RuneCountInString(out[0].Title) > 100 {
+		t.Errorf("title = %q (%d runes), want %q", out[0].Title, utf8.RuneCountInString(out[0].Title), want)
+	}
+
+	st["title"] = strings.Repeat("word ", 30)
+	if out, rejected := parse(t, st); len(out) != 0 || len(rejected) != 1 || !strings.Contains(rejected[0].Error(), "title is") {
+		t.Errorf("out %d, rejected %v; want a 150-character title rejected", len(out), rejected)
 	}
 }
 
