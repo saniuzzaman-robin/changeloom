@@ -208,6 +208,7 @@ func (f *Fetcher) Run(ctx context.Context) (Summary, error) {
 		WarmInterval:      f.cfg.WarmInterval,
 		PriorityIntervals: f.cfg.PriorityIntervals,
 		MaxAge:            f.cfg.ItemMaxAge,
+		MinLookback:       f.cfg.MinLookback,
 	}
 	groups, deferred := Plan(global, settings, f.now())
 	dealGroups, dealDeferred, err := f.planDeals(ctx, deals, settings)
@@ -259,6 +260,7 @@ func (f *Fetcher) planDeals(ctx context.Context, deals []Topic, s PlanSettings) 
 	}
 
 	s.MaxAge = f.cfg.DealsMaxAge
+	s.MinLookback = 0
 	budget := f.cfg.DealsMaxCallsPerRun
 	for _, c := range countries {
 		if _, ok := countryNames[c.Country]; !ok {

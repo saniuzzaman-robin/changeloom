@@ -74,6 +74,10 @@ type PlanSettings struct {
 	WarmInterval      time.Duration
 	PriorityIntervals [topiccatalog.MaxPriority]time.Duration
 	MaxAge            time.Duration
+	// MinLookback is the least history a call asks for, so a topic fetched a moment ago is still
+	// searched over this window (the stores skip what they already have). Zero asks only for what
+	// is new since the last fetch.
+	MinLookback time.Duration
 }
 
 // tier ranks how much a topic is wanted; lower is fetched first.
@@ -208,6 +212,9 @@ func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferr
 			if t.LastFetchedAt.Before(since) {
 				since = t.LastFetchedAt
 			}
+		}
+		if lookback := now.Add(-s.MinLookback); lookback.Before(since) {
+			since = lookback
 		}
 		if since.Before(floor) {
 			since = floor

@@ -85,6 +85,9 @@ type Config struct {
 	MaxNewTopicsPerRun int
 	// ItemMaxAge drops stories published longer ago than this (CURATOR_ITEM_MAX_AGE_DAYS).
 	ItemMaxAge time.Duration
+	// MinLookback is the least history a news fetch call asks for, even for a topic fetched more
+	// recently (CURATOR_MIN_LOOKBACK_DAYS); capped by ItemMaxAge.
+	MinLookback time.Duration
 	// MergeWindow is how far back a new story about the same CVE or project+version is merged
 	// into an existing one (CURATOR_MERGE_WINDOW_DAYS).
 	MergeWindow time.Duration
@@ -286,6 +289,7 @@ func Load() (Config, error) {
 		TopicsPerCall:      envInt(&errs, "CURATOR_TOPICS_PER_CALL", 5),
 		MaxNewTopicsPerRun: envInt(&errs, "CURATOR_MAX_NEW_TOPICS_PER_RUN", 5),
 		ItemMaxAge:         time.Duration(envInt(&errs, "CURATOR_ITEM_MAX_AGE_DAYS", 14)) * 24 * time.Hour,
+		MinLookback:        time.Duration(envInt(&errs, "CURATOR_MIN_LOOKBACK_DAYS", 7)) * 24 * time.Hour,
 		MergeWindow:        time.Duration(envInt(&errs, "CURATOR_MERGE_WINDOW_DAYS", 14)) * 24 * time.Hour,
 		HotMinEngaged:      envInt(&errs, "CURATOR_HOT_MIN_ENGAGED", 1),
 		HotMinInterval:     hotMinInterval,
