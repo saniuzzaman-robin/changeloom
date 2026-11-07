@@ -275,3 +275,39 @@ func TestPlanMinLookback(t *testing.T) {
 		}
 	}
 }
+
+func TestPlanBacksOffEmptyTopics(t *testing.T) {
+	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	settings := fetch.PlanSettings{
+		TopicsPerCall: 10, MaxCalls: 10, HotMinEngaged: 1, WarmInterval: 24 * time.Hour,
+		PriorityIntervals: hours(48, 96, 168, 336, 672), MaxAge: 14 * 24 * time.Hour,
+		BackoffAfter: 3, BackoffMaxMultiplier: 4,
+	}
+	// Warm (followed) topics fetched 60h ago; their interval is 24h before any backoff.
+	fetched := now.Add(-60 * time.Hour)
+	topic := func(slug string, empty int) fetch.Topic {
+		return fetch.Topic{Slug: slug, Followers: 1, LastFetchedAt: fetched, EmptyFetches: empty}
+	}
+	topics := []fetch.Topic{
+		topic("a", 2),  // below BackoffAfter: 24h, due
+		topic("b", 3),  // x2 = 48h, due
+		topic("c", 4),  // x4 = 96h, not due yet
+		topic("d", 20), // capped at x4 = 96h, not due yet
+		{Slug: "hot", Engaged7d: 2, LastFetchedAt: fetched, EmptyFetches: 20}, // hot topics never back off
+	}
+	groups, _ := fetch.Plan(topics, settings, now)
+	var got []string
+	for _, g := range groups {
+		got = append(got, slugsOf(g)...)
+	}
+	slices.Sort(got)
+	if want := []string{"a", "b", "hot"}; !slices.Equal(got, want) {
+		t.Errorf("due = %v, want %v", got, want)
+	}
+
+	settings.BackoffMaxMultiplier = 1
+	groups, _ = fetch.Plan(topics, settings, now)
+	if n := len(slugsOf(groups[0])); n != 5 {
+		t.Errorf("with the backoff off %d topics are due, want 5", n)
+	}
+}

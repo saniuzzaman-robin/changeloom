@@ -22,7 +22,6 @@ const maxAudience = 12
 // StoryRef is an existing story Claude should not return again.
 type StoryRef struct {
 	Title string
-	URL   string
 }
 
 // Prompt renders the instructions for one call in the given style.
@@ -56,12 +55,15 @@ Research each topic on its own; do not let one topic's results stand in for anot
 
 ## How many
 Return up to %d stories per topic, the most important first. Aim to return every qualifying item you find, up to that limit: a topic with real news since the date above should not come back empty, and items of modest importance (importance 1 or 2) are welcome when they are real and recent. An empty list for a topic is only right after you searched it and found nothing real. Never pad with old, invented or off-topic items, and never include anything published before the date above. One story per event: put every page about the same release, advisory or announcement in that story's sources.
-
-## Deals
-Topics whose slug starts with "deals" want product deals instead of news: real, currently valid discounts on well-known, well-reviewed gadgets and appliances (laptops, MacBooks, iPhones, headphones, TVs, smart-home devices, accessories and so on) from reputable retailers or the maker's own store. Use kind "deal". Put the product, the sale price, the regular price or discount, the retailer and the end date (when stated) in the title, summary and body, and cite the retailer's product or deal page as the source. Only report a price the page states: never estimate or invent one, and skip a deal you cannot confirm is still on. Skip coupon spam, unknown sellers, refurbished or grey-market listings unless clearly labelled, and trivial discounts under about 10%%. Use importance 4 or 5 only for exceptional lows. In body_md use the sections "## The deal", "## Why it's worth it" and "## Fine print" (expiry, region, conditions) instead of the changelog sections, and keep it short. Put the product model in dedupe.project and leave version and cve_ids empty.
-
-## Topics
 `, audience(g), g.Since.UTC().Format(time.RFC3339), g.PerTopic)
+
+	if slices.ContainsFunc(g.Topics, func(t Topic) bool { return isDealSlug(t.Slug) }) {
+		b.WriteString(`## Deals
+Topics whose slug starts with "deals" want product deals instead of news: real, currently valid discounts on well-known, well-reviewed gadgets and appliances (laptops, MacBooks, iPhones, headphones, TVs, smart-home devices, accessories and so on) from reputable retailers or the maker's own store. Use kind "deal". Put the product, the sale price, the regular price or discount, the retailer and the end date (when stated) in the title, summary and body, and cite the retailer's product or deal page as the source. Only report a price the page states: never estimate or invent one, and skip a deal you cannot confirm is still on. Skip coupon spam, unknown sellers, refurbished or grey-market listings unless clearly labelled, and trivial discounts under about 10%. Use importance 4 or 5 only for exceptional lows. In body_md use the sections "## The deal", "## Why it's worth it" and "## Fine print" (expiry, region, conditions) instead of the changelog sections, and keep it short. Put the product model in dedupe.project and leave version and cve_ids empty.
+`)
+	}
+
+	b.WriteString("\n## Topics\n")
 	writeTopics(&b, g, known)
 
 	b.WriteString(`
@@ -149,11 +151,7 @@ func writeTopics(b *strings.Builder, g Group, known []StoryRef) {
 	if len(known) > 0 {
 		b.WriteString("\n## Already covered\nSkip these and any other report of the same event:\n")
 		for _, k := range known {
-			fmt.Fprintf(b, "- %s", k.Title)
-			if k.URL != "" {
-				fmt.Fprintf(b, " (%s)", k.URL)
-			}
-			b.WriteByte('\n')
+			fmt.Fprintf(b, "- %s\n", k.Title)
 		}
 	}
 }

@@ -22,9 +22,6 @@ import (
 	"github.com/saniuzzaman-robin/changeloom/curator/internal/urlnorm"
 )
 
-// maxKnownStories caps the existing stories listed in a prompt.
-const maxKnownStories = 200
-
 // maxLoggedOutput bounds the model answer written to the debug log (LOG_LEVEL=debug).
 const maxLoggedOutput = 4000
 
@@ -133,7 +130,7 @@ func toTopic(r db.ListFetchTopicsRow) Topic {
 		ID: r.ID, Slug: r.Slug, Name: r.Name, Description: r.Description, ParentSlug: deref(r.ParentSlug),
 		Priority: int(r.Priority), Followers: int(r.Followers), ProfessionUsers: int(r.ProfessionUsers), Engaged7d: int(r.Engaged7d), Views7d: int(r.Views7d),
 		HasChildren: r.HasChildren, Hints: r.Hints, Professions: r.Professions, Launched: r.Launched, Headline: r.Headline,
-		LastFetchedAt: r.LastFetchedAt,
+		LastFetchedAt: r.LastFetchedAt, EmptyFetches: int(r.EmptyFetches),
 	}
 }
 
@@ -209,6 +206,9 @@ func (f *Fetcher) Run(ctx context.Context) (Summary, error) {
 		PriorityIntervals: f.cfg.PriorityIntervals,
 		MaxAge:            f.cfg.ItemMaxAge,
 		MinLookback:       f.cfg.MinLookback,
+
+		BackoffAfter:         f.cfg.BackoffAfter,
+		BackoffMaxMultiplier: f.cfg.BackoffMaxMultiplier,
 	}
 	groups, deferred := Plan(global, settings, f.now())
 	dealGroups, dealDeferred, err := f.planDeals(ctx, deals, settings)
@@ -261,6 +261,7 @@ func (f *Fetcher) planDeals(ctx context.Context, deals []Topic, s PlanSettings) 
 
 	s.MaxAge = f.cfg.DealsMaxAge
 	s.MinLookback = 0
+	s.BackoffMaxMultiplier = 0
 	budget := f.cfg.DealsMaxCallsPerRun
 	for _, c := range countries {
 		if _, ok := countryNames[c.Country]; !ok {
@@ -354,14 +355,14 @@ func (f *Fetcher) runGroup(ctx context.Context, g Group, cat catalog) (groupResu
 
 	now := f.now()
 	refs, err := q.ListRecentStoryRefs(ctx, db.ListRecentStoryRefsParams{
-		Since: now.Add(-f.cfg.ItemMaxAge), TopicIds: ids, Country: g.Country, MaxRows: maxKnownStories,
+		Since: now.Add(-f.cfg.ItemMaxAge), TopicIds: ids, Country: g.Country, MaxRows: int32(f.cfg.KnownStoriesMax), //nolint:gosec // bounded by config
 	})
 	if err != nil {
 		return fail(fmt.Errorf("list recent stories: %w", err))
 	}
 	known := make([]StoryRef, len(refs))
 	for i, r := range refs {
-		known[i] = StoryRef{Title: r.Title, URL: r.Url}
+		known[i] = StoryRef{Title: r}
 	}
 
 	g.Also = cat.also(g)

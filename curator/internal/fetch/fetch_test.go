@@ -81,7 +81,7 @@ func story(title, url string, published time.Time, mutate func(map[string]any)) 
 func testConfig() config.Config {
 	return config.Config{
 		MaxCallsPerRun: 5, TopicsPerCall: 5, ItemMaxAge: 14 * 24 * time.Hour,
-		MergeWindow: 14 * 24 * time.Hour, StoriesPerTopic: 5, Concurrency: 1,
+		MergeWindow: 14 * 24 * time.Hour, StoriesPerTopic: 5, KnownStoriesMax: 50, Concurrency: 1,
 		HotMinEngaged: 1, WarmInterval: 24 * time.Hour,
 		PriorityIntervals: [5]time.Duration{48 * time.Hour, 96 * time.Hour, 168 * time.Hour, 336 * time.Hour, 672 * time.Hour},
 		DealsEnabled:      true, DealsMaxCountries: 5, DealsMaxCallsPerRun: 4, DealsMaxAge: 7 * 24 * time.Hour,
@@ -168,8 +168,8 @@ func TestFetchStoresAndMerges(t *testing.T) {
 	if err != nil || sum.Calls != 1 || sum.Merged != 1 || sum.Added != 0 {
 		t.Fatalf("third run: %+v, %v", sum, err)
 	}
-	if !strings.Contains(fake.prompts[1], "Go 1.27 (https://") {
-		t.Errorf("prompt lacks known stories:\n%s", fake.prompts[1])
+	if !strings.Contains(fake.prompts[1], "- Go 1.27\n") || strings.Contains(fake.prompts[1], "(https://go.dev") {
+		t.Errorf("prompt lacks known story titles, or lists their URLs:\n%s", fake.prompts[1])
 	}
 	if n := count(t, pool, `SELECT count(*) FROM stories`); n != 4 {
 		t.Errorf("stories = %d, want 4", n)
