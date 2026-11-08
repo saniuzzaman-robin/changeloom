@@ -161,6 +161,30 @@ func (e TopicRequestStatus) Valid() bool {
 	}
 }
 
+// Defines values for CreateFeedbackJSONBodyCategory.
+const (
+	Bug    CreateFeedbackJSONBodyCategory = "bug"
+	Idea   CreateFeedbackJSONBodyCategory = "idea"
+	Other  CreateFeedbackJSONBodyCategory = "other"
+	Praise CreateFeedbackJSONBodyCategory = "praise"
+)
+
+// Valid indicates whether the value is a known member of the CreateFeedbackJSONBodyCategory enum.
+func (e CreateFeedbackJSONBodyCategory) Valid() bool {
+	switch e {
+	case Bug:
+		return true
+	case Idea:
+		return true
+	case Other:
+		return true
+	case Praise:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PutMyDeviceJSONBodyPlatform.
 const (
 	Android PutMyDeviceJSONBodyPlatform = "android"
@@ -356,6 +380,22 @@ type SyncBookmarksJSONBody struct {
 	Remove []int64 `json:"remove"`
 }
 
+// CreateFeedbackJSONBody defines parameters for CreateFeedback.
+type CreateFeedbackJSONBody struct {
+	// AppVersion Optional app version name, up to 32 characters.
+	AppVersion *string                        `json:"app_version,omitempty"`
+	Category   CreateFeedbackJSONBodyCategory `json:"category"`
+
+	// Message 5-2000 characters after trimming.
+	Message string `json:"message"`
+
+	// Rating Optional star rating.
+	Rating *int `json:"rating,omitempty"`
+}
+
+// CreateFeedbackJSONBodyCategory defines parameters for CreateFeedback.
+type CreateFeedbackJSONBodyCategory string
+
 // PutMyCountryJSONBody defines parameters for PutMyCountry.
 type PutMyCountryJSONBody struct {
 	// Country ISO 3166-1 alpha-2 code, upper case.
@@ -431,6 +471,9 @@ type CreateTopicRequestJSONBody struct {
 // SyncBookmarksJSONRequestBody defines body for SyncBookmarks for application/json ContentType.
 type SyncBookmarksJSONRequestBody SyncBookmarksJSONBody
 
+// CreateFeedbackJSONRequestBody defines body for CreateFeedback for application/json ContentType.
+type CreateFeedbackJSONRequestBody CreateFeedbackJSONBody
+
 // PutMyCountryJSONRequestBody defines body for PutMyCountry for application/json ContentType.
 type PutMyCountryJSONRequestBody PutMyCountryJSONBody
 
@@ -469,6 +512,9 @@ type ServerInterface interface {
 	// SyncBookmarks Apply a batch of bookmark additions and removals (idempotent).
 	// (POST /v1/bookmarks/sync)
 	SyncBookmarks(w http.ResponseWriter, r *http.Request)
+	// CreateFeedback Send feedback or a review about the app.
+	// (POST /v1/feedback)
+	CreateFeedback(w http.ResponseWriter, r *http.Request)
 	// DeleteMe Delete the signed-in user's account data.
 	// (DELETE /v1/me)
 	DeleteMe(w http.ResponseWriter, r *http.Request)
@@ -636,6 +682,20 @@ func (siw *ServerInterfaceWrapper) SyncBookmarks(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SyncBookmarks(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateFeedback operation middleware
+func (siw *ServerInterfaceWrapper) CreateFeedback(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateFeedback(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1291,6 +1351,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/stories/{id}/bookmark", wrapper.AddBookmark)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/topic-requests", wrapper.ListMyTopicRequests)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/topic-requests", wrapper.CreateTopicRequest)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/feedback", wrapper.CreateFeedback)
 
 	return m
 }

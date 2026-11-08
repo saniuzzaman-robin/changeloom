@@ -27,6 +27,7 @@ func setBase(t *testing.T) {
 		"TIMELINE_SEEN_GRACE_HOURS":   "",
 		"TIMELINE_MAX_TOPIC_RUN":      "",
 		"TOPIC_REQUEST_MAX_PENDING":   "",
+		"FEEDBACK_MAX_PER_DAY":        "",
 		"LOG_LEVEL":                   "",
 		"RATE_LIMIT_IP_PER_MIN":       "",
 		"RATE_LIMIT_USER_PER_MIN":     "",

@@ -10,6 +10,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AppFeedback struct {
+	ID         int64
+	UserID     int64
+	Category   string
+	Rating     *int16
+	Message    string
+	AppVersion *string
+	CreatedAt  time.Time
+}
+
 type DeviceToken struct {
 	Token     string
 	UserID    int64

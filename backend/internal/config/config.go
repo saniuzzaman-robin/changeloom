@@ -45,6 +45,8 @@ type Config struct {
 	NotifySecret string
 	// TopicRequestMaxPending caps the pending topic requests per user (TOPIC_REQUEST_MAX_PENDING).
 	TopicRequestMaxPending int
+	// FeedbackMaxPerDay caps the feedback messages one user can send per 24 hours (FEEDBACK_MAX_PER_DAY).
+	FeedbackMaxPerDay int
 	// DBMaxConns caps the database pool per instance (DB_MAX_CONNS). Keep it at or below the
 	// connections Neon allows divided by the max Cloud Run instances.
 	DBMaxConns int32
@@ -145,6 +147,7 @@ func Load() (Config, error) {
 
 	pushEnabled := envBool(&errs, "FCM_ENABLED")
 	topicRequestMaxPending := envInt(&errs, "TOPIC_REQUEST_MAX_PENDING", 10)
+	feedbackMaxPerDay := envInt(&errs, "FEEDBACK_MAX_PER_DAY", 5)
 	dbMaxConns := envInt(&errs, "DB_MAX_CONNS", 10)
 	if dbMaxConns > math.MaxInt32 {
 		errs = append(errs, fmt.Errorf("DB_MAX_CONNS is too large, got %d", dbMaxConns))
@@ -187,6 +190,7 @@ func Load() (Config, error) {
 
 		NotifySecret:           strings.TrimSpace(os.Getenv("NOTIFY_SECRET")),
 		TopicRequestMaxPending: topicRequestMaxPending,
+		FeedbackMaxPerDay:      feedbackMaxPerDay,
 		DBMaxConns:             int32(dbMaxConns),
 		RequestTimeout:         requestTimeout,
 		RateLimitIPPerMin:      rateLimitIP,

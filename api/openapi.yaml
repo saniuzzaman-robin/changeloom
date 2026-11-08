@@ -479,6 +479,40 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Error"}
+  /v1/feedback:
+    post:
+      operationId: createFeedback
+      summary: Send feedback or a review about the app.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category, message]
+              properties:
+                category: {type: string, enum: [bug, idea, praise, other]}
+                message: {type: string, description: "5-2000 characters after trimming."}
+                rating: {type: integer, minimum: 1, maximum: 5, description: Optional star rating.}
+                app_version: {type: string, description: "Optional app version name, up to 32 characters."}
+      responses:
+        "201":
+          description: The stored feedback.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, created_at]
+                properties:
+                  id: {type: integer, format: int64}
+                  created_at: {type: string, format: date-time}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "429":
+          description: Too much feedback sent today.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
 components:
   securitySchemes:
     bearerAuth:
