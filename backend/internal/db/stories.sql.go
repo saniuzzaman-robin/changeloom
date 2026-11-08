@@ -10,19 +10,25 @@ import (
 	"time"
 )
 
-const addBookmark = `-- name: AddBookmark :exec
-INSERT INTO user_bookmarks (user_id, story_id) VALUES ($1, $2)
-ON CONFLICT (user_id, story_id) DO NOTHING
+const addBookmark = `-- name: AddBookmark :one
+WITH story AS (SELECT id FROM stories WHERE id = $1), ins AS (
+    INSERT INTO user_bookmarks (user_id, story_id)
+    SELECT $2, story.id FROM story
+    ON CONFLICT (user_id, story_id) DO NOTHING
+)
+SELECT EXISTS (SELECT 1 FROM story)
 `
 
 type AddBookmarkParams struct {
-	UserID  int64
 	StoryID int64
+	UserID  int64
 }
 
-func (q *Queries) AddBookmark(ctx context.Context, arg AddBookmarkParams) error {
-	_, err := q.db.Exec(ctx, addBookmark, arg.UserID, arg.StoryID)
-	return err
+func (q *Queries) AddBookmark(ctx context.Context, arg AddBookmarkParams) (bool, error) {
+	row := q.db.QueryRow(ctx, addBookmark, arg.StoryID, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const addBookmarks = `-- name: AddBookmarks :exec
@@ -42,20 +48,25 @@ func (q *Queries) AddBookmarks(ctx context.Context, arg AddBookmarksParams) erro
 	return err
 }
 
-const dismissStory = `-- name: DismissStory :exec
-INSERT INTO user_story_dismissals (user_id, story_id)
-VALUES ($1, $2)
-ON CONFLICT (user_id, story_id) DO NOTHING
+const dismissStory = `-- name: DismissStory :one
+WITH story AS (SELECT id FROM stories WHERE id = $1), ins AS (
+    INSERT INTO user_story_dismissals (user_id, story_id)
+    SELECT $2, story.id FROM story
+    ON CONFLICT (user_id, story_id) DO NOTHING
+)
+SELECT EXISTS (SELECT 1 FROM story)
 `
 
 type DismissStoryParams struct {
-	UserID  int64
 	StoryID int64
+	UserID  int64
 }
 
-func (q *Queries) DismissStory(ctx context.Context, arg DismissStoryParams) error {
-	_, err := q.db.Exec(ctx, dismissStory, arg.UserID, arg.StoryID)
-	return err
+func (q *Queries) DismissStory(ctx context.Context, arg DismissStoryParams) (bool, error) {
+	row := q.db.QueryRow(ctx, dismissStory, arg.StoryID, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const getStory = `-- name: GetStory :one
@@ -64,7 +75,12 @@ SELECT s.id, s.title, s.summary, s.body_md, s.kind, s.severity, s.importance, s.
     ARRAY(
         SELECT tp.slug FROM story_topics stp JOIN topics tp ON tp.id = stp.topic_id
         WHERE stp.story_id = s.id ORDER BY tp.slug
-    )::text[] AS topics
+    )::text[] AS topics,
+    -- Sources as parallel arrays in the same (source_name, url) order; url is unique per story.
+    ARRAY(SELECT ss.url FROM story_sources ss WHERE ss.story_id = s.id ORDER BY ss.source_name, ss.url)::text[]
+        AS source_urls,
+    ARRAY(SELECT ss.source_name FROM story_sources ss WHERE ss.story_id = s.id ORDER BY ss.source_name, ss.url)::text[]
+        AS source_names
 FROM stories s
 LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = $1
 LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = $1
@@ -88,6 +104,8 @@ type GetStoryRow struct {
 	ReadAt       *time.Time
 	IsBookmarked bool
 	Topics       []string
+	SourceUrls   []string
+	SourceNames  []string
 }
 
 func (q *Queries) GetStory(ctx context.Context, arg GetStoryParams) (GetStoryRow, error) {
@@ -105,6 +123,8 @@ func (q *Queries) GetStory(ctx context.Context, arg GetStoryParams) (GetStoryRow
 		&i.ReadAt,
 		&i.IsBookmarked,
 		&i.Topics,
+		&i.SourceUrls,
+		&i.SourceNames,
 	)
 	return i, err
 }
@@ -186,35 +206,6 @@ func (q *Queries) ListBookmarks(ctx context.Context, arg ListBookmarksParams) ([
 	return items, nil
 }
 
-const listStorySources = `-- name: ListStorySources :many
-SELECT url, source_name FROM story_sources WHERE story_id = $1 ORDER BY source_name, url
-`
-
-type ListStorySourcesRow struct {
-	Url        string
-	SourceName string
-}
-
-func (q *Queries) ListStorySources(ctx context.Context, storyID int64) ([]ListStorySourcesRow, error) {
-	rows, err := q.db.Query(ctx, listStorySources, storyID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListStorySourcesRow{}
-	for rows.Next() {
-		var i ListStorySourcesRow
-		if err := rows.Scan(&i.Url, &i.SourceName); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listTimeline = `-- name: ListTimeline :many
 WITH RECURSIVE followed AS (
     SELECT ut.topic_id AS id FROM user_topics ut WHERE ut.user_id = $1
@@ -226,24 +217,19 @@ WITH RECURSIVE followed AS (
     UNION
     SELECT t.id FROM topics t JOIN muted m ON t.parent_id = m.id
     WHERE NOT EXISTS (SELECT 1 FROM user_topics ut WHERE ut.user_id = $1 AND ut.topic_id = t.id)
-), topic_tier AS (
-    SELECT f.id, 0 AS tier FROM followed f
 ), story_tier AS (
-    SELECT st.story_id, min(tt.tier) AS tier
-    FROM story_topics st JOIN topic_tier tt ON tt.id = st.topic_id
-    WHERE NOT EXISTS (SELECT 1 FROM muted m WHERE m.id = tt.id)
-    GROUP BY st.story_id
+    SELECT DISTINCT st.story_id, 0 AS tier
+    FROM story_topics st
+    WHERE st.topic_id = ANY(ARRAY(SELECT f.id FROM followed f EXCEPT SELECT m.id FROM muted m))
 ), ranked AS (
     SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
         (uss.read_at IS NOT NULL) AS is_read,
         (ub.story_id IS NOT NULL) AS is_bookmarked,
-        stt.tier,
-        sv.seen_at
+        stt.tier
     FROM stories s
     JOIN story_tier stt ON stt.story_id = s.id
     LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = $1
     LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = $1
-    LEFT JOIN story_views sv ON sv.story_id = s.id AND sv.user_id = $1
     LEFT JOIN user_story_dismissals usd ON usd.story_id = s.id AND usd.user_id = $1
     WHERE s.published_at >= $2
     AND usd.story_id IS NULL
@@ -255,7 +241,7 @@ WITH RECURSIVE followed AS (
     AND ($4::boolean IS NULL OR (uss.read_at IS NOT NULL) = $4::boolean)
 ), scored AS (
     -- sqlc.arg, not @name: sqlc fails to resolve the ranked alias in arithmetic with @name params.
-    SELECT r.id, r.title, r.summary, r.kind, r.severity, r.importance, r.published_at, r.read_at, r.is_read, r.is_bookmarked, r.tier, r.seen_at,
+    SELECT r.id, r.title, r.summary, r.kind, r.severity, r.importance, r.published_at, r.read_at, r.is_read, r.is_bookmarked, r.tier,
         CASE WHEN r.is_read THEN 0 ELSE
             $5::float8 * r.importance
             - $6::float8 * CASE r.tier WHEN 0 THEN 0 ELSE r.tier - 1 END
@@ -263,13 +249,17 @@ WITH RECURSIVE followed AS (
                 * CASE r.severity WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'medium' THEN 1 ELSE 0 END
             - extract(epoch FROM greatest($8::timestamptz - r.published_at, interval '0'))
                 / 3600 / $9::float8
-            - CASE WHEN r.seen_at < $10::timestamptz AND NOT r.is_bookmarked AND r.tier > 0
-                THEN $11::float8 ELSE 0 END
+            - CASE WHEN r.tier = 0 OR r.is_bookmarked THEN 0
+                WHEN r.id IN (
+                    SELECT sv.story_id FROM story_views sv
+                    WHERE sv.user_id = $1 AND sv.seen_at < $10::timestamptz
+                ) THEN $11::float8
+                ELSE 0 END
         END::float8 AS score,
         (NOT r.is_read AND r.tier = 0) AS is_followed
     FROM ranked r
 ), page AS (
-    SELECT sc.id, sc.title, sc.summary, sc.kind, sc.severity, sc.importance, sc.published_at, sc.read_at, sc.is_read, sc.is_bookmarked, sc.tier, sc.seen_at, sc.score, sc.is_followed FROM scored sc
+    SELECT sc.id, sc.title, sc.summary, sc.kind, sc.severity, sc.importance, sc.published_at, sc.read_at, sc.is_read, sc.is_bookmarked, sc.tier, sc.score, sc.is_followed FROM scored sc
     WHERE $12::bigint IS NULL
         OR sc.is_read > $13::boolean
         OR (
@@ -347,9 +337,12 @@ type ListTimelineRow struct {
 // Optional filters: kinds (empty means all) and read_filter (NULL both, true read only, false unread only).
 // Unread stories of a followed topic (tier 0) come before every other unread story, whatever their score.
 // Keyset pagination on (is_read, is_followed, score, published_at, id).
-// Tiers come from one aggregate over the in-tier topics' story_topics rows instead of per-story
+// Tiers come from one pass over the in-tier topics' story_topics rows instead of per-story
 // subqueries, and topic slugs are built only for the page: per-row subplans over the whole window
 // inflated the plan cost past jit_above_cost, and JIT compilation took ~90% of the query time.
+// The in-tier topics go in as an array: the recursive CTE's row estimate is ~200x too high, which made
+// the planner seq scan all stories; with the array it reads story_topics_topic_id_idx and then only the
+// matching stories by id. story_views is consulted only for a story the seen penalty could apply to.
 func (q *Queries) ListTimeline(ctx context.Context, arg ListTimelineParams) ([]ListTimelineRow, error) {
 	rows, err := q.db.Query(ctx, listTimeline,
 		arg.UserID,
@@ -401,34 +394,45 @@ func (q *Queries) ListTimeline(ctx context.Context, arg ListTimelineParams) ([]L
 	return items, nil
 }
 
-const markStoryRead = `-- name: MarkStoryRead :exec
-INSERT INTO user_story_state (user_id, story_id, read_at)
-VALUES ($1, $2, now())
-ON CONFLICT (user_id, story_id) DO NOTHING
+const markStoryRead = `-- name: MarkStoryRead :one
+
+WITH story AS (SELECT id FROM stories WHERE id = $1), ins AS (
+    INSERT INTO user_story_state (user_id, story_id, read_at)
+    SELECT $2, story.id, now() FROM story
+    ON CONFLICT (user_id, story_id) DO NOTHING
+)
+SELECT EXISTS (SELECT 1 FROM story)
 `
 
 type MarkStoryReadParams struct {
-	UserID  int64
 	StoryID int64
+	UserID  int64
 }
 
-func (q *Queries) MarkStoryRead(ctx context.Context, arg MarkStoryReadParams) error {
-	_, err := q.db.Exec(ctx, markStoryRead, arg.UserID, arg.StoryID)
-	return err
+// The single-story writes below return whether the story exists, so the handler can 404 without a
+// separate round trip; they write nothing when it doesn't.
+func (q *Queries) MarkStoryRead(ctx context.Context, arg MarkStoryReadParams) (bool, error) {
+	row := q.db.QueryRow(ctx, markStoryRead, arg.StoryID, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
-const markStoryUnread = `-- name: MarkStoryUnread :exec
-DELETE FROM user_story_state WHERE user_id = $1 AND story_id = $2
+const markStoryUnread = `-- name: MarkStoryUnread :one
+WITH del AS (DELETE FROM user_story_state WHERE user_id = $2 AND story_id = $1)
+SELECT EXISTS (SELECT 1 FROM stories WHERE id = $1)
 `
 
 type MarkStoryUnreadParams struct {
-	UserID  int64
 	StoryID int64
+	UserID  int64
 }
 
-func (q *Queries) MarkStoryUnread(ctx context.Context, arg MarkStoryUnreadParams) error {
-	_, err := q.db.Exec(ctx, markStoryUnread, arg.UserID, arg.StoryID)
-	return err
+func (q *Queries) MarkStoryUnread(ctx context.Context, arg MarkStoryUnreadParams) (bool, error) {
+	row := q.db.QueryRow(ctx, markStoryUnread, arg.StoryID, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const recordStoryViews = `-- name: RecordStoryViews :exec
@@ -448,18 +452,21 @@ func (q *Queries) RecordStoryViews(ctx context.Context, arg RecordStoryViewsPara
 	return err
 }
 
-const removeBookmark = `-- name: RemoveBookmark :exec
-DELETE FROM user_bookmarks WHERE user_id = $1 AND story_id = $2
+const removeBookmark = `-- name: RemoveBookmark :one
+WITH del AS (DELETE FROM user_bookmarks WHERE user_id = $2 AND story_id = $1)
+SELECT EXISTS (SELECT 1 FROM stories WHERE id = $1)
 `
 
 type RemoveBookmarkParams struct {
-	UserID  int64
 	StoryID int64
+	UserID  int64
 }
 
-func (q *Queries) RemoveBookmark(ctx context.Context, arg RemoveBookmarkParams) error {
-	_, err := q.db.Exec(ctx, removeBookmark, arg.UserID, arg.StoryID)
-	return err
+func (q *Queries) RemoveBookmark(ctx context.Context, arg RemoveBookmarkParams) (bool, error) {
+	row := q.db.QueryRow(ctx, removeBookmark, arg.StoryID, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const removeBookmarks = `-- name: RemoveBookmarks :exec
@@ -488,7 +495,7 @@ LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = $1
 LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = $1
 WHERE (
         s.search @@ websearch_to_tsquery('english', $2::text)
-        OR word_similarity($2::text, s.title) >= 0.4
+        OR $2::text <% s.title
     )
     AND (
         s.kind <> 'deal' OR cardinality(s.countries) = 0
@@ -524,7 +531,8 @@ type SearchStoriesRow struct {
 }
 
 // Full-text search over all stories visible to the user, newest first; titles also match fuzzily (typos) by trigram
-// word similarity. Keyset pagination on (published_at, id).
+// word similarity of at least 0.4. Run it after SetSearchSimilarityThreshold in the same transaction: `<%` (unlike
+// word_similarity() >= 0.4) can use stories_title_trgm_idx. Keyset pagination on (published_at, id).
 func (q *Queries) SearchStories(ctx context.Context, arg SearchStoriesParams) ([]SearchStoriesRow, error) {
 	rows, err := q.db.Query(ctx, searchStories,
 		arg.UserID,
@@ -562,27 +570,30 @@ func (q *Queries) SearchStories(ctx context.Context, arg SearchStoriesParams) ([
 	return items, nil
 }
 
-const storyExists = `-- name: StoryExists :one
+const setSearchSimilarityThreshold = `-- name: SetSearchSimilarityThreshold :exec
+SELECT set_config('pg_trgm.word_similarity_threshold', '0.4', true)
+`
+
+// Sets the word similarity SearchStories' `<%` needs, for the current transaction only: a session SET is unsafe behind
+// a transaction pooler.
+func (q *Queries) SetSearchSimilarityThreshold(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, setSearchSimilarityThreshold)
+	return err
+}
+
+const undismissStory = `-- name: UndismissStory :one
+WITH del AS (DELETE FROM user_story_dismissals WHERE user_id = $2 AND story_id = $1)
 SELECT EXISTS (SELECT 1 FROM stories WHERE id = $1)
 `
 
-func (q *Queries) StoryExists(ctx context.Context, id int64) (bool, error) {
-	row := q.db.QueryRow(ctx, storyExists, id)
+type UndismissStoryParams struct {
+	StoryID int64
+	UserID  int64
+}
+
+func (q *Queries) UndismissStory(ctx context.Context, arg UndismissStoryParams) (bool, error) {
+	row := q.db.QueryRow(ctx, undismissStory, arg.StoryID, arg.UserID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
-}
-
-const undismissStory = `-- name: UndismissStory :exec
-DELETE FROM user_story_dismissals WHERE user_id = $1 AND story_id = $2
-`
-
-type UndismissStoryParams struct {
-	UserID  int64
-	StoryID int64
-}
-
-func (q *Queries) UndismissStory(ctx context.Context, arg UndismissStoryParams) error {
-	_, err := q.db.Exec(ctx, undismissStory, arg.UserID, arg.StoryID)
-	return err
 }

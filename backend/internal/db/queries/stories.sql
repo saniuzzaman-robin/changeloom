@@ -12,9 +12,12 @@
 -- Optional filters: kinds (empty means all) and read_filter (NULL both, true read only, false unread only).
 -- Unread stories of a followed topic (tier 0) come before every other unread story, whatever their score.
 -- Keyset pagination on (is_read, is_followed, score, published_at, id).
--- Tiers come from one aggregate over the in-tier topics' story_topics rows instead of per-story
+-- Tiers come from one pass over the in-tier topics' story_topics rows instead of per-story
 -- subqueries, and topic slugs are built only for the page: per-row subplans over the whole window
 -- inflated the plan cost past jit_above_cost, and JIT compilation took ~90% of the query time.
+-- The in-tier topics go in as an array: the recursive CTE's row estimate is ~200x too high, which made
+-- the planner seq scan all stories; with the array it reads story_topics_topic_id_idx and then only the
+-- matching stories by id. story_views is consulted only for a story the seen penalty could apply to.
 WITH RECURSIVE followed AS (
     SELECT ut.topic_id AS id FROM user_topics ut WHERE ut.user_id = @user_id
     UNION
@@ -25,24 +28,19 @@ WITH RECURSIVE followed AS (
     UNION
     SELECT t.id FROM topics t JOIN muted m ON t.parent_id = m.id
     WHERE NOT EXISTS (SELECT 1 FROM user_topics ut WHERE ut.user_id = @user_id AND ut.topic_id = t.id)
-), topic_tier AS (
-    SELECT f.id, 0 AS tier FROM followed f
 ), story_tier AS (
-    SELECT st.story_id, min(tt.tier) AS tier
-    FROM story_topics st JOIN topic_tier tt ON tt.id = st.topic_id
-    WHERE NOT EXISTS (SELECT 1 FROM muted m WHERE m.id = tt.id)
-    GROUP BY st.story_id
+    SELECT DISTINCT st.story_id, 0 AS tier
+    FROM story_topics st
+    WHERE st.topic_id = ANY(ARRAY(SELECT f.id FROM followed f EXCEPT SELECT m.id FROM muted m))
 ), ranked AS (
     SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
         (uss.read_at IS NOT NULL) AS is_read,
         (ub.story_id IS NOT NULL) AS is_bookmarked,
-        stt.tier,
-        sv.seen_at
+        stt.tier
     FROM stories s
     JOIN story_tier stt ON stt.story_id = s.id
     LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = @user_id
     LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = @user_id
-    LEFT JOIN story_views sv ON sv.story_id = s.id AND sv.user_id = @user_id
     LEFT JOIN user_story_dismissals usd ON usd.story_id = s.id AND usd.user_id = @user_id
     WHERE s.published_at >= @since
     AND usd.story_id IS NULL
@@ -62,8 +60,12 @@ WITH RECURSIVE followed AS (
                 * CASE r.severity WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'medium' THEN 1 ELSE 0 END
             - extract(epoch FROM greatest(sqlc.arg(as_of)::timestamptz - r.published_at, interval '0'))
                 / 3600 / sqlc.arg(decay_hours)::float8
-            - CASE WHEN r.seen_at < sqlc.arg(seen_before)::timestamptz AND NOT r.is_bookmarked AND r.tier > 0
-                THEN sqlc.arg(seen_penalty)::float8 ELSE 0 END
+            - CASE WHEN r.tier = 0 OR r.is_bookmarked THEN 0
+                WHEN r.id IN (
+                    SELECT sv.story_id FROM story_views sv
+                    WHERE sv.user_id = sqlc.arg(user_id) AND sv.seen_at < sqlc.arg(seen_before)::timestamptz
+                ) THEN sqlc.arg(seen_penalty)::float8
+                ELSE 0 END
         END::float8 AS score,
         (NOT r.is_read AND r.tier = 0) AS is_followed
     FROM ranked r
@@ -103,40 +105,55 @@ SELECT s.id, s.title, s.summary, s.body_md, s.kind, s.severity, s.importance, s.
     ARRAY(
         SELECT tp.slug FROM story_topics stp JOIN topics tp ON tp.id = stp.topic_id
         WHERE stp.story_id = s.id ORDER BY tp.slug
-    )::text[] AS topics
+    )::text[] AS topics,
+    -- Sources as parallel arrays in the same (source_name, url) order; url is unique per story.
+    ARRAY(SELECT ss.url FROM story_sources ss WHERE ss.story_id = s.id ORDER BY ss.source_name, ss.url)::text[]
+        AS source_urls,
+    ARRAY(SELECT ss.source_name FROM story_sources ss WHERE ss.story_id = s.id ORDER BY ss.source_name, ss.url)::text[]
+        AS source_names
 FROM stories s
 LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = @user_id
 LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = @user_id
 WHERE s.id = @id;
 
--- name: ListStorySources :many
-SELECT url, source_name FROM story_sources WHERE story_id = @story_id ORDER BY source_name, url;
+-- The single-story writes below return whether the story exists, so the handler can 404 without a
+-- separate round trip; they write nothing when it doesn't.
 
--- name: StoryExists :one
-SELECT EXISTS (SELECT 1 FROM stories WHERE id = @id);
+-- name: MarkStoryRead :one
+WITH story AS (SELECT id FROM stories WHERE id = @story_id), ins AS (
+    INSERT INTO user_story_state (user_id, story_id, read_at)
+    SELECT @user_id, story.id, now() FROM story
+    ON CONFLICT (user_id, story_id) DO NOTHING
+)
+SELECT EXISTS (SELECT 1 FROM story);
 
--- name: MarkStoryRead :exec
-INSERT INTO user_story_state (user_id, story_id, read_at)
-VALUES (@user_id, @story_id, now())
-ON CONFLICT (user_id, story_id) DO NOTHING;
+-- name: MarkStoryUnread :one
+WITH del AS (DELETE FROM user_story_state WHERE user_id = @user_id AND story_id = @story_id)
+SELECT EXISTS (SELECT 1 FROM stories WHERE id = @story_id);
 
--- name: MarkStoryUnread :exec
-DELETE FROM user_story_state WHERE user_id = @user_id AND story_id = @story_id;
+-- name: DismissStory :one
+WITH story AS (SELECT id FROM stories WHERE id = @story_id), ins AS (
+    INSERT INTO user_story_dismissals (user_id, story_id)
+    SELECT @user_id, story.id FROM story
+    ON CONFLICT (user_id, story_id) DO NOTHING
+)
+SELECT EXISTS (SELECT 1 FROM story);
 
--- name: DismissStory :exec
-INSERT INTO user_story_dismissals (user_id, story_id)
-VALUES (@user_id, @story_id)
-ON CONFLICT (user_id, story_id) DO NOTHING;
+-- name: UndismissStory :one
+WITH del AS (DELETE FROM user_story_dismissals WHERE user_id = @user_id AND story_id = @story_id)
+SELECT EXISTS (SELECT 1 FROM stories WHERE id = @story_id);
 
--- name: UndismissStory :exec
-DELETE FROM user_story_dismissals WHERE user_id = @user_id AND story_id = @story_id;
+-- name: AddBookmark :one
+WITH story AS (SELECT id FROM stories WHERE id = @story_id), ins AS (
+    INSERT INTO user_bookmarks (user_id, story_id)
+    SELECT @user_id, story.id FROM story
+    ON CONFLICT (user_id, story_id) DO NOTHING
+)
+SELECT EXISTS (SELECT 1 FROM story);
 
--- name: AddBookmark :exec
-INSERT INTO user_bookmarks (user_id, story_id) VALUES (@user_id, @story_id)
-ON CONFLICT (user_id, story_id) DO NOTHING;
-
--- name: RemoveBookmark :exec
-DELETE FROM user_bookmarks WHERE user_id = @user_id AND story_id = @story_id;
+-- name: RemoveBookmark :one
+WITH del AS (DELETE FROM user_bookmarks WHERE user_id = @user_id AND story_id = @story_id)
+SELECT EXISTS (SELECT 1 FROM stories WHERE id = @story_id);
 
 -- name: AddBookmarks :exec
 -- Batch form of AddBookmark; ids that are not stories are skipped by the join.
@@ -167,9 +184,15 @@ WHERE ub.user_id = @user_id
 ORDER BY ub.created_at DESC, s.id DESC
 LIMIT @page_size;
 
+-- name: SetSearchSimilarityThreshold :exec
+-- Sets the word similarity SearchStories' `<%` needs, for the current transaction only: a session SET is unsafe behind
+-- a transaction pooler.
+SELECT set_config('pg_trgm.word_similarity_threshold', '0.4', true);
+
 -- name: SearchStories :many
 -- Full-text search over all stories visible to the user, newest first; titles also match fuzzily (typos) by trigram
--- word similarity. Keyset pagination on (published_at, id).
+-- word similarity of at least 0.4. Run it after SetSearchSimilarityThreshold in the same transaction: `<%` (unlike
+-- word_similarity() >= 0.4) can use stories_title_trgm_idx. Keyset pagination on (published_at, id).
 SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
     (ub.story_id IS NOT NULL)::boolean AS is_bookmarked,
     ARRAY(
@@ -181,7 +204,7 @@ LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = @user_id
 LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = @user_id
 WHERE (
         s.search @@ websearch_to_tsquery('english', @query::text)
-        OR word_similarity(@query::text, s.title) >= 0.4
+        OR @query::text <% s.title
     )
     AND (
         s.kind <> 'deal' OR cardinality(s.countries) = 0

@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/saniuzzaman-robin/changeloom/backend/internal/db"
 )
 
@@ -54,22 +56,19 @@ func (s *Server) RemoveBookmark(w http.ResponseWriter, r *http.Request, id Story
 func (s *Server) setBookmark(w http.ResponseWriter, r *http.Request, id StoryID, on bool) {
 	user := mustUser(r)
 
-	exists, err := s.q.StoryExists(r.Context(), id)
+	var exists bool
+	var err error
+	if on {
+		exists, err = s.q.AddBookmark(r.Context(), db.AddBookmarkParams{UserID: user.ID, StoryID: id})
+	} else {
+		exists, err = s.q.RemoveBookmark(r.Context(), db.RemoveBookmarkParams{UserID: user.ID, StoryID: id})
+	}
 	if err != nil {
-		internalError(w, r, "check story exists", err)
+		internalError(w, r, "set bookmark", err)
 		return
 	}
 	if !exists {
 		writeError(w, http.StatusNotFound, "not_found", "story not found")
-		return
-	}
-	if on {
-		err = s.q.AddBookmark(r.Context(), db.AddBookmarkParams{UserID: user.ID, StoryID: id})
-	} else {
-		err = s.q.RemoveBookmark(r.Context(), db.RemoveBookmarkParams{UserID: user.ID, StoryID: id})
-	}
-	if err != nil {
-		internalError(w, r, "set bookmark", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -160,7 +159,17 @@ func (s *Server) SearchStories(w http.ResponseWriter, r *http.Request, params Se
 	if c != nil {
 		arg.CursorPublishedAt, arg.CursorID = &c.PublishedAt, &c.ID
 	}
-	rows, err := s.q.SearchStories(r.Context(), arg)
+	// The fuzzy title match needs its similarity threshold set in the same transaction.
+	var rows []db.SearchStoriesRow
+	err := pgx.BeginFunc(r.Context(), s.pool, func(tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		if err := q.SetSearchSimilarityThreshold(r.Context()); err != nil {
+			return fmt.Errorf("set search similarity threshold: %w", err)
+		}
+		var err error
+		rows, err = q.SearchStories(r.Context(), arg)
+		return err
+	})
 	if err != nil {
 		internalError(w, r, "search stories", err)
 		return

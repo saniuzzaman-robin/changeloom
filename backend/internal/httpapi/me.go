@@ -320,42 +320,22 @@ func (s *Server) PutMyCountry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user auth.User) {
-	slugs, err := s.q.ListUserTopicSlugs(r.Context(), user.ID)
+	row, err := s.q.GetMe(r.Context(), user.ID)
 	if err != nil {
-		internalError(w, r, "list user topics", err)
-		return
-	}
-	professions, err := s.q.ListUserProfessionSlugs(r.Context(), user.ID)
-	if err != nil {
-		internalError(w, r, "list user professions", err)
-		return
-	}
-	country, err := s.q.GetUserCountry(r.Context(), user.ID)
-	if err != nil {
-		internalError(w, r, "get user country", err)
-		return
-	}
-	muted, err := s.q.ListUserMutedTopicSlugs(r.Context(), user.ID)
-	if err != nil {
-		internalError(w, r, "list user muted topics", err)
-		return
-	}
-	stats, err := s.q.GetUserStats(r.Context(), user.ID)
-	if err != nil {
-		internalError(w, r, "get user stats", err)
+		internalError(w, r, "get me", err)
 		return
 	}
 	me := Me{
 		Id:          user.ID,
 		Email:       user.Email,
-		Topics:      slugs,
-		Professions: professions,
-		Country:     country,
-		Stats:       MeStats{Saved: stats.Saved, Read: stats.Read},
+		Topics:      row.Topics,
+		Professions: row.Professions,
+		Country:     row.Country,
+		Stats:       MeStats{Saved: row.Saved, Read: row.Read},
 	}
 	// Absent means none: most users mute nothing.
-	if len(muted) > 0 {
-		me.MutedTopics = &muted
+	if len(row.MutedTopics) > 0 {
+		me.MutedTopics = &row.MutedTopics
 	}
 	writeJSON(w, http.StatusOK, me)
 }
