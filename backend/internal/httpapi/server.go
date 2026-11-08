@@ -39,6 +39,13 @@ type Options struct {
 	TimelineScore TimelineScore
 	// TimelineMix spreads topics within each timeline page.
 	TimelineMix TimelineMix
+	// StoryThreadWindow is how far back a story's thread reaches; StoryThreadLimit caps its stories.
+	StoryThreadWindow time.Duration
+	StoryThreadLimit  int
+	// TopicSuggestionWindow is how recent a topic's stories must be for it to be suggested;
+	// TopicSuggestionLimit caps the suggestions.
+	TopicSuggestionWindow time.Duration
+	TopicSuggestionLimit  int
 	// TopicRequestMaxPending caps the pending topic requests per user.
 	TopicRequestMaxPending int
 	// FeedbackMaxPerDay caps the feedback messages one user can send per 24 hours.
@@ -59,9 +66,13 @@ type Options struct {
 	AppCheckEnforce bool
 }
 
-// TimelineScore is the unread timeline ranking: tier, importance and severity points, minus one
-// point per AgeDecay of age and SeenPenalty for a story seen longer than SeenGrace ago but never
-// opened or saved. AgeDecay must be positive.
+// TimelineScore is the unread timeline ranking: tier, importance and severity points, ActionWeight
+// for a story whose readers must upgrade, migrate or patch, plus
+// AffinityWeight times how far a story's topics' engaged share of the user's stories (from the last
+// AffinityWindow, smoothed by AffinityPrior pseudo-stories, a boosted story counting as
+// BoostEngagements engaged ones) is above the user's overall share,
+// minus one point per AgeDecay of age and SeenPenalty for a story seen longer than SeenGrace ago but
+// never opened or saved. AgeDecay must be positive.
 type TimelineScore struct {
 	TierWeight       float64
 	ImportanceWeight float64
@@ -69,6 +80,11 @@ type TimelineScore struct {
 	AgeDecay         time.Duration
 	SeenPenalty      float64
 	SeenGrace        time.Duration
+	AffinityWeight   float64
+	AffinityWindow   time.Duration
+	AffinityPrior    float64
+	BoostEngagements float64
+	ActionWeight     float64
 }
 
 // TimelineMix re-orders each timeline page so that at most MaxTopicRun stories in a row share a

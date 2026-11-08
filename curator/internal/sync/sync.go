@@ -38,21 +38,23 @@ type topicRow struct {
 }
 
 type storyRow struct {
-	ID            int64
-	UID           pgtype.UUID
-	Title         string
-	Summary       string
-	BodyMD        string
-	Kind          string
-	Severity      *string
-	Importance    int16
-	PublishedAt   time.Time
-	DedupeKeys    []byte
-	Model         string
-	PromptVersion string
-	Countries     []string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID             int64
+	UID            pgtype.UUID
+	Title          string
+	Summary        string
+	BodyMD         string
+	Kind           string
+	Severity       *string
+	Importance     int16
+	PublishedAt    time.Time
+	DedupeKeys     []byte
+	Model          string
+	PromptVersion  string
+	Countries      []string
+	KeyPoints      []string
+	ActionRequired bool
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 type tombstone struct {
@@ -217,7 +219,7 @@ func readProfessions(ctx context.Context, local *pgxpool.Pool) ([]catalog.Profes
 func readStories(ctx context.Context, local *pgxpool.Pool, since, minPublished time.Time) ([]storyRow, error) {
 	rows, err := local.Query(ctx, `
 		SELECT id, uid, title, summary, body_md, kind, severity, importance, published_at,
-		       dedupe_keys, model, prompt_version, countries, created_at, updated_at
+		       dedupe_keys, model, prompt_version, countries, key_points, action_required, created_at, updated_at
 		FROM stories WHERE updated_at > $1 AND published_at >= $2 ORDER BY updated_at, id`, since, minPublished)
 	if err != nil {
 		return nil, fmt.Errorf("read changed stories: %w", err)
@@ -225,7 +227,7 @@ func readStories(ctx context.Context, local *pgxpool.Pool, since, minPublished t
 	stories, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (storyRow, error) {
 		var s storyRow
 		err := r.Scan(&s.ID, &s.UID, &s.Title, &s.Summary, &s.BodyMD, &s.Kind, &s.Severity, &s.Importance,
-			&s.PublishedAt, &s.DedupeKeys, &s.Model, &s.PromptVersion, &s.Countries, &s.CreatedAt, &s.UpdatedAt)
+			&s.PublishedAt, &s.DedupeKeys, &s.Model, &s.PromptVersion, &s.Countries, &s.KeyPoints, &s.ActionRequired, &s.CreatedAt, &s.UpdatedAt)
 		return s, err
 	})
 	if err != nil {
@@ -320,7 +322,7 @@ func pushStories(ctx context.Context, local *pgxpool.Pool, tx pgx.Tx, stories []
 		CREATE TEMP TABLE IF NOT EXISTS stage_stories (
 			uid uuid, title text, summary text, body_md text, kind text, severity text, importance smallint,
 			published_at timestamptz, dedupe_keys jsonb, model text, prompt_version text, countries text[],
-			created_at timestamptz, updated_at timestamptz
+			key_points text[], action_required boolean, created_at timestamptz, updated_at timestamptz
 		) ON COMMIT DROP`); err != nil {
 		return fmt.Errorf("create staging table: %w", err)
 	}
@@ -328,27 +330,29 @@ func pushStories(ctx context.Context, local *pgxpool.Pool, tx pgx.Tx, stories []
 		return fmt.Errorf("clear staging table: %w", err)
 	}
 	cols := []string{"uid", "title", "summary", "body_md", "kind", "severity", "importance", "published_at",
-		"dedupe_keys", "model", "prompt_version", "countries", "created_at", "updated_at"}
+		"dedupe_keys", "model", "prompt_version", "countries", "key_points", "action_required", "created_at", "updated_at"}
 	_, err := tx.CopyFrom(ctx, pgx.Identifier{"stage_stories"}, cols, pgx.CopyFromSlice(len(stories), func(i int) ([]any, error) {
 		s := stories[i]
 		return []any{s.UID, s.Title, s.Summary, s.BodyMD, s.Kind, s.Severity, s.Importance, s.PublishedAt,
-			s.DedupeKeys, s.Model, s.PromptVersion, s.Countries, s.CreatedAt, s.UpdatedAt}, nil
+			s.DedupeKeys, s.Model, s.PromptVersion, s.Countries, s.KeyPoints, s.ActionRequired, s.CreatedAt, s.UpdatedAt}, nil
 	}))
 	if err != nil {
 		return fmt.Errorf("stage stories: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO stories (uid, title, summary, body_md, kind, severity, importance, published_at,
-		                     dedupe_keys, model, prompt_version, countries, created_at, updated_at)
+		                     dedupe_keys, model, prompt_version, countries, key_points, action_required,
+		                     created_at, updated_at)
 		SELECT uid, title, summary, body_md, kind, severity, importance, published_at,
-		       dedupe_keys, model, prompt_version, countries, created_at, updated_at
+		       dedupe_keys, model, prompt_version, countries, key_points, action_required, created_at, updated_at
 		FROM stage_stories
 		ON CONFLICT (uid) DO UPDATE
 		SET title = EXCLUDED.title, summary = EXCLUDED.summary, body_md = EXCLUDED.body_md,
 		    kind = EXCLUDED.kind, severity = EXCLUDED.severity, importance = EXCLUDED.importance,
 		    published_at = EXCLUDED.published_at, dedupe_keys = EXCLUDED.dedupe_keys,
 		    model = EXCLUDED.model, prompt_version = EXCLUDED.prompt_version,
-		    countries = EXCLUDED.countries, updated_at = EXCLUDED.updated_at`); err != nil {
+		    countries = EXCLUDED.countries, key_points = EXCLUDED.key_points,
+		    action_required = EXCLUDED.action_required, updated_at = EXCLUDED.updated_at`); err != nil {
 		return fmt.Errorf("upsert stories: %w", err)
 	}
 

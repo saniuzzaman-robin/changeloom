@@ -68,6 +68,7 @@ private const val TAG_SIGN_IN = "SignIn"
 private const val TAG_TOPICS = "Topics"
 private const val TAG_STORY = "Story"
 private const val TAG_PROFILE = "Profile"
+private const val TAG_TIMELINE = "Timeline"
 internal const val REQUEST_MIN_LENGTH = 2
 internal const val REQUEST_MAX_LENGTH = 100
 internal const val FEEDBACK_MIN_LENGTH = 5
@@ -359,10 +360,13 @@ class TopicPickerViewModel(
     }
 }
 
-/** The last "Not interested" or "Less about" on the feed, which a snackbar offers to undo. */
+/** The last "Not interested", "Less about" or "More like this" on the feed, which a snackbar offers to undo. */
 @Immutable
 sealed interface FeedUndo {
     data class Dismissed(val story: StorySummary) : FeedUndo
+
+    /** [topic] is the story's most specific topic, which the snackbar names; null when it has none. */
+    data class Boosted(val storyId: Long, val topic: String?) : FeedUndo
 
     /** [hidden] are the stories the mute took off the feed, which an undo puts back. */
     data class Muted(val topic: String, val hidden: List<StorySummary>) : FeedUndo
@@ -379,9 +383,14 @@ class TimelineViewModel(
     private val _undo = MutableStateFlow<FeedUndo?>(null)
     val undo: StateFlow<FeedUndo?> = _undo.asStateFlow()
 
+    private val _topicSuggestions = MutableStateFlow<List<String>>(emptyList())
+
+    /** Slugs of the topics the server suggests following, best first, for the caught-up card; empty until they load. */
+    val topicSuggestions: StateFlow<List<String>> = _topicSuggestions.asStateFlow()
+
     init {
         // After a sign-in the topic picker has already started the first refresh.
-        if (!repo.state.value.refreshing) refresh()
+        if (!repo.state.value.refreshing) refresh() else loadTopicSuggestions()
         viewModelScope.launch { suggester.load() }
     }
 
@@ -397,8 +406,17 @@ class TimelineViewModel(
         }
     }
 
+    private val _seenInSession = MutableStateFlow<Set<Long>>(emptySet())
+
+    /**
+     * Stories seen in this session (the feed or catch-up). The server's `seen` flags only change on a refresh, so
+     * catch-up leaves these out rather than offering them again.
+     */
+    val seenInSession: StateFlow<Set<Long>> = _seenInSession.asStateFlow()
+
     /** A story was on screen long enough to count as seen. */
     fun storySeen(id: Long) {
+        _seenInSession.update { it + id }
         viewModelScope.launch { views.seen(id) }
     }
 
@@ -406,8 +424,23 @@ class TimelineViewModel(
         viewModelScope.launch { views.flush() }
     }
 
+    /** Reloads the timeline and, beside it, the topic suggestions. */
     fun refresh() {
         viewModelScope.launch { repo.refresh() }
+        loadTopicSuggestions()
+    }
+
+    /** A failed load keeps the previous suggestions: the caught-up card works without them. */
+    private fun loadTopicSuggestions() {
+        viewModelScope.launch {
+            try {
+                _topicSuggestions.value = repo.topicSuggestions().map { it.slug }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLog.failure(TAG_TIMELINE, "Couldn't load topic suggestions", e)
+            }
+        }
     }
 
     fun loadMore() {
@@ -433,6 +466,14 @@ class TimelineViewModel(
         viewModelScope.launch { if (repo.dismiss(id)) _undo.value = FeedUndo.Dismissed(story) }
     }
 
+    /** "More like this": the story's topics rank higher; once the server has it, the undo is offered. */
+    fun boost(id: Long) {
+        val story = repo.state.value.items.firstOrNull { it.id == id } ?: return
+        // Slugs nest with "/", so the one with the most segments is the most specific.
+        val topic = story.topics.maxByOrNull { slug -> slug.count { it == '/' } }
+        viewModelScope.launch { if (repo.boost(id)) _undo.value = FeedUndo.Boosted(id, topic) }
+    }
+
     /** "Less about [slug]": its stories leave the feed; once the server has it, the undo is offered. */
     fun muteTopic(slug: String) {
         viewModelScope.launch {
@@ -453,6 +494,7 @@ class TimelineViewModel(
         viewModelScope.launch {
             when (action) {
                 is FeedUndo.Dismissed -> repo.undismiss(action.story)
+                is FeedUndo.Boosted -> repo.unboost(action.storyId)
                 is FeedUndo.Muted -> repo.undoMute(action.topic, action.hidden)
             }
         }

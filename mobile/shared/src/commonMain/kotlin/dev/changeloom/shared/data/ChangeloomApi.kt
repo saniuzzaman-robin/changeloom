@@ -90,6 +90,8 @@ class ChangeloomApi(
 
     suspend fun me(): Me = client.get("v1/me") { authorize() }.parse()
 
+    suspend fun topicSuggestions(): List<Topic> = client.get("v1/me/topic-suggestions") { authorize() }.parse<TopicSuggestions>().items
+
     /** Deletes the signed-in user and all of their data on the server. The sign-in account itself is separate. */
     suspend fun deleteMe() = client.delete("v1/me") { authorize() }.checkSuccess()
 
@@ -150,6 +152,7 @@ class ChangeloomApi(
                 ReadFilter.Unread -> parameter("read", false)
                 ReadFilter.Read -> parameter("read", true)
             }
+            if (filter.actionRequired) parameter("action", true)
         }.parse()
 
     suspend fun story(id: Long): Story = client.get("v1/stories/$id") { authorize() }.parse()
@@ -161,6 +164,10 @@ class ChangeloomApi(
     suspend fun dismiss(id: Long) = client.put("v1/stories/$id/dismiss") { authorize() }.checkSuccess()
 
     suspend fun undismiss(id: Long) = client.delete("v1/stories/$id/dismiss") { authorize() }.checkSuccess()
+
+    suspend fun boost(id: Long) = client.put("v1/stories/$id/boost") { authorize() }.checkSuccess()
+
+    suspend fun unboost(id: Long) = client.delete("v1/stories/$id/boost") { authorize() }.checkSuccess()
 
     suspend fun search(query: String, cursor: String? = null, limit: Int = TIMELINE_PAGE_SIZE): TimelinePage =
         client.get("v1/search") {

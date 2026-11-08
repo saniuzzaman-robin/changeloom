@@ -21,6 +21,10 @@ const (
 	// characters are a miscount, much more is not a headline.
 	maxTitleRepairRunes = 130
 	maxSummaryRunes     = 280
+	maxKeyPoints        = 3
+	maxKeyPointRunes    = 100
+	// maxKeyPointRepairRunes is the longest key point shortened to fit; a longer one is dropped.
+	maxKeyPointRepairRunes = 130
 )
 
 // Allowed values, mirrored in the stories table's CHECK constraints ("none" means no severity).
@@ -36,16 +40,19 @@ type Output struct {
 
 // StoryOutput is one story as Claude returns it.
 type StoryOutput struct {
-	Title       string   `json:"title"`
-	Summary     string   `json:"summary"`
-	BodyMD      string   `json:"body_md"`
-	Kind        string   `json:"kind"`
-	Severity    string   `json:"severity"`
-	Importance  int      `json:"importance"`
-	PublishedAt string   `json:"published_at"`
-	Topics      []string `json:"topics"`
-	Sources     []Source `json:"sources"`
-	Dedupe      Dedupe   `json:"dedupe"`
+	Title     string   `json:"title"`
+	Summary   string   `json:"summary"`
+	KeyPoints []string `json:"key_points"`
+	// ActionRequired is true when readers must upgrade, migrate or patch.
+	ActionRequired bool     `json:"action_required"`
+	BodyMD         string   `json:"body_md"`
+	Kind           string   `json:"kind"`
+	Severity       string   `json:"severity"`
+	Importance     int      `json:"importance"`
+	PublishedAt    string   `json:"published_at"`
+	Topics         []string `json:"topics"`
+	Sources        []Source `json:"sources"`
+	Dedupe         Dedupe   `json:"dedupe"`
 	// Countries are the ISO 3166-1 alpha-2 codes a deal is valid in; empty for other kinds.
 	Countries []string `json:"countries"`
 }
@@ -65,13 +72,16 @@ type Dedupe struct {
 
 // Story is a validated story, ready to store.
 type Story struct {
-	Title       string
-	Summary     string
-	BodyMD      string
-	Kind        string
-	Severity    *string
-	Importance  int16
-	PublishedAt time.Time
+	Title   string
+	Summary string
+	// KeyPoints are at most maxKeyPoints trimmed, distinct takeaways; never nil.
+	KeyPoints      []string
+	ActionRequired bool
+	BodyMD         string
+	Kind           string
+	Severity       *string
+	Importance     int16
+	PublishedAt    time.Time
 	// Topics are known slugs, without duplicates.
 	Topics []string
 	// Sources have normalized URLs, without duplicates.
@@ -111,6 +121,9 @@ func validateStory(so StoryOutput, validTopics map[string]bool, now time.Time, m
 		BodyMD:  strings.TrimSpace(so.BodyMD),
 		Kind:    so.Kind,
 		Dedupe:  normalizeDedupe(so.Dedupe),
+
+		KeyPoints:      normalizeKeyPoints(so.KeyPoints),
+		ActionRequired: so.ActionRequired,
 	}
 	if !slices.Contains(kinds, so.Kind) {
 		return Story{}, fmt.Errorf("invalid kind %q", so.Kind)
@@ -137,7 +150,7 @@ func validateStory(so StoryOutput, validTopics map[string]bool, now time.Time, m
 		if n > maxTitleRepairRunes {
 			return Story{}, fmt.Errorf("title is %d characters, limit is %d", n, maxTitleRunes)
 		}
-		s.Title = shortenTitle(s.Title)
+		s.Title = shorten(s.Title, maxTitleRunes)
 	}
 	if n := utf8.RuneCountInString(s.Summary); n > maxSummaryRunes {
 		return Story{}, fmt.Errorf("summary is %d characters, limit is %d", n, maxSummaryRunes)
@@ -237,11 +250,35 @@ func normalizeDedupe(d Dedupe) Dedupe {
 	return out
 }
 
-// shortenTitle cuts title to maxTitleRunes characters at a word boundary and ends it with an
-// ellipsis. The title must be longer than maxTitleRunes.
-func shortenTitle(title string) string {
+// normalizeKeyPoints trims the key points and drops empty and repeated ones. A key point a little
+// over maxKeyPointRunes is shortened and a much longer one dropped: key points are extras, so a
+// bad one never costs the story. At most maxKeyPoints are kept.
+func normalizeKeyPoints(points []string) []string {
+	out := []string{}
+	for _, p := range points {
+		p = strings.Join(strings.Fields(p), " ")
+		n := utf8.RuneCountInString(p)
+		switch {
+		case p == "", n > maxKeyPointRepairRunes:
+			continue
+		case n > maxKeyPointRunes:
+			p = shorten(p, maxKeyPointRunes)
+		}
+		if !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+		if len(out) == maxKeyPoints {
+			break
+		}
+	}
+	return out
+}
+
+// shorten cuts text to limit characters at a word boundary and ends it with an ellipsis. The
+// text must be longer than limit.
+func shorten(text string, limit int) string {
 	const ellipsis = "…"
-	runes := []rune(title)[:maxTitleRunes-1]
+	runes := []rune(text)[:limit-1]
 	for i := len(runes) - 1; i > 0; i-- {
 		if unicode.IsSpace(runes[i]) {
 			runes = runes[:i]

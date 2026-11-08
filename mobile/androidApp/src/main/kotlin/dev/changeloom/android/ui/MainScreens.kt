@@ -13,8 +13,10 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
@@ -55,6 +57,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.BookmarkRemove
@@ -62,7 +65,9 @@ import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.MarkEmailUnread
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Person
@@ -70,6 +75,7 @@ import androidx.compose.material.icons.rounded.PersonOutline
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SwipeUp
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -95,12 +101,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -117,6 +125,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -152,8 +161,11 @@ import dev.changeloom.android.ui.components.GlassCard
 import dev.changeloom.android.ui.components.GradientAvatar
 import dev.changeloom.android.ui.components.GradientText
 import dev.changeloom.android.ui.components.ImportanceMeter
+import dev.changeloom.android.ui.components.ActionPill
+import dev.changeloom.android.ui.components.KeyPoints
 import dev.changeloom.android.ui.components.KindPill
 import dev.changeloom.android.ui.components.LoomMark
+import dev.changeloom.android.ui.components.NewDot
 import dev.changeloom.android.ui.components.PrimaryButton
 import dev.changeloom.android.ui.components.SaveToggle
 import dev.changeloom.android.ui.components.ScreenBackdrop
@@ -203,6 +215,9 @@ private enum class Tab(@StringRes val label: Int, val icon: ImageVector, val sel
 private sealed interface Overlay {
     data object None : Overlay
     data object Topics : Overlay
+
+    /** The unseen stories one per page; a story opened from it returns to it. */
+    data object CatchUp : Overlay
     data class Story(val id: Long) : Overlay
 }
 
@@ -238,6 +253,7 @@ internal fun Modifier.sharedStoryTitle(id: Long): Modifier {
 fun MainScreen(openStoryId: Long? = null, onOpenStoryHandled: () -> Unit = {}) {
     var storyId by rememberSaveable { mutableStateOf<Long?>(null) }
     var editingTopics by rememberSaveable { mutableStateOf(false) }
+    var catchingUp by rememberSaveable { mutableStateOf(false) }
     var tab by rememberSaveable { mutableStateOf(Tab.Feed) }
     val shell = rememberSaveableStateHolder()
     val picker: TopicPickerViewModel = koinViewModel()
@@ -253,15 +269,26 @@ fun MainScreen(openStoryId: Long? = null, onOpenStoryHandled: () -> Unit = {}) {
         }
     }
 
-    val overlay = storyId?.let { Overlay.Story(it) } ?: if (editingTopics) Overlay.Topics else Overlay.None
+    val overlay = storyId?.let { Overlay.Story(it) } ?: when {
+        catchingUp -> Overlay.CatchUp
+        editingTopics -> Overlay.Topics
+        else -> Overlay.None
+    }
+    // Its place and queue are kept while a story opened from it is on top, and dropped when it closes.
+    val closeCatchUp = {
+        catchingUp = false
+        shell.removeState(CATCH_UP_STATE)
+    }
     TrackScreen(
         when (overlay) {
             is Overlay.Story -> "story"
             Overlay.Topics -> "topics_edit"
+            Overlay.CatchUp -> "catch_up"
             Overlay.None -> tab.name.lowercase()
         },
     )
     BackHandler(enabled = storyId != null) { storyId = null }
+    BackHandler(enabled = overlay == Overlay.CatchUp) { closeCatchUp() }
     BackHandler(enabled = overlay == Overlay.None && tab != Tab.Feed) { tab = Tab.Feed }
     NotificationRationale()
     ReviewPromptEffect(enabled = overlay == Overlay.None)
@@ -272,10 +299,20 @@ fun MainScreen(openStoryId: Long? = null, onOpenStoryHandled: () -> Unit = {}) {
                 CompositionLocalProvider(LocalSharedTransitionScope provides this@SharedTransitionLayout, LocalOverlayScope provides this) {
                     when (target) {
                         Overlay.None -> shell.SaveableStateProvider("shell") {
-                            Shell(tab, onTab = { tab = it }, onOpen = { storyId = it }, onEditTopics = { editingTopics = true })
+                            Shell(tab, onTab = { tab = it }, onOpen = { storyId = it }, onEditTopics = { editingTopics = true }, onCatchUp = { catchingUp = true })
                         }
                         Overlay.Topics -> TopicPickerScreen(TopicPickerMode.Edit, onExit = { editingTopics = false }, vm = picker)
-                        is Overlay.Story -> StoryDetailScreen(target.id, onBack = { storyId = null })
+                        Overlay.CatchUp -> shell.SaveableStateProvider(CATCH_UP_STATE) {
+                            CatchUpScreen(
+                                onClose = closeCatchUp,
+                                onOpen = { storyId = it },
+                                onOpenSaved = {
+                                    closeCatchUp()
+                                    tab = Tab.Saved
+                                },
+                            )
+                        }
+                        is Overlay.Story -> StoryDetailScreen(target.id, onBack = { storyId = null }, onOpenStory = { storyId = it })
                     }
                 }
             }
@@ -284,14 +321,15 @@ fun MainScreen(openStoryId: Long? = null, onOpenStoryHandled: () -> Unit = {}) {
 }
 
 private fun AnimatedContentTransitionScope<Overlay>.overlayTransition(): ContentTransform {
-    val opening = targetState != Overlay.None
+    // Back from a story to catch-up closes the story, as back to the tabs does.
+    val opening = targetState != Overlay.None && !(targetState == Overlay.CatchUp && initialState is Overlay.Story)
     val enter = fadeIn(expoTween(Durations.MEDIUM)) + scaleIn(expoTween(Durations.SLOW), initialScale = if (opening) 0.96f else 1.02f)
     val exit = fadeOut(expoTween(Durations.FAST)) + scaleOut(expoTween(Durations.SLOW), targetScale = if (opening) 1.02f else 0.96f)
     return (enter togetherWith exit).apply { targetContentZIndex = if (opening) 1f else 0f }
 }
 
 @Composable
-private fun Shell(tab: Tab, onTab: (Tab) -> Unit, onOpen: (Long) -> Unit, onEditTopics: () -> Unit) {
+private fun Shell(tab: Tab, onTab: (Tab) -> Unit, onOpen: (Long) -> Unit, onEditTopics: () -> Unit, onCatchUp: () -> Unit) {
     val tabs = rememberSaveableStateHolder()
     val timeline: TimelineViewModel = koinViewModel()
     val profile: ProfileViewModel = koinViewModel()
@@ -322,6 +360,8 @@ private fun Shell(tab: Tab, onTab: (Tab) -> Unit, onOpen: (Long) -> Unit, onEdit
                         Tab.Feed -> FeedScreen(
                             onOpen,
                             onProfile = { onTab(Tab.Profile) },
+                            onOpenSaved = { onTab(Tab.Saved) },
+                            onCatchUp = onCatchUp,
                             displayName = profile.displayName,
                             userEmail = profile.email,
                             photo = photoImage,
@@ -385,12 +425,15 @@ private fun TabItem(tab: Tab, selected: Boolean, badge: Boolean, onClick: () -> 
 private fun FeedScreen(
     onOpen: (Long) -> Unit,
     onProfile: () -> Unit,
+    onOpenSaved: () -> Unit,
+    onCatchUp: () -> Unit,
     displayName: String?,
     userEmail: String?,
     photo: ImageBitmap?,
     contentPadding: PaddingValues,
     vm: TimelineViewModel = koinViewModel(),
     picker: TopicPickerViewModel = koinViewModel(),
+    profile: ProfileViewModel = koinViewModel(),
     adRepository: NativeAdRepository = koinInject(),
     suggester: FollowSuggester = koinInject(),
 ) {
@@ -399,19 +442,14 @@ private fun FeedScreen(
     // Derived, so picker edits don't recompose the feed; only a change to the followed set does.
     val pickerState = picker.state.collectAsStateWithLifecycle()
     val followed by remember { derivedStateOf { pickerState.value.followed.toSet() } }
-    val menu = remember(followed) { StoryMenu(followed, vm::dismiss, vm::muteTopic) }
-    val counts = suggester.counts.collectAsStateWithLifecycle()
-    // Until the followed topics load, every topic looks unfollowed, so nothing is suggested yet.
-    val suggestion by remember {
-        derivedStateOf {
-            val p = pickerState.value
-            if (p.loading && p.followed.isEmpty()) {
-                null
-            } else {
-                counts.value.suggestion(followed)?.let { FollowSuggestion(it, counts.value.opens[it] ?: 0, p.saving, p.error) }
-            }
-        }
-    }
+    val menu = remember(followed, state.boosted) { StoryMenu(followed, state.boosted, vm::dismiss, vm::muteTopic, vm::boost) }
+    val suggestions = rememberFollowSuggestions(vm, picker, suggester)
+    val suggestion by suggestions.local
+    val caughtUpTopics by suggestions.caughtUp
+    val seenInSession = vm.seenInSession.collectAsStateWithLifecycle()
+    // Derived, so each story seen while scrolling recomposes the feed only when the count changes.
+    val catchUpCount by remember(state) { derivedStateOf { catchUpCount(state, seenInSession.value) } }
+    var requestingTopic by rememberSaveable { mutableStateOf(false) }
     val ads by adRepository.feedAds.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { adRepository.refresh() }
     FeedContent(
@@ -437,10 +475,22 @@ private fun FeedScreen(
         suggestion = suggestion,
         onFollow = picker::follow,
         onDeclineSuggestion = vm::declineSuggestion,
+        caughtUpTopics = caughtUpTopics,
+        onOpenSaved = onOpenSaved,
+        onRequestTopic = {
+            profile.shown() // loads the earlier requests the sheet lists, unless they are current
+            requestingTopic = true
+        },
+        catchUpCount = catchUpCount,
+        onCatchUp = onCatchUp,
         undo = undo,
         onUndo = vm::undo,
         onUndoExpired = vm::undoExpired,
     )
+    if (requestingTopic) {
+        val profileState by profile.state.collectAsStateWithLifecycle()
+        TopicRequestSheet(profileState, profile::setRequestText, profile::submitRequest, onDismiss = { requestingTopic = false })
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) { lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.trackViews() } }
 }
@@ -467,27 +517,27 @@ internal fun FeedContent(
     suggestion: FollowSuggestion? = null,
     onFollow: (String) -> Unit = {},
     onDeclineSuggestion: (String) -> Unit = {},
+    caughtUpTopics: CaughtUpTopics = CaughtUpTopics(),
+    onOpenSaved: () -> Unit = {},
+    onRequestTopic: () -> Unit = {},
+    catchUpCount: Int = 0,
+    onCatchUp: () -> Unit = {},
     undo: FeedUndo? = null,
     onUndo: (FeedUndo) -> Unit = {},
     onUndoExpired: (FeedUndo) -> Unit = {},
 ) {
     val c = ChangeloomTheme.colors
-    val topicName = LocalTopicName.current
     val snackbar = remember { SnackbarHostState() }
-    val undoMessage = when (undo) {
-        is FeedUndo.Dismissed -> stringResource(R.string.story_hidden)
-        is FeedUndo.Muted -> stringResource(R.string.topic_muted, topicName(undo.topic))
-        null -> null
-    }
-    val undoLabel = stringResource(R.string.undo)
-    LaunchedEffect(undo) {
-        val action = undo ?: return@LaunchedEffect
-        val result = snackbar.showSnackbar(undoMessage.orEmpty(), actionLabel = undoLabel, duration = SnackbarDuration.Short)
-        if (result == SnackbarResult.ActionPerformed) onUndo(action) else onUndoExpired(action)
-    }
+    UndoSnackbarEffect(undo, snackbar, onUndo, onUndoExpired)
     val listState = rememberLazyListState()
     val pullState = rememberPullToRefreshState()
+    // Cards whose quick take is open; kept across rotation and process death.
+    var quickTakes by rememberSaveable(saver = listSaver(save = { it.value.toList() }, restore = { mutableStateOf(it.toSet()) })) {
+        mutableStateOf(emptySet<Long>())
+    }
+    val toggleQuickTake = remember { { id: Long -> quickTakes = if (id in quickTakes) quickTakes - id else quickTakes + id } }
     val (fresh, earlier) = remember(state.items) { state.items.partition { !it.isRead } }
+    val savedToRead = remember(fresh) { fresh.count { it.isBookmarked } }
     val staggered = rememberStaggered(listState)
     LoadMoreEffect(listState, onLoadMore)
     SeenEffect(listState, onSeen)
@@ -514,7 +564,7 @@ internal fun FeedContent(
                 contentPadding = listPadding(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item(key = "header", contentType = "header") { FeedHeader(displayName, userEmail, photo, fresh.size, onProfile, animateIn = staggered) }
+                item(key = "header", contentType = "header") { FeedHeader(displayName, userEmail, photo, fresh.size, state.unseenCount, catchUpCount, onCatchUp, onProfile, animateIn = staggered) }
                 item(key = "banners", contentType = "banners") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         StatusBanner(if (state.offline) stringResource(R.string.offline_banner) else null, Icons.Rounded.CloudOff, tone = BannerTone.Warning)
@@ -543,20 +593,41 @@ internal fun FeedContent(
                     else -> {
                         // The suggestion follows the first few new stories, or opens the earlier ones when nothing is new.
                         val suggestAfter = minOf(FOLLOW_CARD_AFTER, fresh.size) - 1
+                        // Every unread story is loaded once read ones arrive (the server sends them last) or the
+                        // timeline ends. A filtered feed isn't "everything", so it gets no caught-up card.
+                        val caughtUp = state.filter.isDefault && (earlier.isNotEmpty() || state.reachedEnd)
+                        // With nothing new, the caught-up card opens the earlier stories and takes the suggestion in.
+                        val suggestionInCaughtUp = caughtUp && fresh.isEmpty()
                         if (fresh.isNotEmpty()) {
                             item(key = "new", contentType = SECTION_CONTENT) { SectionHeader(stringResource(R.string.section_new), fresh.size, highlight = true, Modifier.animateItem()) }
                             fresh.forEachIndexed { i, story ->
-                                item(key = story.id, contentType = STORY_CONTENT) { FeedCard(story, staggered, i, onOpen, onSetRead, onSetSaved, menu) }
+                                item(key = story.id, contentType = STORY_CONTENT) {
+                                    FeedCard(story, staggered, i, onOpen, onSetRead, onSetSaved, menu, story.id in quickTakes, toggleQuickTake)
+                                }
                                 feedAd(ads, i)
                                 if (i == suggestAfter) followSuggestion(suggestion, onFollow, onDeclineSuggestion)
                             }
                         }
+                        if (caughtUp) {
+                            val topics = caughtUpTopics.including(suggestion?.topic, offeredInFeed = !suggestionInCaughtUp)
+                            item(key = "caught_up", contentType = CAUGHT_UP_CONTENT) {
+                                CaughtUpCard(
+                                    topics,
+                                    savedToRead,
+                                    onFollow,
+                                    onDeclineSuggestion,
+                                    onOpenSaved,
+                                    onRequestTopic,
+                                    Modifier.animateItem(),
+                                )
+                            }
+                        }
                         if (earlier.isNotEmpty()) {
                             item(key = "earlier", contentType = SECTION_CONTENT) { SectionHeader(stringResource(R.string.section_earlier), null, highlight = false, Modifier.animateItem()) }
-                            if (fresh.isEmpty()) followSuggestion(suggestion, onFollow, onDeclineSuggestion)
+                            if (fresh.isEmpty() && !suggestionInCaughtUp) followSuggestion(suggestion, onFollow, onDeclineSuggestion)
                             earlier.forEachIndexed { i, story ->
                                 item(key = story.id, contentType = STORY_CONTENT) {
-                                    FeedCard(story, staggered, fresh.size + i, onOpen, onSetRead, onSetSaved, menu)
+                                    FeedCard(story, staggered, fresh.size + i, onOpen, onSetRead, onSetSaved, menu, story.id in quickTakes, toggleQuickTake)
                                 }
                                 feedAd(ads, fresh.size + i)
                             }
@@ -574,7 +645,25 @@ internal fun FeedContent(
     }
 }
 
-/** Read state (one of unread/read, or neither for all) and story kinds (any number); the server applies them. */
+/** Shows [undo] on [snackbar] with an Undo action, then reports whether it was taken. */
+@Composable
+internal fun UndoSnackbarEffect(undo: FeedUndo?, snackbar: SnackbarHostState, onUndo: (FeedUndo) -> Unit, onUndoExpired: (FeedUndo) -> Unit) {
+    val topicName = LocalTopicName.current
+    val undoMessage = when (undo) {
+        is FeedUndo.Dismissed -> stringResource(R.string.story_hidden)
+        is FeedUndo.Muted -> stringResource(R.string.topic_muted, topicName(undo.topic))
+        is FeedUndo.Boosted -> undo.topic?.let { stringResource(R.string.more_about, topicName(it)) } ?: stringResource(R.string.more_like_this_story)
+        null -> null
+    }
+    val undoLabel = stringResource(R.string.undo)
+    LaunchedEffect(undo) {
+        val action = undo ?: return@LaunchedEffect
+        val result = snackbar.showSnackbar(undoMessage.orEmpty(), actionLabel = undoLabel, duration = SnackbarDuration.Short)
+        if (result == SnackbarResult.ActionPerformed) onUndo(action) else onUndoExpired(action)
+    }
+}
+
+/** Read state (one of unread/read, or neither for all), action needed and story kinds (any number); the server applies them. */
 @Composable
 private fun FeedFilters(filter: TimelineFilter, onChange: (TimelineFilter) -> Unit) {
     val gutter = Spacing.gutter
@@ -604,6 +693,13 @@ private fun FeedFilters(filter: TimelineFilter, onChange: (TimelineFilter) -> Un
                 stringResource(R.string.filter_read),
                 selected = filter.read == ReadFilter.Read,
                 onClick = { onChange(filter.copy(read = if (filter.read == ReadFilter.Read) ReadFilter.All else ReadFilter.Read)) },
+            )
+        }
+        item(key = "action", contentType = FILTER_CHIP) {
+            TopicChip(
+                stringResource(R.string.filter_action),
+                selected = filter.actionRequired,
+                onClick = { onChange(filter.copy(actionRequired = !filter.actionRequired)) },
             )
         }
         items(STORY_KINDS, key = { it }, contentType = { FILTER_CHIP }) { kind ->
@@ -689,6 +785,42 @@ private fun BackToTopButton(listState: LazyListState, modifier: Modifier = Modif
 /** A topic the user keeps opening but doesn't follow, with how often they opened it and the follow call's state. */
 internal data class FollowSuggestion(val topic: String, val opens: Int, val saving: Boolean, val error: String?)
 
+/** The feed's follow suggestion ([local], from the topics the user keeps opening) and the caught-up card's topics. */
+internal class FollowSuggestions(val local: State<FollowSuggestion?>, val caughtUp: State<CaughtUpTopics>)
+
+/** Derived, so picker edits (each toggle, each search keystroke) recompose the caller only when a suggestion changes. */
+@Composable
+internal fun rememberFollowSuggestions(vm: TimelineViewModel, picker: TopicPickerViewModel, suggester: FollowSuggester): FollowSuggestions {
+    val pickerState = picker.state.collectAsStateWithLifecycle()
+    val counts = suggester.counts.collectAsStateWithLifecycle()
+    val serverSuggestions = vm.topicSuggestions.collectAsStateWithLifecycle()
+    return remember {
+        val followed = derivedStateOf { pickerState.value.followed.toSet() }
+        FollowSuggestions(
+            // Until the followed topics load, every topic looks unfollowed, so nothing is suggested yet.
+            local = derivedStateOf {
+                val p = pickerState.value
+                if (p.loading && p.followed.isEmpty()) {
+                    null
+                } else {
+                    counts.value.suggestion(followed.value)?.let { FollowSuggestion(it, counts.value.opens[it] ?: 0, p.saving, p.error) }
+                }
+            },
+            // The server's suggestions, less those followed or declined since they loaded.
+            caughtUp = derivedStateOf {
+                val declined = counts.value.declined
+                val p = pickerState.value
+                val f = followed.value
+                CaughtUpTopics(
+                    serverSuggestions.value.filter { it !in declined && it !in f && it.substringBefore('/') !in f },
+                    p.saving,
+                    p.error,
+                )
+            },
+        )
+    }
+}
+
 private fun LazyListScope.followSuggestion(suggestion: FollowSuggestion?, onFollow: (String) -> Unit, onDecline: (String) -> Unit) {
     if (suggestion == null) return
     item(key = "follow_suggestion", contentType = FOLLOW_CONTENT) { FollowSuggestionCard(suggestion, onFollow, onDecline, Modifier.animateItem()) }
@@ -720,6 +852,85 @@ private fun FollowSuggestionCard(suggestion: FollowSuggestion, onFollow: (String
     }
 }
 
+/** Topics the caught-up card suggests following (slugs, best first), with the follow call's state. */
+@Immutable
+internal data class CaughtUpTopics(val topics: List<String> = emptyList(), val saving: Boolean = false, val error: String? = null)
+
+/**
+ * The caught-up card's topics, at most [CAUGHT_UP_TOPICS]: the local [suggestion] goes first, or is left out when the
+ * feed's suggestion card already offers it ([offeredInFeed]).
+ */
+internal fun CaughtUpTopics.including(suggestion: String?, offeredInFeed: Boolean): CaughtUpTopics = copy(
+    topics = when {
+        suggestion == null -> topics
+        offeredInFeed -> topics - suggestion
+        else -> listOf(suggestion) + (topics - suggestion)
+    }.take(CAUGHT_UP_TOPICS),
+)
+
+/**
+ * After the last new story: topics to follow (Follow or "Not now" each), a way to the saved stories still unread
+ * ([savedToRead] of the loaded ones; hidden at 0) and a topic request.
+ */
+@Composable
+internal fun CaughtUpCard(
+    suggestions: CaughtUpTopics,
+    savedToRead: Int,
+    onFollow: (String) -> Unit,
+    onDecline: (String) -> Unit,
+    onOpenSaved: () -> Unit,
+    onRequestTopic: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val c = ChangeloomTheme.colors
+    val topicName = LocalTopicName.current
+    // The topic whose Follow was tapped, so only its button shows the spinner.
+    var following by remember { mutableStateOf<String?>(null) }
+    GlassCard(modifier.fillMaxWidth().testTag("caught_up")) {
+        Eyebrow(stringResource(R.string.caught_up_eyebrow), color = c.primaryText)
+        Spacer(Modifier.height(8.dp))
+        Text(stringResource(R.string.caught_up_title), style = MaterialTheme.typography.titleMedium, color = c.fg)
+        if (suggestions.topics.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Text(stringResource(R.string.caught_up_topics), style = MaterialTheme.typography.bodyMedium, color = c.fgMuted)
+            suggestions.topics.forEach { slug ->
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TopicChip(topicName(slug))
+                    Spacer(Modifier.weight(1f))
+                    TextAction(stringResource(R.string.not_now), { onDecline(slug) }, enabled = !suggestions.saving)
+                    Spacer(Modifier.width(8.dp))
+                    PrimaryButton(
+                        stringResource(R.string.follow),
+                        {
+                            following = slug
+                            onFollow(slug)
+                        },
+                        enabled = !suggestions.saving,
+                        loading = suggestions.saving && following == slug,
+                        dense = true,
+                    )
+                }
+            }
+            if (suggestions.error != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(suggestions.error, style = MaterialTheme.typography.bodySmall, color = c.red)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (savedToRead > 0) {
+                SecondaryButton(
+                    pluralStringResource(R.plurals.caught_up_saved, savedToRead, savedToRead),
+                    onOpenSaved,
+                    Modifier.fillMaxWidth(),
+                    icon = Icons.Rounded.Bookmark,
+                )
+            }
+            SecondaryButton(stringResource(R.string.request_title), onRequestTopic, Modifier.fillMaxWidth(), icon = Icons.Rounded.Add)
+        }
+    }
+}
+
 /** The ad after the story at [index] in the feed, if one goes there. Ads never show outside the feed. */
 private fun LazyListScope.feedAd(ads: FeedAds?, index: Int) {
     val slot = ads?.slotAfter(index) ?: return
@@ -736,6 +947,8 @@ private fun LazyItemScope.FeedCard(
     onSetRead: (Long, Boolean) -> Unit,
     onSetSaved: (Long, Boolean) -> Unit,
     menu: StoryMenu?,
+    quickTakeOpen: Boolean,
+    onToggleQuickTake: (Long) -> Unit,
 ) {
     val entrance = if (animateIn && index < STAGGERED_CARDS) Modifier.enter(delayMillis = STAGGER_START_MILLIS + index * STAGGER_STEP_MILLIS) else Modifier
     SwipeActions(
@@ -755,7 +968,14 @@ private fun LazyItemScope.FeedCard(
         resetAfterSwipe = true,
         modifier = Modifier.animateItem().then(entrance),
     ) {
-        StoryCard(story, onOpen = { onOpen(story.id) }, onToggleSave = { onSetSaved(story.id, !story.isBookmarked) }, menu = menu)
+        StoryCard(
+            story,
+            onOpen = { onOpen(story.id) },
+            onToggleSave = { onSetSaved(story.id, !story.isBookmarked) },
+            menu = menu,
+            quickTakeOpen = quickTakeOpen,
+            onToggleQuickTake = { onToggleQuickTake(story.id) },
+        )
     }
 }
 
@@ -765,6 +985,9 @@ private fun FeedHeader(
     userEmail: String?,
     photo: ImageBitmap?,
     freshCount: Int,
+    unseenCount: Long?,
+    catchUpCount: Int,
+    onCatchUp: () -> Unit,
     onProfile: () -> Unit,
     animateIn: Boolean,
 ) {
@@ -794,16 +1017,28 @@ private fun FeedHeader(
             )
         }
         Spacer(Modifier.height(8.dp))
+        // The server's count of stories not yet on screen; a cached or offline feed only knows what is unread.
+        val unseen = unseenCount?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt()
         Text(
-            if (freshCount == 0) {
-                stringResource(R.string.feed_caught_up)
-            } else {
-                pluralStringResource(R.plurals.feed_new_updates, freshCount, freshCount)
+            when {
+                unseen != null && unseen > 0 -> pluralStringResource(R.plurals.feed_new_since_visit, unseen, unseen)
+                unseen != null || freshCount == 0 -> stringResource(R.string.feed_caught_up)
+                else -> pluralStringResource(R.plurals.feed_new_updates, freshCount, freshCount)
             },
             Modifier.enter(delayMillis = 160, enabled = animateIn),
             style = MaterialTheme.typography.bodyMedium,
             color = c.fgMuted,
         )
+        if (catchUpCount > 0) {
+            Spacer(Modifier.height(12.dp))
+            PrimaryButton(
+                stringResource(R.string.catch_up_count, catchUpCount),
+                onCatchUp,
+                Modifier.enter(delayMillis = 200, enabled = animateIn).testTag("catch_up_action"),
+                icon = Icons.Rounded.SwipeUp,
+                dense = true,
+            )
+        }
     }
 }
 
@@ -823,13 +1058,23 @@ private fun SectionHeader(title: String, count: Int?, highlight: Boolean, modifi
 }
 
 /**
- * The feed card's "Not interested" and "Less about" actions. Followed topics aren't offered: muting one would unfollow
- * it, which belongs on the topics screen.
+ * The feed card's "More like this", "Not interested" and "Less about" actions. "More like this" isn't offered again for
+ * a [boosted] story. Followed topics aren't offered for "Less about": muting one would unfollow it, which belongs on the
+ * topics screen.
  */
 @Immutable
-internal class StoryMenu(val followed: Set<String>, val onNotInterested: (Long) -> Unit, val onLessAbout: (String) -> Unit)
+internal class StoryMenu(
+    val followed: Set<String>,
+    val boosted: Set<Long>,
+    val onNotInterested: (Long) -> Unit,
+    val onLessAbout: (String) -> Unit,
+    val onMoreLikeThis: (Long) -> Unit,
+)
 
-/** Story card: meta row, title (shared with the detail screen), summary, topics, importance, save and the feed's [menu]. */
+/**
+ * Story card: meta row, title (shared with the detail screen), summary, topics, importance, save and the feed's [menu].
+ * With [onToggleQuickTake], a story with key points gets a chevron that shows them under the summary.
+ */
 @Composable
 internal fun StoryCard(
     story: StorySummary,
@@ -837,6 +1082,8 @@ internal fun StoryCard(
     onToggleSave: () -> Unit,
     modifier: Modifier = Modifier,
     menu: StoryMenu? = null,
+    quickTakeOpen: Boolean = false,
+    onToggleQuickTake: (() -> Unit)? = null,
 ) {
     val c = ChangeloomTheme.colors
     val topicName = LocalTopicName.current
@@ -859,7 +1106,9 @@ internal fun StoryCard(
             Row(Modifier.padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 KindPill(story.kind)
                 SeverityDot(story.severity, Modifier.padding(start = 2.dp))
+                if (story.actionRequired) ActionPill(Modifier.padding(start = 4.dp))
                 Spacer(Modifier.weight(1f))
+                if (!story.seen && !story.isRead) NewDot(Modifier.padding(end = 8.dp))
                 // Only the timeline sets `match`; followed stories need no label.
                 if (story.match != null && story.match != "followed") {
                     Eyebrow(
@@ -889,6 +1138,16 @@ internal fun StoryCard(
                 maxLines = SUMMARY_LINES,
                 overflow = TextOverflow.Ellipsis,
             )
+            val quickTake = onToggleQuickTake != null && story.keyPoints.isNotEmpty()
+            if (quickTake) {
+                AnimatedVisibility(quickTakeOpen, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                    Column(Modifier.padding(top = 12.dp, end = 12.dp)) {
+                        Eyebrow(stringResource(R.string.quick_take), color = c.primaryText)
+                        Spacer(Modifier.height(8.dp))
+                        KeyPoints(story.keyPoints)
+                    }
+                }
+            }
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -896,6 +1155,7 @@ internal fun StoryCard(
                     if (story.topics.size > MAX_CARD_TOPICS) Eyebrow("+${story.topics.size - MAX_CARD_TOPICS}")
                 }
                 ImportanceMeter(story.importance, Modifier.padding(start = 8.dp))
+                if (quickTake) QuickTakeToggle(quickTakeOpen, onToggleQuickTake)
                 SaveToggle(story.isBookmarked, onToggleSave)
                 if (menu != null) StoryMenuButton(story, menu)
             }
@@ -914,6 +1174,16 @@ private fun StoryMenuButton(story: StorySummary, menu: StoryMenu) {
         }
         // The menu's content is composed only while it is open, so the topic filter runs once per opening.
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = c.elevated) {
+            if (story.id !in menu.boosted) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.more_like_this), color = c.fg) },
+                    onClick = {
+                        open = false
+                        menu.onMoreLikeThis(story.id)
+                    },
+                    leadingIcon = { Icon(Icons.Rounded.ThumbUp, contentDescription = null, tint = c.fgMuted) },
+                )
+            }
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.not_interested), color = c.fg) },
                 onClick = {
@@ -934,6 +1204,21 @@ private fun StoryMenuButton(story: StorySummary, menu: StoryMenu) {
                 )
             }
         }
+    }
+}
+
+/** The card's chevron for its quick take; it turns to point up while the quick take is open. */
+@Composable
+private fun QuickTakeToggle(open: Boolean, onToggle: () -> Unit) {
+    val c = ChangeloomTheme.colors
+    val turn by animateFloatAsState(if (open) 180f else 0f, expoTween(Durations.MEDIUM), label = "quickTakeTurn")
+    IconButton(onClick = onToggle) {
+        Icon(
+            Icons.Rounded.KeyboardArrowDown,
+            contentDescription = stringResource(if (open) R.string.quick_take_hide else R.string.quick_take_show),
+            tint = c.fgSubtle,
+            modifier = Modifier.graphicsLayer { rotationZ = turn },
+        )
     }
 }
 
@@ -1222,6 +1507,13 @@ private const val MAX_CARD_TOPICS = 2
 internal const val STORY_CONTENT = "story"
 internal const val SKELETON_CONTENT = "skeleton"
 private const val SECTION_CONTENT = "section"
+private const val CAUGHT_UP_CONTENT = "caught_up"
+
+/** Topics the caught-up card suggests at most. */
+internal const val CAUGHT_UP_TOPICS = 3
+
+/** The [MainScreen] saveable-state key that keeps catch-up's page while a story is open over it. */
+private const val CATCH_UP_STATE = "catch_up"
 private const val END_CONTENT = "end"
 
 /** The back-to-top button shows once the list is scrolled past this item, and jumps to [BACK_TO_TOP_JUMP_ITEMS] before animating. */

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -106,9 +107,12 @@ func TestFetchStoresAndMerges(t *testing.T) {
 		story("Go 1.27", "https://go.dev/blog/go1.27", now.Add(-time.Hour), func(s map[string]any) {
 			s["dedupe"] = map[string]any{"project": "go", "version": "1.27.0", "cve_ids": []string{}}
 		}),
-		// Same release from another page: merged by project+version.
+		// Same release from another page: merged by project+version, filling in the key points and
+		// making the story action-required.
 		story("Go 1.27 is out", "https://github.com/golang/go/releases/tag/go1.27", now.Add(-time.Hour), func(s map[string]any) {
 			s["importance"] = 4
+			s["key_points"] = []string{"Generic methods", "Upgrade before 1.25 support ends"}
+			s["action_required"] = true
 			s["topics"] = []string{"languages/go", "security"}
 			s["dedupe"] = map[string]any{"project": "Go", "version": "v1.27.0", "cve_ids": []string{}}
 		}),
@@ -136,15 +140,23 @@ func TestFetchStoresAndMerges(t *testing.T) {
 
 	var importance, sources, topics int
 	var model, promptVersion string
+	var keyPoints []string
+	var actionRequired bool
 	if err := pool.QueryRow(ctx, `
-		SELECT s.importance, s.model, s.prompt_version,
+		SELECT s.importance, s.model, s.prompt_version, s.key_points, s.action_required,
 			(SELECT count(*) FROM story_sources WHERE story_id = s.id),
 			(SELECT count(*) FROM story_topics WHERE story_id = s.id)
-		FROM stories s WHERE s.title = 'Go 1.27'`).Scan(&importance, &model, &promptVersion, &sources, &topics); err != nil {
+		FROM stories s WHERE s.title = 'Go 1.27'`).Scan(&importance, &model, &promptVersion, &keyPoints, &actionRequired, &sources, &topics); err != nil {
 		t.Fatal(err)
 	}
 	if importance != 4 || sources != 2 || topics != 2 || model != "claude-test" || promptVersion != fetch.PromptVersion {
 		t.Errorf("merged story: importance %d, sources %d, topics %d, model %q, prompt %q", importance, sources, topics, model, promptVersion)
+	}
+	if !actionRequired || !slices.Equal(keyPoints, []string{"Generic methods", "Upgrade before 1.25 support ends"}) {
+		t.Errorf("merged story: action_required %v, key_points %q", actionRequired, keyPoints)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM stories WHERE title = 'Go survey results' AND key_points = '{}' AND NOT action_required`); n != 1 {
+		t.Errorf("a story without key points should store an empty list and action_required false")
 	}
 	if n := count(t, pool, `SELECT count(*) FROM fetch_runs WHERE status = 'succeeded' AND stories_added = 4 AND cost_usd = 0.5 AND cardinality(topic_ids) = 2`); n != 1 {
 		t.Errorf("succeeded fetch runs = %d", n)
@@ -157,12 +169,15 @@ func TestFetchStoresAndMerges(t *testing.T) {
 	}
 
 	// Users who opened or saved its stories make the topic hot, so it is due again; known stories go into the prompt, and a story
-	// with an already stored URL is merged rather than duplicated.
+	// with an already stored URL is merged rather than duplicated. The merge keeps the stored key
+	// points and never clears action_required.
 	if _, err := pool.Exec(ctx, `INSERT INTO topic_stats (topic_id, env, engaged_7d) SELECT id, 'staging', 3 FROM topics WHERE slug = 'languages'`); err != nil {
 		t.Fatal(err)
 	}
 	fake.responses = []any{map[string]any{"stories": []any{
-		story("Go 1.27 (again)", "https://go.dev/blog/go1.27?utm_source=feed", now, nil),
+		story("Go 1.27 (again)", "https://go.dev/blog/go1.27?utm_source=feed", now, func(s map[string]any) {
+			s["key_points"] = []string{"Something else"}
+		}),
 	}}}
 	sum, err = f.Run(ctx)
 	if err != nil || sum.Calls != 1 || sum.Merged != 1 || sum.Added != 0 {
@@ -173,6 +188,9 @@ func TestFetchStoresAndMerges(t *testing.T) {
 	}
 	if n := count(t, pool, `SELECT count(*) FROM stories`); n != 4 {
 		t.Errorf("stories = %d, want 4", n)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM stories WHERE title = 'Go 1.27' AND action_required AND key_points[1] = 'Generic methods'`); n != 1 {
+		t.Errorf("a later merge replaced the key points or cleared action_required")
 	}
 }
 

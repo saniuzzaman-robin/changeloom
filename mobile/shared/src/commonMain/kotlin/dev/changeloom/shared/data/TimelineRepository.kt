@@ -15,9 +15,9 @@ enum class ReadFilter { All, Unread, Read }
 /** Story kinds the api knows, in the order the filter lists them. */
 val STORY_KINDS = listOf("release", "breaking", "security", "deprecation", "announcement", "article", "research", "policy", "deal")
 
-/** [kinds] empty means every kind. */
-data class TimelineFilter(val kinds: Set<String> = emptySet(), val read: ReadFilter = ReadFilter.All) {
-    val isDefault: Boolean get() = kinds.isEmpty() && read == ReadFilter.All
+/** [kinds] empty means every kind; [actionRequired] keeps only stories whose readers must upgrade, migrate or patch. */
+data class TimelineFilter(val kinds: Set<String> = emptySet(), val read: ReadFilter = ReadFilter.All, val actionRequired: Boolean = false) {
+    val isDefault: Boolean get() = kinds.isEmpty() && read == ReadFilter.All && !actionRequired
 }
 
 data class TimelineState(
@@ -29,6 +29,16 @@ data class TimelineState(
     /** True while showing cached data that could not be refreshed. */
     val offline: Boolean = false,
     val error: String? = null,
+    /**
+     * Stories boosted with "More like this" in this session, so the feed doesn't offer it twice. The server doesn't
+     * send this; boosting again is harmless (idempotent).
+     */
+    val boosted: Set<Long> = emptySet(),
+    /**
+     * Unread stories matching the filter that weren't on screen before the last refresh ("new since your last
+     * visit"); null until a first page arrives (cached or offline) or from a server that doesn't send it.
+     */
+    val unseenCount: Long? = null,
     /** Each story's position in the order the server sent it, which local read changes keep; see [sortedForTimeline]. */
     internal val serverOrder: Map<Long, Int> = emptyMap(),
 )
@@ -84,7 +94,12 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
             // A newer filter owns the state now; this answer is for the old one.
             if (_state.value.filter != filter) return
             if (filter.isDefault) cache.saveTimeline(items)
-            _state.value = TimelineState(filter = filter, items = items, nextCursor = page.nextCursor, serverOrder = items.positions())
+            _state.update {
+                TimelineState(
+                    filter = filter, items = items, nextCursor = page.nextCursor, boosted = it.boosted,
+                    unseenCount = page.unseenCount, serverOrder = items.positions(),
+                )
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -98,7 +113,7 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
     /** Switches the filter and reloads from the first page; the old filter's stories are dropped at once. */
     suspend fun setFilter(filter: TimelineFilter) {
         if (_state.value.filter == filter) return
-        _state.value = TimelineState(filter = filter, refreshing = true)
+        _state.update { TimelineState(filter = filter, refreshing = true, boosted = it.boosted) }
         refresh()
     }
 
@@ -177,6 +192,33 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
         } catch (e: Exception) {
             hide(setOf(story.id))
             _state.update { it.copy(error = userMessage(e, "Couldn't show the story again")) }
+        }
+    }
+
+    /** "More like this": marks the story boosted at once, then tells the server; a failed call unmarks it. True on success. */
+    suspend fun boost(id: Long): Boolean {
+        if (id in _state.value.boosted) return false
+        _state.update { it.copy(boosted = it.boosted + id) }
+        return try {
+            api.boost(id)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _state.update { it.copy(boosted = it.boosted - id, error = userMessage(e, "Couldn't save your preference")) }
+            false
+        }
+    }
+
+    /** Undoes [boost]: unmarked at once; a failed call marks it boosted again. */
+    suspend fun unboost(id: Long) {
+        _state.update { it.copy(boosted = it.boosted - id) }
+        try {
+            api.unboost(id)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _state.update { it.copy(boosted = it.boosted + id, error = userMessage(e, "Couldn't undo your preference")) }
         }
     }
 
@@ -302,6 +344,9 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
     }
 
     fun clearError() = _state.update { it.copy(error = null) }
+
+    /** Topics near the followed ones that the user might follow, best first. */
+    suspend fun topicSuggestions(): List<Topic> = api.topicSuggestions()
 
     /** Story detail: network first, cached copy when offline. */
     suspend fun story(id: Long): Story = try {

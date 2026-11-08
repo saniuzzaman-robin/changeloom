@@ -27,6 +27,10 @@ data class Profession(
 @Serializable
 data class TopicList(val items: List<Topic>, val professions: List<Profession> = emptyList())
 
+/** Topics near the followed ones that the user might follow, best first (`GET /v1/me/topic-suggestions`). */
+@Serializable
+data class TopicSuggestions(val items: List<Topic>)
+
 /** The api's error body (`Error` in api/openapi.yaml). */
 @Serializable
 internal data class ApiError(val code: String, val message: String)
@@ -82,6 +86,15 @@ data class StorySummary(
     @SerialName("is_bookmarked") val isBookmarked: Boolean = false,
     /** Timeline only: `followed`, `profession`, `related` or `explore`; null elsewhere. */
     val match: String? = null,
+    /** Up to 3 short takeaways; empty when the story has none or the server predates them. */
+    @SerialName("key_points") val keyPoints: List<String> = emptyList(),
+    /** Readers must upgrade, migrate or patch. */
+    @SerialName("action_required") val actionRequired: Boolean = false,
+    /**
+     * Timeline only: the story was on screen before the page's time, on any device. Lists that don't send it (and
+     * older servers) default to true, so nothing is marked new there.
+     */
+    val seen: Boolean = true,
 )
 
 @Serializable
@@ -102,12 +115,33 @@ data class Story(
     @SerialName("body_md") val bodyMd: String,
     val sources: List<StorySource>,
     @SerialName("is_bookmarked") val isBookmarked: Boolean = false,
+    @SerialName("key_points") val keyPoints: List<String> = emptyList(),
+    @SerialName("action_required") val actionRequired: Boolean = false,
+    /** The release this story is about (e.g. "1.25.0"); null when it has none. */
+    val version: String? = null,
+    /** Other recent stories about the same project or CVE, newest first; empty when there are none. */
+    val thread: List<StoryThreadItem> = emptyList(),
+)
+
+/** A story in another story's thread: the summary fields the thread shows, plus its release. */
+@Serializable
+data class StoryThreadItem(
+    val id: Long,
+    val title: String,
+    val kind: String,
+    val severity: String? = null,
+    @SerialName("published_at") val publishedAt: String,
+    @SerialName("is_read") val isRead: Boolean = false,
+    @SerialName("action_required") val actionRequired: Boolean = false,
+    val version: String? = null,
 )
 
 @Serializable
 data class TimelinePage(
     val items: List<StorySummary>,
     @SerialName("next_cursor") val nextCursor: String? = null,
+    /** Timeline first page only: unread stories matching the filter that weren't on screen before. */
+    @SerialName("unseen_count") val unseenCount: Long? = null,
 )
 
 @Serializable

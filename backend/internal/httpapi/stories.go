@@ -14,9 +14,10 @@ import (
 )
 
 // cursorVersion marks timeline cursors whose score matches the current ranking; older ones (tier
-// cursors, scores from before the affinity tier, or cursors without the followed flag) are rejected so the client reloads from the
-// first page.
-const cursorVersion = 4
+// cursors, scores from before the affinity tier, the topic affinity bonus or the action-required
+// points, or cursors without the followed flag) are rejected so the client reloads from the first
+// page.
+const cursorVersion = 6
 
 // cursor is the keyset position of the last item on a page. Timeline cursors also carry their
 // version and the time the first page was ranked at, which fixes every score for the pages that
@@ -117,6 +118,7 @@ func (s *Server) GetTimeline(w http.ResponseWriter, r *http.Request, params GetT
 		UserID:           user.ID,
 		Kinds:            kinds,
 		ReadFilter:       params.Read,
+		ActionFilter:     params.Action,
 		Since:            asOf.Add(-s.opts.TimelineWindow),
 		PageSize:         int32(limit + 1), //nolint:gosec // limit is bounded by maxPageSize
 		AsOf:             asOf,
@@ -126,6 +128,11 @@ func (s *Server) GetTimeline(w http.ResponseWriter, r *http.Request, params GetT
 		DecayHours:       score.AgeDecay.Hours(),
 		SeenPenalty:      score.SeenPenalty,
 		SeenBefore:       asOf.Add(-score.SeenGrace),
+		AffinitySince:    asOf.Add(-score.AffinityWindow),
+		AffinityWeight:   score.AffinityWeight,
+		AffinityPrior:    score.AffinityPrior,
+		BoostEngagements: score.BoostEngagements,
+		ActionWeight:     score.ActionWeight,
 	}
 	if c != nil {
 		arg.CursorRead, arg.CursorFollowed, arg.CursorScore, arg.CursorPublishedAt, arg.CursorID =
@@ -149,6 +156,15 @@ func (s *Server) GetTimeline(w http.ResponseWriter, r *http.Request, params GetT
 		}.encode()
 		next = &c
 	}
+	// Every row carries the count of the whole set; only the first page sends it.
+	var unseen *int64
+	if c == nil {
+		n := int64(0)
+		if len(rows) > 0 {
+			n = rows[0].UnseenCount
+		}
+		unseen = &n
+	}
 	rows = mixPage(rows, s.opts.TimelineMix)
 	items := make([]StorySummary, len(rows))
 	for i, row := range rows {
@@ -158,21 +174,28 @@ func (s *Server) GetTimeline(w http.ResponseWriter, r *http.Request, params GetT
 			return
 		}
 		items[i] = StorySummary{
-			Id:           row.ID,
-			Title:        row.Title,
-			Summary:      row.Summary,
-			Kind:         StoryKind(row.Kind),
-			Severity:     (*Severity)(row.Severity),
-			Importance:   int(row.Importance),
-			PublishedAt:  row.PublishedAt,
-			Topics:       row.Topics,
-			IsRead:       row.ReadAt != nil,
-			ReadAt:       row.ReadAt,
-			IsBookmarked: row.IsBookmarked,
-			Match:        &match,
+			Id:             row.ID,
+			Title:          row.Title,
+			Summary:        row.Summary,
+			Kind:           StoryKind(row.Kind),
+			Severity:       (*Severity)(row.Severity),
+			Importance:     int(row.Importance),
+			PublishedAt:    row.PublishedAt,
+			Topics:         row.Topics,
+			IsRead:         row.ReadAt != nil,
+			ReadAt:         row.ReadAt,
+			IsBookmarked:   row.IsBookmarked,
+			Match:          &match,
+			KeyPoints:      &row.KeyPoints,
+			ActionRequired: &row.ActionRequired,
+			Seen:           &row.Seen,
 		}
 	}
-	writeStoryPage(w, items, next)
+	writeJSON(w, http.StatusOK, struct {
+		Items       []StorySummary `json:"items"`
+		NextCursor  *string        `json:"next_cursor,omitempty"`
+		UnseenCount *int64         `json:"unseen_count,omitempty"`
+	}{items, next, unseen})
 }
 
 // GetStory returns one story with its body and sources.
@@ -196,21 +219,61 @@ func (s *Server) GetStory(w http.ResponseWriter, r *http.Request, id StoryID) {
 	for i, url := range row.SourceUrls {
 		sources[i] = StorySource{Url: url, Name: row.SourceNames[i]}
 	}
-	writeJSON(w, http.StatusOK, Story{
-		Id:           row.ID,
-		Title:        row.Title,
-		Summary:      row.Summary,
-		BodyMd:       row.BodyMd,
-		Kind:         StoryKind(row.Kind),
-		Severity:     (*Severity)(row.Severity),
-		Importance:   int(row.Importance),
-		PublishedAt:  row.PublishedAt,
-		Topics:       row.Topics,
-		IsRead:       row.ReadAt != nil,
-		ReadAt:       row.ReadAt,
-		IsBookmarked: row.IsBookmarked,
-		Sources:      sources,
+	threadRows, err := s.q.GetStoryThread(r.Context(), db.GetStoryThreadParams{
+		UserID: user.ID, ID: id,
+		Since:    time.Now().Add(-s.opts.StoryThreadWindow),
+		PageSize: int32(s.opts.StoryThreadLimit), //nolint:gosec // config bounds it by maxStoryThreadLimit
 	})
+	if err != nil {
+		internalError(w, r, "get story thread", err)
+		return
+	}
+	thread := make([]StoryThreadItem, len(threadRows))
+	for i, t := range threadRows {
+		thread[i] = StoryThreadItem{
+			Id:             t.ID,
+			Title:          t.Title,
+			Summary:        t.Summary,
+			Kind:           StoryKind(t.Kind),
+			Severity:       (*Severity)(t.Severity),
+			Importance:     int(t.Importance),
+			PublishedAt:    t.PublishedAt,
+			Topics:         t.Topics,
+			IsRead:         t.ReadAt != nil,
+			ReadAt:         t.ReadAt,
+			IsBookmarked:   t.IsBookmarked,
+			KeyPoints:      &t.KeyPoints,
+			ActionRequired: &t.ActionRequired,
+			Version:        optionalString(t.Version),
+		}
+	}
+	writeJSON(w, http.StatusOK, Story{
+		Id:             row.ID,
+		Title:          row.Title,
+		Summary:        row.Summary,
+		BodyMd:         row.BodyMd,
+		Kind:           StoryKind(row.Kind),
+		Severity:       (*Severity)(row.Severity),
+		Importance:     int(row.Importance),
+		PublishedAt:    row.PublishedAt,
+		Topics:         row.Topics,
+		IsRead:         row.ReadAt != nil,
+		ReadAt:         row.ReadAt,
+		IsBookmarked:   row.IsBookmarked,
+		Sources:        sources,
+		KeyPoints:      &row.KeyPoints,
+		ActionRequired: &row.ActionRequired,
+		Version:        optionalString(row.Version),
+		Thread:         &thread,
+	})
+}
+
+// optionalString is nil for an empty string, so the field is left out of the response.
+func optionalString(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
 }
 
 // MarkStoryRead records that the user read the story.
@@ -231,6 +294,16 @@ func (s *Server) DismissStory(w http.ResponseWriter, r *http.Request, id StoryID
 // UndismissStory shows a dismissed story in the user's timeline again.
 func (s *Server) UndismissStory(w http.ResponseWriter, r *http.Request, id StoryID) {
 	s.setDismissed(w, r, id, false)
+}
+
+// BoostStory ranks the story's topics higher in the user's timeline ("More like this").
+func (s *Server) BoostStory(w http.ResponseWriter, r *http.Request, id StoryID) {
+	s.setBoosted(w, r, id, true)
+}
+
+// UnboostStory undoes BoostStory.
+func (s *Server) UnboostStory(w http.ResponseWriter, r *http.Request, id StoryID) {
+	s.setBoosted(w, r, id, false)
 }
 
 // maxViewIDs is the most story ids one views request may carry.
@@ -292,6 +365,27 @@ func (s *Server) setDismissed(w http.ResponseWriter, r *http.Request, id StoryID
 	}
 	if err != nil {
 		internalError(w, r, "set story dismissed", err)
+		return
+	}
+	if !exists {
+		writeError(w, http.StatusNotFound, "not_found", "story not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) setBoosted(w http.ResponseWriter, r *http.Request, id StoryID, boosted bool) {
+	user := mustUser(r)
+
+	var exists bool
+	var err error
+	if boosted {
+		exists, err = s.q.BoostStory(r.Context(), db.BoostStoryParams{UserID: user.ID, StoryID: id})
+	} else {
+		exists, err = s.q.UnboostStory(r.Context(), db.UnboostStoryParams{UserID: user.ID, StoryID: id})
+	}
+	if err != nil {
+		internalError(w, r, "set story boosted", err)
 		return
 	}
 	if !exists {

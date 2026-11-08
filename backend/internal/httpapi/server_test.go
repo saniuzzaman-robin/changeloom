@@ -26,16 +26,20 @@ import (
 )
 
 const (
-	testWindow     = 60 * 24 * time.Hour
-	testMaxPending = 3
-	aliceToken     = auth.DevTokenPrefix + "alice"
-	bobToken       = auth.DevTokenPrefix + "bob"
+	testWindow       = 60 * 24 * time.Hour
+	testMaxPending   = 3
+	testThreadWindow = 180 * 24 * time.Hour
+	testThreadLimit  = 6
+	testSuggestLimit = 5
+	aliceToken       = auth.DevTokenPrefix + "alice"
+	bobToken         = auth.DevTokenPrefix + "bob"
 )
 
 // testScore is the api's default ranking: with stories of equal importance a few hours apart,
 // tiers decide the order.
 var testScore = httpapi.TimelineScore{
 	TierWeight: 2, ImportanceWeight: 1, SeverityWeight: 0.5, AgeDecay: 24 * time.Hour, SeenPenalty: 3, SeenGrace: 12 * time.Hour,
+	AffinityWeight: 1.5, AffinityWindow: 30 * 24 * time.Hour, AffinityPrior: 4, BoostEngagements: 3, ActionWeight: 1,
 }
 
 type env struct {
@@ -58,7 +62,8 @@ func newEnvWith(t *testing.T, configure func(*httpapi.Options)) *env {
 	}
 	opts := httpapi.Options{
 		TimelineWindow: testWindow, TopicRequestMaxPending: testMaxPending,
-		TimelineScore: testScore,
+		TimelineScore: testScore, StoryThreadWindow: testThreadWindow, StoryThreadLimit: testThreadLimit,
+		TopicSuggestionWindow: 7 * 24 * time.Hour, TopicSuggestionLimit: testSuggestLimit,
 	}
 	configure(&opts)
 	srv := httptest.NewServer(httpapi.NewHandler(httpapi.NewServer(pool, opts), auth.DevVerifier{}))
@@ -338,6 +343,7 @@ func TestTimelineKindAndReadFilters(t *testing.T) {
 			t.Fatalf("set kind: %v", err)
 		}
 	}
+	e.exec(`UPDATE stories SET action_required = true WHERE id = ANY($1)`, []int64{dep1, sec1})
 	e.follow(aliceToken, "languages/go", "web/react")
 	e.markRead(aliceToken, sec1)
 	e.markRead(aliceToken, rel1)
@@ -362,6 +368,10 @@ func TestTimelineKindAndReadFilters(t *testing.T) {
 		{"kind=security&read=false", []int64{sec2}},
 		{"kind=security&read=true", []int64{sec1}},
 		{"kind=policy", []int64{}},
+		{"action=true", []int64{dep1, sec1}},
+		{"action=false", []int64{sec2, rel1}},
+		{"action=true&read=false", []int64{dep1}},
+		{"action=true&kind=security", []int64{sec1}},
 	} {
 		if got := get(tc.query); !slices.Equal(got, tc.want) {
 			t.Errorf("GET /v1/timeline?%s = %v, want %v", tc.query, got, tc.want)
@@ -390,7 +400,7 @@ func TestTimelineKindAndReadFilters(t *testing.T) {
 		t.Fatalf("paged security = %v, want %v", paged, []int64{sec2, sec1})
 	}
 
-	for _, q := range []string{"kind=bogus", "read=maybe", "kind=release&kind=release&kind=release&kind=release&kind=release&kind=release&kind=release&kind=release&kind=release&kind=release"} {
+	for _, q := range []string{"kind=bogus", "read=maybe", "action=maybe", "kind=release&kind=release&kind=release&kind=release&kind=release&kind=release&kind=release&kind=release&kind=release&kind=release"} {
 		if code := e.do(http.MethodGet, "/v1/timeline?"+q, aliceToken, nil, nil); code != http.StatusBadRequest {
 			t.Errorf("GET /v1/timeline?%s: status %d, want 400", q, code)
 		}
@@ -1011,7 +1021,8 @@ func TestTimelineScore(t *testing.T) {
 	plain := e.insertStory("plain", now.Add(-2*time.Hour), "web/react")
 	e.exec(`UPDATE stories SET kind = 'security', severity = 'critical' WHERE id = $1`, critical)
 
-	// Views never penalize a story of a followed topic, and neither do saved stories.
+	// A story seen longer than the grace ago but never opened sinks; a saved one doesn't. With one
+	// topic, the affinity bonus is zero.
 	unseen := e.insertStory("unseen", now.Add(-4*time.Hour), "web/react")
 	seenLongAgo := e.insertStory("seen long ago", now.Add(-3*time.Hour), "web/react")
 	seenRecently := e.insertStory("seen recently", now.Add(-3*time.Hour), "web/react")
@@ -1025,8 +1036,8 @@ func TestTimelineScore(t *testing.T) {
 	}
 
 	// By score: critical 3+1.5-2/24; plain 3-2/24; seen recently, seen long ago and saved 3-3/24
-	// (tie: highest id first); unseen 3-4/24; stale 1-13.
-	want := []int64{critical, plain, seenSaved, seenRecently, seenLongAgo, unseen, stale}
+	// (tie: highest id first); unseen 3-4/24; seen long ago 3-3/24-3; stale 1-13.
+	want := []int64{critical, plain, seenSaved, seenRecently, unseen, seenLongAgo, stale}
 	if got := ids(e.timeline(aliceToken, 50, "").Items); !slices.Equal(got, want) {
 		t.Fatalf("timeline order = %v, want %v", got, want)
 	}
@@ -1056,6 +1067,277 @@ func TestTimelineScore(t *testing.T) {
 		if !slices.Equal(walked, want) {
 			t.Fatalf("limit %d: paged order = %v, want %v", limit, walked, want)
 		}
+	}
+}
+
+// Key points and action_required reach every story endpoint, and an action-required story gains
+// ActionWeight points.
+func TestStoryKeyPointsAndAction(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now().Truncate(time.Second)
+	e.follow(aliceToken, "languages/go")
+
+	// Equal stories: the id tie-break alone would put plain first.
+	action := e.insertStory("zebra patch", now.Add(-2*time.Hour), "languages/go")
+	plain := e.insertStory("zebra notes", now.Add(-2*time.Hour), "languages/go")
+	e.exec(`UPDATE stories SET key_points = '{"Upgrade to 1.27.1","Fixes a crash"}', action_required = true WHERE id = $1`, action)
+	wantPoints := []string{"Upgrade to 1.27.1", "Fixes a crash"}
+	check := func(where string, it httpapi.StorySummary) {
+		t.Helper()
+		switch it.Id {
+		case action:
+			if it.KeyPoints == nil || !slices.Equal(*it.KeyPoints, wantPoints) || it.ActionRequired == nil || !*it.ActionRequired {
+				t.Errorf("%s: action story key points %v, action %v", where, it.KeyPoints, it.ActionRequired)
+			}
+		case plain:
+			if it.KeyPoints == nil || len(*it.KeyPoints) != 0 || it.ActionRequired == nil || *it.ActionRequired {
+				t.Errorf("%s: plain story key points %v, action %v; want an empty list and false", where, it.KeyPoints, it.ActionRequired)
+			}
+		}
+	}
+
+	page := e.timeline(aliceToken, 50, "")
+	if got := ids(page.Items); !slices.Equal(got, []int64{action, plain}) {
+		t.Fatalf("timeline order = %v, want the action-required story first", got)
+	}
+	for _, it := range page.Items {
+		check("timeline", it)
+	}
+
+	for _, id := range []int64{action, plain} {
+		var story httpapi.Story
+		if code := e.do(http.MethodGet, "/v1/stories/"+strconv.FormatInt(id, 10), aliceToken, nil, &story); code != http.StatusOK {
+			t.Fatalf("get story: status %d", code)
+		}
+		check("detail", httpapi.StorySummary{Id: story.Id, KeyPoints: story.KeyPoints, ActionRequired: story.ActionRequired})
+
+		if code := e.do(http.MethodPut, "/v1/stories/"+strconv.FormatInt(id, 10)+"/bookmark", aliceToken, nil, nil); code != http.StatusNoContent {
+			t.Fatalf("bookmark: status %d", code)
+		}
+	}
+	for path, want := range map[string]int{"/v1/bookmarks": 2, "/v1/search?q=zebra": 2} {
+		var res timelinePage
+		if code := e.do(http.MethodGet, path, aliceToken, nil, &res); code != http.StatusOK || len(res.Items) != want {
+			t.Fatalf("%s: status %d, %d items, want %d", path, code, len(res.Items), want)
+		}
+		for _, it := range res.Items {
+			check(path, it)
+		}
+	}
+
+	// A story without key points sends an empty list, not null.
+	var raw struct {
+		Items []map[string]any `json:"items"`
+	}
+	e.do(http.MethodGet, "/v1/timeline", aliceToken, nil, &raw)
+	for _, it := range raw.Items {
+		if kp, ok := it["key_points"].([]any); !ok || (int64(it["id"].(float64)) == plain && len(kp) != 0) {
+			t.Errorf("story %v: key_points = %#v, want a list", it["id"], it["key_points"])
+		}
+	}
+}
+
+// A followed topic whose stories the user opens or saves ranks above one whose stories they skip or
+// dismiss; without history the topics rank the same.
+func TestTimelineTopicAffinity(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now().Truncate(time.Second)
+	e.follow(aliceToken, "web/react", "languages/go")
+	e.follow(bobToken, "web/react", "languages/go")
+
+	// Alice's history: four React stories seen and read or saved, three Go stories seen and skipped
+	// and one dismissed. Overall rate 4/8; React (4+2)/(4+4), Go (0+2)/(4+4): ±0.25 * 1.5 points.
+	var seen []int64
+	for i := range 4 {
+		react := e.insertStory("old react", now.Add(-48*time.Hour), "web/react")
+		seen = append(seen, react)
+		if i%2 == 0 {
+			e.markRead(aliceToken, react)
+		} else if code := e.do(http.MethodPut, "/v1/stories/"+strconv.FormatInt(react, 10)+"/bookmark", aliceToken, nil, nil); code != http.StatusNoContent {
+			t.Fatalf("bookmark: status %d", code)
+		}
+	}
+	for range 3 {
+		seen = append(seen, e.insertStory("old go", now.Add(-48*time.Hour), "languages/go"))
+	}
+	dismissed := e.insertStory("dismissed go", now.Add(-48*time.Hour), "languages/go")
+	if code := e.do(http.MethodPut, "/v1/stories/"+strconv.FormatInt(dismissed, 10)+"/dismiss", aliceToken, nil, nil); code != http.StatusNoContent {
+		t.Fatalf("dismiss: status %d", code)
+	}
+	if code := e.do(http.MethodPost, "/v1/stories/views", aliceToken, map[string]any{"ids": seen}, nil); code != http.StatusNoContent {
+		t.Fatalf("record views: status %d", code)
+	}
+
+	// Equal fresh stories: the id tie-break alone would put Go first.
+	reactNew := e.insertStory("new react", now.Add(-time.Hour), "web/react")
+	goNew := e.insertStory("new go", now.Add(-time.Hour), "languages/go")
+
+	first := func(items []httpapi.StorySummary) []int64 {
+		var out []int64
+		for _, id := range ids(items) {
+			if id == reactNew || id == goNew {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	alice := e.timeline(aliceToken, 50, "").Items
+	if got, want := first(alice), []int64{reactNew, goNew}; !slices.Equal(got, want) {
+		t.Fatalf("alice's fresh stories = %v, want %v", got, want)
+	}
+	if got, want := first(e.timeline(bobToken, 50, "").Items), []int64{goNew, reactNew}; !slices.Equal(got, want) {
+		t.Fatalf("bob's fresh stories = %v, want %v (no history, id tie-break)", got, want)
+	}
+
+	// Pages walk the same order, and engagement after the first page doesn't move later ones.
+	var walked []int64
+	cursor := ""
+	for i := range len(alice) + 1 {
+		page := e.timeline(aliceToken, 1, cursor)
+		walked = append(walked, ids(page.Items)...)
+		if i == 0 {
+			if code := e.do(http.MethodPut, "/v1/stories/"+strconv.FormatInt(goNew, 10)+"/bookmark", aliceToken, nil, nil); code != http.StatusNoContent {
+				t.Fatalf("bookmark: status %d", code)
+			}
+		}
+		if page.NextCursor == nil {
+			break
+		}
+		cursor = *page.NextCursor
+	}
+	if want := ids(alice); !slices.Equal(walked, want) {
+		t.Fatalf("paged order = %v, want %v", walked, want)
+	}
+}
+
+// "More like this" counts a story as several engagements for its topics, so a topic the user only
+// saw ranks above an equal one once they boost one of its stories, and undoing the boost undoes it.
+func TestTimelineBoostLiftsTopic(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now().Truncate(time.Second)
+	e.follow(aliceToken, "web/react", "languages/go")
+	e.follow(bobToken, "web/react", "languages/go")
+
+	// Alice saw two stories of each topic and opened none. With one React story boosted the overall
+	// rate is 3/6; React (3+2)/(4+4), Go (0+2)/(2+4).
+	var seen []int64
+	for range 2 {
+		seen = append(seen, e.insertStory("old react", now.Add(-48*time.Hour), "web/react"))
+		seen = append(seen, e.insertStory("old go", now.Add(-48*time.Hour), "languages/go"))
+	}
+	if code := e.do(http.MethodPost, "/v1/stories/views", aliceToken, map[string]any{"ids": seen}, nil); code != http.StatusNoContent {
+		t.Fatalf("record views: status %d", code)
+	}
+	// Equal fresh stories: the id tie-break alone puts Go first.
+	reactNew := e.insertStory("new react", now.Add(-time.Hour), "web/react")
+	goNew := e.insertStory("new go", now.Add(-time.Hour), "languages/go")
+	fresh := func(token string) []int64 {
+		t.Helper()
+		var out []int64
+		for _, id := range ids(e.timeline(token, 50, "").Items) {
+			if id == reactNew || id == goNew {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	if got, want := fresh(aliceToken), []int64{goNew, reactNew}; !slices.Equal(got, want) {
+		t.Fatalf("before boost = %v, want %v", got, want)
+	}
+
+	boost := "/v1/stories/" + strconv.FormatInt(seen[0], 10) + "/boost"
+	if code := e.do(http.MethodPut, boost, aliceToken, nil, nil); code != http.StatusNoContent {
+		t.Fatalf("boost: status %d", code)
+	}
+	if got, want := fresh(aliceToken), []int64{reactNew, goNew}; !slices.Equal(got, want) {
+		t.Fatalf("after boost = %v, want %v", got, want)
+	}
+	if got, want := fresh(bobToken), []int64{goNew, reactNew}; !slices.Equal(got, want) {
+		t.Fatalf("bob after alice's boost = %v, want %v", got, want)
+	}
+
+	if code := e.do(http.MethodDelete, boost, aliceToken, nil, nil); code != http.StatusNoContent {
+		t.Fatalf("unboost: status %d", code)
+	}
+	if got, want := fresh(aliceToken), []int64{goNew, reactNew}; !slices.Equal(got, want) {
+		t.Fatalf("after unboost = %v, want %v", got, want)
+	}
+}
+
+// A boosted story that was later dismissed counts as dismissed, not boosted.
+func TestTimelineDismissOverridesBoost(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now().Truncate(time.Second)
+	e.follow(aliceToken, "web/react", "languages/go")
+	old := e.insertStory("old react", now.Add(-48*time.Hour), "web/react")
+	seenGo := e.insertStory("old go", now.Add(-48*time.Hour), "languages/go")
+	if code := e.do(http.MethodPost, "/v1/stories/views", aliceToken, map[string]any{"ids": []int64{old, seenGo}}, nil); code != http.StatusNoContent {
+		t.Fatalf("record views: status %d", code)
+	}
+	for _, path := range []string{"/boost", "/dismiss"} {
+		if code := e.do(http.MethodPut, "/v1/stories/"+strconv.FormatInt(old, 10)+path, aliceToken, nil, nil); code != http.StatusNoContent {
+			t.Fatalf("PUT %s: status %d", path, code)
+		}
+	}
+	reactNew := e.insertStory("new react", now.Add(-time.Hour), "web/react")
+	goNew := e.insertStory("new go", now.Add(-time.Hour), "languages/go")
+	var got []int64
+	for _, id := range ids(e.timeline(aliceToken, 50, "").Items) {
+		if id == reactNew || id == goNew {
+			got = append(got, id)
+		}
+	}
+	// No engagement at all: no bonus either way, so the id tie-break decides.
+	if want := []int64{goNew, reactNew}; !slices.Equal(got, want) {
+		t.Fatalf("fresh stories = %v, want %v", got, want)
+	}
+}
+
+func TestBoostStory(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+	a := e.insertStory("A", now.Add(-2*time.Hour), "languages/go")
+	b := e.insertStory("B", now.Add(-1*time.Hour), "languages/go")
+	e.follow(aliceToken, "languages/go")
+	path := "/v1/stories/" + strconv.FormatInt(a, 10) + "/boost"
+
+	for _, method := range []string{http.MethodPut, http.MethodDelete} {
+		if code := e.do(method, path, "", nil, nil); code != http.StatusUnauthorized {
+			t.Fatalf("%s without auth: status %d, want 401", method, code)
+		}
+		if code := e.do(method, "/v1/stories/999999/boost", aliceToken, nil, nil); code != http.StatusNotFound {
+			t.Fatalf("%s unknown story: status %d, want 404", method, code)
+		}
+		if code := e.do(method, "/v1/stories/abc/boost", aliceToken, nil, nil); code != http.StatusBadRequest {
+			t.Fatalf("%s bad id: status %d, want 400", method, code)
+		}
+	}
+	for range 2 { // idempotent
+		if code := e.do(http.MethodPut, path, aliceToken, nil, nil); code != http.StatusNoContent {
+			t.Fatalf("boost: status %d, want 204", code)
+		}
+	}
+	// The boosted story itself stays in the timeline.
+	if got := ids(e.timeline(aliceToken, 50, "").Items); !slices.Equal(got, []int64{b, a}) {
+		t.Fatalf("timeline after boost = %v, want [%d %d]", got, b, a)
+	}
+	// Only the caller's boost is removed.
+	if code := e.do(http.MethodPut, path, bobToken, nil, nil); code != http.StatusNoContent {
+		t.Fatalf("bob boost: status %d", code)
+	}
+	for range 2 {
+		if code := e.do(http.MethodDelete, path, aliceToken, nil, nil); code != http.StatusNoContent {
+			t.Fatalf("unboost: status %d, want 204", code)
+		}
+	}
+	var boosts []string
+	if err := e.pool.QueryRow(t.Context(), `
+		SELECT coalesce(array_agg(u.firebase_uid), '{}') FROM user_story_boosts b JOIN users u ON u.id = b.user_id
+		WHERE b.story_id = $1`, a).Scan(&boosts); err != nil {
+		t.Fatalf("query boosts: %v", err)
+	}
+	if !slices.Equal(boosts, []string{bobToken}) {
+		t.Fatalf("boosts left = %v, want only bob's", boosts)
 	}
 }
 

@@ -132,6 +132,7 @@
     <string name="filter_clear">Clear filters</string>
     <string name="filter_unread">Unread</string>
     <string name="filter_read">Read</string>
+    <string name="filter_action">Needs action</string>
     <string name="section_new">New for you</string>
     <string name="section_earlier">Earlier</string>
     <string name="suggested">Suggested</string>
@@ -150,6 +151,18 @@
     <plurals name="feed_new_updates">
         <item quantity="one">%d new update across your topics.</item>
         <item quantity="other">%d new updates across your topics.</item>
+    </plurals>
+    <plurals name="feed_new_since_visit">
+        <item quantity="one">%d new story since your last visit.</item>
+        <item quantity="other">%d new stories since your last visit.</item>
+    </plurals>
+    <string name="story_new">New</string>
+    <string name="caught_up_eyebrow">All caught up</string>
+    <string name="caught_up_title">You\'ve seen everything new in your topics.</string>
+    <string name="caught_up_topics">Topics you might like</string>
+    <plurals name="caught_up_saved">
+        <item quantity="one">%d saved to read</item>
+        <item quantity="other">%d saved to read</item>
     </plurals>
     <string name="time_just_now">just now</string>
     <string name="time_minutes_ago">%1$dm ago</string>
@@ -266,10 +279,28 @@
     <string name="unmute_failed">Couldn\'t unmute the topic. Try again.</string>
     <string name="story_actions">More actions</string>
     <string name="not_interested">Not interested</string>
+    <string name="more_like_this">More like this</string>
+    <string name="more_about">You\'ll see more about %1$s</string>
+    <string name="more_like_this_story">You\'ll see more like this</string>
+    <string name="action_needed">Action needed</string>
+    <string name="quick_take">Quick take</string>
+    <string name="story_thread">Story thread</string>
+    <string name="story_thread_current">This story</string>
+    <string name="open_story">Open story</string>
+    <string name="quick_take_show">Show quick take</string>
+    <string name="quick_take_hide">Hide quick take</string>
     <string name="less_about">Less about %1$s</string>
     <string name="story_hidden">Story hidden</string>
     <string name="topic_muted">You\'ll see less about %1$s</string>
     <string name="undo">Undo</string>
+    <string name="close">Close</string>
+    <string name="open">Open</string>
+    <string name="catch_up">Catch up</string>
+    <!-- The feed header's button; the number is how many stories catch-up has left. -->
+    <string name="catch_up_count">Catch up (%1$d)</string>
+    <!-- Catch-up's position, e.g. "3 of 12". -->
+    <string name="catch_up_progress">%1$d of %2$d</string>
+    <string name="catch_up_done">Back to the feed</string>
     <string name="follow_suggestion_title">Follow %1$s?</string>
     <plurals name="follow_suggestion_body">
         <item quantity="one">You\'ve opened %d story about it.</item>

@@ -76,23 +76,25 @@ type RequestInbox struct {
 }
 
 type Story struct {
-	ID            int64
-	Title         string
-	Summary       string
-	BodyMd        string
-	Kind          string
-	Severity      *string
-	Importance    int16
-	PublishedAt   time.Time
-	DedupeKeys    []byte
-	Model         string
-	PromptVersion string
-	CreatedAt     time.Time
-	Search        interface{}
-	NotifiedAt    *time.Time
-	Uid           pgtype.UUID
-	UpdatedAt     time.Time
-	Countries     []string
+	ID             int64
+	Title          string
+	Summary        string
+	BodyMd         string
+	Kind           string
+	Severity       *string
+	Importance     int16
+	PublishedAt    time.Time
+	DedupeKeys     []byte
+	Model          string
+	PromptVersion  string
+	CreatedAt      time.Time
+	Search         interface{}
+	NotifiedAt     *time.Time
+	Uid            pgtype.UUID
+	UpdatedAt      time.Time
+	Countries      []string
+	KeyPoints      []string
+	ActionRequired bool
 }
 
 type StorySource struct {
@@ -192,6 +194,12 @@ type UserBookmark struct {
 type UserProfession struct {
 	UserID       int64
 	ProfessionID int64
+}
+
+type UserStoryBoost struct {
+	UserID    int64
+	StoryID   int64
+	CreatedAt time.Time
 }
 
 type UserStoryDismissal struct {

@@ -28,6 +28,10 @@ func setBase(t *testing.T) {
 		"TIMELINE_SEEN_PENALTY":       "",
 		"TIMELINE_SEEN_GRACE_HOURS":   "",
 		"TIMELINE_MAX_TOPIC_RUN":      "",
+		"STORY_THREAD_DAYS":           "",
+		"STORY_THREAD_LIMIT":          "",
+		"TOPIC_SUGGESTION_DAYS":       "",
+		"TOPIC_SUGGESTION_LIMIT":      "",
 		"TOPIC_REQUEST_MAX_PENDING":   "",
 		"FEEDBACK_MAX_PER_DAY":        "",
 		"LOG_LEVEL":                   "",
@@ -78,12 +82,47 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.TimelineWindow != 14*24*time.Hour {
 		t.Errorf("Load() = timeline window %s, want 14 days", cfg.TimelineWindow)
 	}
-	want := TimelineScore{TierWeight: 2, ImportanceWeight: 1, SeverityWeight: 0.5, AgeDecay: 24 * time.Hour, SeenPenalty: 3, SeenGrace: 12 * time.Hour}
+	want := TimelineScore{
+		TierWeight: 2, ImportanceWeight: 1, SeverityWeight: 0.5, AgeDecay: 24 * time.Hour, SeenPenalty: 3, SeenGrace: 12 * time.Hour,
+		AffinityWeight: 1.5, AffinityWindow: 30 * 24 * time.Hour, AffinityPrior: 4, BoostEngagements: 3, ActionWeight: 1,
+	}
 	if cfg.TimelineScore != want {
 		t.Errorf("Load() = timeline score %+v, want %+v", cfg.TimelineScore, want)
 	}
 	if want := (TimelineMix{MaxTopicRun: 2}); cfg.TimelineMix != want {
 		t.Errorf("Load() = timeline mix %+v, want %+v", cfg.TimelineMix, want)
+	}
+	if cfg.StoryThreadWindow != 180*24*time.Hour || cfg.StoryThreadLimit != 6 {
+		t.Errorf("Load() = story thread window %s, limit %d; want 180 days, 6", cfg.StoryThreadWindow, cfg.StoryThreadLimit)
+	}
+	if cfg.TopicSuggestionWindow != 7*24*time.Hour || cfg.TopicSuggestionLimit != 5 {
+		t.Errorf("Load() = topic suggestion window %s, limit %d; want 7 days, 5", cfg.TopicSuggestionWindow, cfg.TopicSuggestionLimit)
+	}
+}
+
+func TestLoadStoryThread(t *testing.T) {
+	setBase(t)
+	t.Setenv("STORY_THREAD_DAYS", "30")
+	t.Setenv("STORY_THREAD_LIMIT", "50")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.StoryThreadWindow != 30*24*time.Hour || cfg.StoryThreadLimit != 50 {
+		t.Errorf("Load() = story thread window %s, limit %d; want 30 days, 50", cfg.StoryThreadWindow, cfg.StoryThreadLimit)
+	}
+}
+
+func TestLoadTopicSuggestions(t *testing.T) {
+	setBase(t)
+	t.Setenv("TOPIC_SUGGESTION_DAYS", "14")
+	t.Setenv("TOPIC_SUGGESTION_LIMIT", "20")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.TopicSuggestionWindow != 14*24*time.Hour || cfg.TopicSuggestionLimit != 20 {
+		t.Errorf("Load() = topic suggestion window %s, limit %d; want 14 days, 20", cfg.TopicSuggestionWindow, cfg.TopicSuggestionLimit)
 	}
 }
 
@@ -94,6 +133,11 @@ func TestLoadTimelineScore(t *testing.T) {
 	t.Setenv("TIMELINE_DECAY_HOURS", "48")
 	t.Setenv("TIMELINE_SEEN_GRACE_HOURS", "6")
 	t.Setenv("TIMELINE_MAX_TOPIC_RUN", "3")
+	t.Setenv("TIMELINE_AFFINITY_WEIGHT", "0")
+	t.Setenv("TIMELINE_AFFINITY_DAYS", "7")
+	t.Setenv("TIMELINE_AFFINITY_PRIOR", "10")
+	t.Setenv("TIMELINE_ACTION_WEIGHT", "2.5")
+	t.Setenv("TIMELINE_BOOST_ENGAGEMENTS", "5")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -101,6 +145,9 @@ func TestLoadTimelineScore(t *testing.T) {
 	got := cfg.TimelineScore
 	if got.TierWeight != 0 || got.ImportanceWeight != 1.5 || got.AgeDecay != 48*time.Hour || got.SeenGrace != 6*time.Hour {
 		t.Errorf("Load() = timeline score %+v, want tier 0, importance 1.5, decay 48h, grace 6h", got)
+	}
+	if got.AffinityWeight != 0 || got.AffinityWindow != 7*24*time.Hour || got.AffinityPrior != 10 || got.ActionWeight != 2.5 || got.BoostEngagements != 5 {
+		t.Errorf("Load() = timeline score %+v, want affinity weight 0, window 7 days, prior 10, action weight 2.5, boost 5", got)
 	}
 	if want := (TimelineMix{MaxTopicRun: 3}); cfg.TimelineMix != want {
 		t.Errorf("Load() = timeline mix %+v, want %+v", cfg.TimelineMix, want)
@@ -145,6 +192,12 @@ func TestLoadRejectsBadPoolAndTimeout(t *testing.T) {
 		{"TIMELINE_DECAY_HOURS", "0"},
 		{"TIMELINE_SEEN_GRACE_HOURS", "1.5"},
 		{"TIMELINE_MAX_TOPIC_RUN", "0"},
+		{"STORY_THREAD_DAYS", "0"},
+		{"STORY_THREAD_LIMIT", "0"},
+		{"STORY_THREAD_LIMIT", "51"},
+		{"TOPIC_SUGGESTION_DAYS", "0"},
+		{"TOPIC_SUGGESTION_LIMIT", "0"},
+		{"TOPIC_SUGGESTION_LIMIT", "21"},
 	} {
 		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
 			setBase(t)

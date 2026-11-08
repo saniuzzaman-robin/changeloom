@@ -96,6 +96,35 @@ func (s *Server) ListTopics(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ListMyTopicSuggestions returns topics near the user's followed ones that they might follow.
+func (s *Server) ListMyTopicSuggestions(w http.ResponseWriter, r *http.Request) {
+	user := mustUser(r)
+	asOf := s.now()
+	rows, err := s.q.ListTopicSuggestions(r.Context(), db.ListTopicSuggestionsParams{
+		UserID:           user.ID,
+		Since:            asOf.Add(-s.opts.TopicSuggestionWindow),
+		AsOf:             asOf,
+		AffinitySince:    asOf.Add(-s.opts.TimelineScore.AffinityWindow),
+		AffinityPrior:    s.opts.TimelineScore.AffinityPrior,
+		BoostEngagements: s.opts.TimelineScore.BoostEngagements,
+		PageSize:         int32(s.opts.TopicSuggestionLimit), //nolint:gosec // config bounds it by maxTopicSuggestionLimit
+	})
+	if err != nil {
+		internalError(w, r, "list topic suggestions", err)
+		return
+	}
+	items := make([]Topic, len(rows))
+	for i, t := range rows {
+		items[i] = Topic{Slug: t.Slug, Name: t.Name, Parent: t.ParentSlug, Description: t.Description}
+		if t.Headline {
+			items[i].Headline = &t.Headline
+		}
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Items []Topic `json:"items"`
+	}{items})
+}
+
 // etagMatches reports whether an If-None-Match header names etag, comparing weakly as RFC 9110
 // requires for If-None-Match.
 func etagMatches(header, etag string) bool {

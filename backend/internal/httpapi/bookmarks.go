@@ -137,6 +137,7 @@ func (s *Server) ListBookmarks(w http.ResponseWriter, r *http.Request, params Li
 			Id: row.ID, Title: row.Title, Summary: row.Summary, Kind: StoryKind(row.Kind), Severity: (*Severity)(row.Severity),
 			Importance: int(row.Importance), PublishedAt: row.PublishedAt, Topics: row.Topics,
 			IsRead: row.ReadAt != nil, ReadAt: row.ReadAt, IsBookmarked: true,
+			KeyPoints: &row.KeyPoints, ActionRequired: &row.ActionRequired,
 		}
 	}
 	writeStoryPage(w, items, next)
@@ -188,6 +189,7 @@ func (s *Server) SearchStories(w http.ResponseWriter, r *http.Request, params Se
 			Id: row.ID, Title: row.Title, Summary: row.Summary, Kind: StoryKind(row.Kind), Severity: (*Severity)(row.Severity),
 			Importance: int(row.Importance), PublishedAt: row.PublishedAt, Topics: row.Topics,
 			IsRead: row.ReadAt != nil, ReadAt: row.ReadAt, IsBookmarked: row.IsBookmarked,
+			KeyPoints: &row.KeyPoints, ActionRequired: &row.ActionRequired,
 		}
 	}
 	writeStoryPage(w, items, next)
