@@ -1,11 +1,6 @@
 package dev.changeloom.android.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -25,40 +20,44 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.changeloom.android.ui.theme.ChangeloomTheme
+import dev.changeloom.android.ui.theme.LocalShimmerClock
 import dev.changeloom.android.ui.theme.Radius
 
-/** Moving highlight for loading placeholders. */
+/** Moving highlight for loading placeholders, on the theme's shared clock ([LocalShimmerClock]). */
 @Composable
 fun Modifier.shimmer(): Modifier {
     val c = ChangeloomTheme.colors
     val base = c.surface2
     val highlight = if (c.isDark) Color.White.copy(alpha = 0.06f).compositeOver(base) else Color.White
-    val progress by rememberInfiniteTransition(label = "shimmer")
-        .animateFloat(-1f, 2f, infiniteRepeatable(tween(1400, easing = LinearEasing)), label = "shimmerX")
-    return drawBehind {
+    val clock = LocalShimmerClock.current
+    DisposableEffect(clock) {
+        clock.attach()
+        onDispose { clock.detach() }
+    }
+    return drawWithCache {
         val w = size.width
-        drawRect(
-            Brush.linearGradient(
-                listOf(base, highlight, base),
-                start = Offset(w * progress - w / 2, 0f),
-                end = Offset(w * progress + w / 2, size.height),
-            ),
-        )
+        val brush = Brush.linearGradient(listOf(base, highlight, base), start = Offset(-w / 2, 0f), end = Offset(w / 2, size.height))
+        onDrawBehind {
+            // Slide the gradient, not the rect: the shader moves with the canvas while the rect stays in place.
+            val dx = w * clock.progress
+            translate(left = dx) { drawRect(brush, topLeft = Offset(-dx, 0f), size = size) }
+        }
     }
 }
 

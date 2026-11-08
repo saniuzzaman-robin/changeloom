@@ -73,12 +73,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -452,14 +454,17 @@ private fun DriftingOrbs(modifier: Modifier) {
         label = "orbPhase",
     )
     Spacer(
-        modifier.drawBehind {
+        modifier.drawWithCache {
             val radius = size.minDimension * 0.8f
-            orbs.forEach { o ->
-                val center = Offset(
-                    size.width * (o.x + 0.10f * cos(phase + o.phase)),
-                    size.height * (o.y + 0.05f * sin(phase + o.phase)),
-                )
-                drawCircle(Brush.radialGradient(listOf(o.color.copy(alpha = alpha), Color.Transparent), center, radius), radius, center)
+            // Built once per size around the origin; each frame only moves the canvas to the orb's centre.
+            val brushes = orbs.map { Brush.radialGradient(listOf(it.color.copy(alpha = alpha), Color.Transparent), Offset.Zero, radius) }
+            onDrawBehind {
+                orbs.forEachIndexed { i, o ->
+                    translate(
+                        left = size.width * (o.x + 0.10f * cos(phase + o.phase)),
+                        top = size.height * (o.y + 0.05f * sin(phase + o.phase)),
+                    ) { drawCircle(brushes[i], radius, Offset.Zero) }
+                }
             }
         },
     )

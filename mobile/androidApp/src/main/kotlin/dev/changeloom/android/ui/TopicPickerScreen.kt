@@ -259,8 +259,8 @@ internal fun TopicPickerContent(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 when {
-                    selection == null -> if (state.loading) items(SKELETON_CARDS) { SkeletonTopicCard() }
-                    professionStep && professionList.isEmpty() -> item {
+                    selection == null -> if (state.loading) items(SKELETON_CARDS, key = { "skeleton-$it" }, contentType = { "skeleton" }) { SkeletonTopicCard() }
+                    professionStep && professionList.isEmpty() -> item(key = "empty", contentType = "empty") {
                         EmptyState(
                             title = stringResource(R.string.professions_empty_title),
                             message = stringResource(R.string.professions_empty_body),
@@ -272,11 +272,11 @@ internal fun TopicPickerContent(
                             professionList.any { it.slug !in state.savedProfessions }
                         professionList.forEachIndexed { index, profession ->
                             val saved = profession.slug in state.savedProfessions
-                            if (sections && index == 0) item(key = "your") { SectionLabel(stringResource(R.string.your_professions)) }
+                            if (sections && index == 0) item(key = "your", contentType = SECTION_LABEL) { SectionLabel(stringResource(R.string.your_professions)) }
                             if (sections && !saved && professionList[index - 1].slug in state.savedProfessions) {
-                                item(key = "all") { SectionLabel(stringResource(R.string.all_professions)) }
+                                item(key = "all", contentType = SECTION_LABEL) { SectionLabel(stringResource(R.string.all_professions)) }
                             }
-                            item(key = profession.slug) {
+                            item(key = profession.slug, contentType = "profession") {
                                 ProfessionCard(
                                     profession,
                                     picked = profession.slug in state.selectedProfessions,
@@ -285,7 +285,7 @@ internal fun TopicPickerContent(
                             }
                         }
                         if (query.isEmpty() && moreComing) {
-                            item(key = "coming") {
+                            item(key = "coming", contentType = "coming") {
                                 Text(
                                     stringResource(R.string.professions_coming_soon),
                                     Modifier.padding(top = 4.dp),
@@ -295,7 +295,7 @@ internal fun TopicPickerContent(
                             }
                         }
                     }
-                    rows.isEmpty() -> item {
+                    rows.isEmpty() -> item(key = "empty", contentType = "empty") {
                         EmptyState(
                             title = stringResource(R.string.topics_empty_title),
                             message = stringResource(R.string.topics_empty_body),
@@ -304,7 +304,7 @@ internal fun TopicPickerContent(
                     }
                     else -> {
                         if (query.isEmpty() && headlineAreas.isNotEmpty() && !headlinesNoteDismissed) {
-                            item(key = "headlines") {
+                            item(key = "headlines", contentType = "headlines") {
                                 StatusBanner(
                                     stringResource(R.string.headlines_note, headlineAreas),
                                     Icons.Rounded.Public,
@@ -317,7 +317,7 @@ internal fun TopicPickerContent(
                         val sections = query.isEmpty() && rows.any { it.group != TopicGroup.Other } && rows.any { it.group == TopicGroup.Other }
                         rows.forEachIndexed { index, row ->
                             if (sections && (index == 0 || row.group != rows[index - 1].group)) {
-                                item(key = "group-${row.group.name}") {
+                                item(key = "group-${row.group.name}", contentType = SECTION_LABEL) {
                                     SectionLabel(
                                         stringResource(
                                             when (row.group) {
@@ -329,7 +329,7 @@ internal fun TopicPickerContent(
                                     )
                                 }
                             }
-                            item(key = row.root.slug) {
+                            item(key = row.root.slug, contentType = "root") {
                                 RootTopicCard(
                                     row = row,
                                     selection = selection,
@@ -783,6 +783,7 @@ private fun professionIcon(slug: String): ImageVector = when (slug) {
 }
 
 private const val SKELETON_CARDS = 5
+private const val SECTION_LABEL = "section"
 private const val STAGGERED_CARDS = 6
 
 private val previewTree = TopicTree(

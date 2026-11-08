@@ -514,8 +514,8 @@ internal fun FeedContent(
                 contentPadding = listPadding(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item(key = "header") { FeedHeader(displayName, userEmail, photo, fresh.size, onProfile, animateIn = staggered) }
-                item(key = "banners") {
+                item(key = "header", contentType = "header") { FeedHeader(displayName, userEmail, photo, fresh.size, onProfile, animateIn = staggered) }
+                item(key = "banners", contentType = "banners") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         StatusBanner(if (state.offline) stringResource(R.string.offline_banner) else null, Icons.Rounded.CloudOff, tone = BannerTone.Warning)
                         StatusBanner(state.error, Icons.Rounded.ErrorOutline, tone = BannerTone.Error, actionLabel = stringResource(R.string.dismiss), onAction = onDismissError)
@@ -525,15 +525,15 @@ internal fun FeedContent(
                     stickyHeader(key = "filters", contentType = FILTER_CHIP) { FeedFilters(state.filter, onFilter) }
                 }
                 when {
-                    state.items.isEmpty() && state.refreshing -> items(LIST_SKELETON_CARDS) { SkeletonStoryCard() }
-                    state.items.isEmpty() && !state.filter.isDefault -> item(key = "empty_filtered") {
+                    state.items.isEmpty() && state.refreshing -> items(LIST_SKELETON_CARDS, key = { "skeleton-$it" }, contentType = { SKELETON_CONTENT }) { SkeletonStoryCard() }
+                    state.items.isEmpty() && !state.filter.isDefault -> item(key = "empty_filtered", contentType = "empty") {
                         EmptyState(
                             title = stringResource(R.string.filter_no_match_title),
                             message = stringResource(R.string.filter_no_match_body),
                             action = { SecondaryButton(stringResource(R.string.filter_clear), { onFilter(TimelineFilter()) }) },
                         )
                     }
-                    state.items.isEmpty() -> item(key = "empty") {
+                    state.items.isEmpty() -> item(key = "empty", contentType = "empty") {
                         EmptyState(
                             title = stringResource(R.string.feed_empty_title),
                             message = stringResource(R.string.feed_empty_body),
@@ -544,7 +544,7 @@ internal fun FeedContent(
                         // The suggestion follows the first few new stories, or opens the earlier ones when nothing is new.
                         val suggestAfter = minOf(FOLLOW_CARD_AFTER, fresh.size) - 1
                         if (fresh.isNotEmpty()) {
-                            item(key = "new") { SectionHeader(stringResource(R.string.section_new), fresh.size, highlight = true, Modifier.animateItem()) }
+                            item(key = "new", contentType = SECTION_CONTENT) { SectionHeader(stringResource(R.string.section_new), fresh.size, highlight = true, Modifier.animateItem()) }
                             fresh.forEachIndexed { i, story ->
                                 item(key = story.id, contentType = STORY_CONTENT) { FeedCard(story, staggered, i, onOpen, onSetRead, onSetSaved, menu) }
                                 feedAd(ads, i)
@@ -552,7 +552,7 @@ internal fun FeedContent(
                             }
                         }
                         if (earlier.isNotEmpty()) {
-                            item(key = "earlier") { SectionHeader(stringResource(R.string.section_earlier), null, highlight = false, Modifier.animateItem()) }
+                            item(key = "earlier", contentType = SECTION_CONTENT) { SectionHeader(stringResource(R.string.section_earlier), null, highlight = false, Modifier.animateItem()) }
                             if (fresh.isEmpty()) followSuggestion(suggestion, onFollow, onDeclineSuggestion)
                             earlier.forEachIndexed { i, story ->
                                 item(key = story.id, contentType = STORY_CONTENT) {
@@ -561,7 +561,7 @@ internal fun FeedContent(
                                 feedAd(ads, fresh.size + i)
                             }
                         }
-                        if (state.loadingMore) item(key = "more") { SkeletonStoryCard() }
+                        if (state.loadingMore) item(key = "more", contentType = SKELETON_CONTENT) { SkeletonStoryCard() }
                         if (state.reachedEnd) item(key = "end", contentType = END_CONTENT) { FeedEnd(Modifier.animateItem()) }
                     }
                 }
@@ -1117,7 +1117,9 @@ internal fun localizedPattern(skeleton: String): DateTimeFormatter =
 
 /** First word of the account's display name ("Ada Lovelace" → "Ada"), else a guess from the email. */
 internal fun greetingName(displayName: String?, email: String?): String? =
-    displayName?.trim()?.split(Regex("\\s+"))?.firstOrNull { it.isNotBlank() } ?: email?.let(::firstNameOf)
+    displayName?.trim()?.split(whitespace)?.firstOrNull { it.isNotBlank() } ?: email?.let(::firstNameOf)
+
+private val whitespace = Regex("\\s+")
 
 /** "jane.doe@x.dev" → "Jane". */
 internal fun firstNameOf(email: String): String? =
@@ -1217,7 +1219,9 @@ private const val WEEK_DAYS = 7
 private const val TITLE_LINES = 3
 private const val SUMMARY_LINES = 3
 private const val MAX_CARD_TOPICS = 2
-private const val STORY_CONTENT = "story"
+internal const val STORY_CONTENT = "story"
+internal const val SKELETON_CONTENT = "skeleton"
+private const val SECTION_CONTENT = "section"
 private const val END_CONTENT = "end"
 
 /** The back-to-top button shows once the list is scrolled past this item, and jumps to [BACK_TO_TOP_JUMP_ITEMS] before animating. */

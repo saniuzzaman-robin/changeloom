@@ -403,7 +403,7 @@ internal fun ProfileContent(
             )
             Spacer(Modifier.height(8.dp))
             LazyColumn(Modifier.heightIn(max = 264.dp)) {
-                items(shown, key = { it.first }) { (code, name) ->
+                items(shown, key = { it.first }, contentType = { "country" }) { (code, name) ->
                     val selected = code == state.country
                     Row(
                         Modifier

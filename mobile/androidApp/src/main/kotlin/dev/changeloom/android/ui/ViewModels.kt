@@ -1,6 +1,7 @@
 package dev.changeloom.android.ui
 
 import android.graphics.Bitmap
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -46,6 +47,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -171,6 +173,7 @@ class TopicCatalog(private val api: ChangeloomApi) {
 /** The picker's two steps: pick professions, then topics (the professions' areas come first). */
 enum class PickerStep { Professions, Topics }
 
+@Immutable
 data class TopicPickerState(
     val loading: Boolean = true,
     val saving: Boolean = false,
@@ -357,6 +360,7 @@ class TopicPickerViewModel(
 }
 
 /** The last "Not interested" or "Less about" on the feed, which a snackbar offers to undo. */
+@Immutable
 sealed interface FeedUndo {
     data class Dismissed(val story: StorySummary) : FeedUndo
 
@@ -474,6 +478,11 @@ class StoryDetailViewModel(
 ) : ViewModel() {
     private val _state = MutableStateFlow(StoryDetailState())
     val state: StateFlow<StoryDetailState> = _state.asStateFlow()
+
+    /** This story's card in the timeline, or null when it isn't there; nothing else in the timeline reaches the screen. */
+    val cached: StateFlow<StorySummary?> = repo.state
+        .map { timeline -> timeline.items.firstOrNull { it.id == id } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(), repo.state.value.items.firstOrNull { it.id == id })
 
     init {
         load()
