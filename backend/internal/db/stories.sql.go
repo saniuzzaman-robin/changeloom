@@ -48,6 +48,27 @@ func (q *Queries) AddBookmarks(ctx context.Context, arg AddBookmarksParams) erro
 	return err
 }
 
+const boostStory = `-- name: BoostStory :one
+WITH story AS (SELECT id FROM stories WHERE id = $1), ins AS (
+    INSERT INTO user_story_boosts (user_id, story_id)
+    SELECT $2, story.id FROM story
+    ON CONFLICT (user_id, story_id) DO NOTHING
+)
+SELECT EXISTS (SELECT 1 FROM story)
+`
+
+type BoostStoryParams struct {
+	StoryID int64
+	UserID  int64
+}
+
+func (q *Queries) BoostStory(ctx context.Context, arg BoostStoryParams) (bool, error) {
+	row := q.db.QueryRow(ctx, boostStory, arg.StoryID, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const dismissStory = `-- name: DismissStory :one
 WITH story AS (SELECT id FROM stories WHERE id = $1), ins AS (
     INSERT INTO user_story_dismissals (user_id, story_id)
@@ -71,6 +92,8 @@ func (q *Queries) DismissStory(ctx context.Context, arg DismissStoryParams) (boo
 
 const getStory = `-- name: GetStory :one
 SELECT s.id, s.title, s.summary, s.body_md, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
+    s.key_points, s.action_required,
+    coalesce(s.dedupe_keys ->> 'version', '')::text AS version,
     (ub.story_id IS NOT NULL)::boolean AS is_bookmarked,
     ARRAY(
         SELECT tp.slug FROM story_topics stp JOIN topics tp ON tp.id = stp.topic_id
@@ -93,19 +116,22 @@ type GetStoryParams struct {
 }
 
 type GetStoryRow struct {
-	ID           int64
-	Title        string
-	Summary      string
-	BodyMd       string
-	Kind         string
-	Severity     *string
-	Importance   int16
-	PublishedAt  time.Time
-	ReadAt       *time.Time
-	IsBookmarked bool
-	Topics       []string
-	SourceUrls   []string
-	SourceNames  []string
+	ID             int64
+	Title          string
+	Summary        string
+	BodyMd         string
+	Kind           string
+	Severity       *string
+	Importance     int16
+	PublishedAt    time.Time
+	ReadAt         *time.Time
+	KeyPoints      []string
+	ActionRequired bool
+	Version        string
+	IsBookmarked   bool
+	Topics         []string
+	SourceUrls     []string
+	SourceNames    []string
 }
 
 func (q *Queries) GetStory(ctx context.Context, arg GetStoryParams) (GetStoryRow, error) {
@@ -121,6 +147,9 @@ func (q *Queries) GetStory(ctx context.Context, arg GetStoryParams) (GetStoryRow
 		&i.Importance,
 		&i.PublishedAt,
 		&i.ReadAt,
+		&i.KeyPoints,
+		&i.ActionRequired,
+		&i.Version,
 		&i.IsBookmarked,
 		&i.Topics,
 		&i.SourceUrls,
@@ -129,8 +158,132 @@ func (q *Queries) GetStory(ctx context.Context, arg GetStoryParams) (GetStoryRow
 	return i, err
 }
 
+const getStoryThread = `-- name: GetStoryThread :many
+WITH RECURSIVE muted AS (
+    SELECT um.topic_id AS id FROM user_topic_mutes um WHERE um.user_id = $1
+    UNION
+    SELECT t.id FROM topics t JOIN muted m ON t.parent_id = m.id
+    WHERE NOT EXISTS (SELECT 1 FROM user_topics ut WHERE ut.user_id = $1 AND ut.topic_id = t.id)
+), muted_ids AS (
+    SELECT ARRAY(SELECT m.id FROM muted m) AS ids
+), needles AS (
+    SELECT ARRAY(
+        SELECT jsonb_build_object('project', a.dedupe_keys ->> 'project')
+        WHERE coalesce(a.dedupe_keys ->> 'project', '') <> ''
+        UNION ALL
+        SELECT jsonb_build_object('cve_ids', jsonb_build_array(c.id))
+        FROM jsonb_array_elements_text(
+            CASE WHEN jsonb_typeof(a.dedupe_keys -> 'cve_ids') = 'array' THEN a.dedupe_keys -> 'cve_ids' ELSE '[]' END
+        ) AS c (id)
+        WHERE c.id <> ''
+    ) AS keys
+    FROM stories a WHERE a.id = $2
+), thread AS MATERIALIZED (
+    SELECT c.id, c.published_at FROM stories c
+    WHERE c.dedupe_keys @> ANY((SELECT n.keys FROM needles n)::jsonb[])
+        AND c.id <> $2
+        AND c.published_at >= $3
+        AND NOT EXISTS (
+            SELECT 1 FROM user_story_dismissals usd WHERE usd.user_id = $1 AND usd.story_id = c.id
+        )
+        -- A per-story subplan: an EXISTS here becomes a semi join that hashes every story_topics row.
+        AND NOT ARRAY(SELECT st.topic_id FROM story_topics st WHERE st.story_id = c.id)
+            <@ (SELECT mi.ids FROM muted_ids mi)::bigint[]
+        AND (
+            c.kind <> 'deal' OR cardinality(c.countries) = 0
+            OR (SELECT u.country FROM users u WHERE u.id = $1) = ANY(c.countries)
+        )
+), page AS (
+    SELECT th.id FROM thread th ORDER BY th.published_at DESC, th.id DESC LIMIT $4
+)
+SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
+    s.key_points, s.action_required,
+    coalesce(s.dedupe_keys ->> 'version', '')::text AS version,
+    (ub.story_id IS NOT NULL)::boolean AS is_bookmarked,
+    ARRAY(
+        SELECT tp.slug FROM story_topics stp JOIN topics tp ON tp.id = stp.topic_id
+        WHERE stp.story_id = s.id ORDER BY tp.slug
+    )::text[] AS topics
+FROM page p
+JOIN stories s ON s.id = p.id
+LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = $1
+LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = $1
+ORDER BY s.published_at DESC, s.id DESC
+`
+
+type GetStoryThreadParams struct {
+	UserID   int64
+	ID       int64
+	Since    time.Time
+	PageSize int32
+}
+
+type GetStoryThreadRow struct {
+	ID             int64
+	Title          string
+	Summary        string
+	Kind           string
+	Severity       *string
+	Importance     int16
+	PublishedAt    time.Time
+	ReadAt         *time.Time
+	KeyPoints      []string
+	ActionRequired bool
+	Version        string
+	IsBookmarked   bool
+	Topics         []string
+}
+
+// Other stories about the same project (dedupe_keys.project) or sharing a CVE id with story id,
+// published since since, newest first: the project's changelog. Left out are stories the user
+// dismissed, stories whose every topic the user muted (muted as in ListTimeline: a mute stops at a
+// followed descendant), and deals outside the user's country. The planner overestimates `@>`
+// matches ~100x, so with the filters, ORDER BY and LIMIT on stories it walks
+// stories_published_at_idx over the whole window. Instead the materialized thread CTE reads only
+// stories_dedupe_keys_idx matches (needles go in as an array) and filters them per story; only the
+// page joins the rest.
+func (q *Queries) GetStoryThread(ctx context.Context, arg GetStoryThreadParams) ([]GetStoryThreadRow, error) {
+	rows, err := q.db.Query(ctx, getStoryThread,
+		arg.UserID,
+		arg.ID,
+		arg.Since,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetStoryThreadRow{}
+	for rows.Next() {
+		var i GetStoryThreadRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Summary,
+			&i.Kind,
+			&i.Severity,
+			&i.Importance,
+			&i.PublishedAt,
+			&i.ReadAt,
+			&i.KeyPoints,
+			&i.ActionRequired,
+			&i.Version,
+			&i.IsBookmarked,
+			&i.Topics,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBookmarks = `-- name: ListBookmarks :many
 SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
+    s.key_points, s.action_required,
     ub.created_at AS bookmarked_at,
     ARRAY(
         SELECT tp.slug FROM story_topics stp JOIN topics tp ON tp.id = stp.topic_id
@@ -156,16 +309,18 @@ type ListBookmarksParams struct {
 }
 
 type ListBookmarksRow struct {
-	ID           int64
-	Title        string
-	Summary      string
-	Kind         string
-	Severity     *string
-	Importance   int16
-	PublishedAt  time.Time
-	ReadAt       *time.Time
-	BookmarkedAt time.Time
-	Topics       []string
+	ID             int64
+	Title          string
+	Summary        string
+	Kind           string
+	Severity       *string
+	Importance     int16
+	PublishedAt    time.Time
+	ReadAt         *time.Time
+	KeyPoints      []string
+	ActionRequired bool
+	BookmarkedAt   time.Time
+	Topics         []string
 }
 
 // The user's bookmarked stories, most recently bookmarked first. Keyset pagination on
@@ -193,6 +348,8 @@ func (q *Queries) ListBookmarks(ctx context.Context, arg ListBookmarksParams) ([
 			&i.Importance,
 			&i.PublishedAt,
 			&i.ReadAt,
+			&i.KeyPoints,
+			&i.ActionRequired,
 			&i.BookmarkedAt,
 			&i.Topics,
 		); err != nil {
@@ -217,70 +374,138 @@ WITH RECURSIVE followed AS (
     UNION
     SELECT t.id FROM topics t JOIN muted m ON t.parent_id = m.id
     WHERE NOT EXISTS (SELECT 1 FROM user_topics ut WHERE ut.user_id = $1 AND ut.topic_id = t.id)
+), in_tier AS (
+    SELECT ARRAY(SELECT f.id FROM followed f EXCEPT SELECT m.id FROM muted m) AS ids
+), history AS (
+    SELECT sv.story_id FROM story_views sv
+    WHERE sv.user_id = $1 AND sv.seen_at >= $2 AND sv.seen_at < $3::timestamptz
+    UNION
+    SELECT h.story_id FROM user_story_state h
+    WHERE h.user_id = $1 AND h.read_at >= $2 AND h.read_at < $3::timestamptz
+    UNION
+    SELECT h.story_id FROM user_bookmarks h
+    WHERE h.user_id = $1 AND h.created_at >= $2 AND h.created_at < $3::timestamptz
+    UNION
+    SELECT h.story_id FROM user_story_dismissals h
+    WHERE h.user_id = $1 AND h.dismissed_at >= $2 AND h.dismissed_at < $3::timestamptz
+    UNION
+    SELECT h.story_id FROM user_story_boosts h
+    WHERE h.user_id = $1 AND h.created_at >= $2 AND h.created_at < $3::timestamptz
+), history_state AS (
+    SELECT h.story_id,
+        EXISTS (
+            SELECT 1 FROM user_story_dismissals d
+            WHERE d.user_id = $1 AND d.story_id = h.story_id AND d.dismissed_at < $3::timestamptz
+        ) AS dismissed,
+        EXISTS (
+            SELECT 1 FROM user_story_state x
+            WHERE x.user_id = $1 AND x.story_id = h.story_id AND x.read_at < $3::timestamptz
+        ) OR EXISTS (
+            SELECT 1 FROM user_bookmarks b
+            WHERE b.user_id = $1 AND b.story_id = h.story_id AND b.created_at < $3::timestamptz
+        ) AS kept,
+        EXISTS (
+            SELECT 1 FROM user_story_boosts x
+            WHERE x.user_id = $1 AND x.story_id = h.story_id AND x.created_at < $3::timestamptz
+        ) AS boosted
+    FROM history h
+), engagement AS (
+    SELECT hs.story_id,
+        CASE WHEN NOT hs.dismissed AND (hs.kept OR hs.boosted) THEN 1 ELSE 0 END AS engaged,
+        CASE WHEN hs.boosted AND NOT hs.dismissed THEN $4::float8 ELSE 1 END AS weight
+    FROM history_state hs
+), overall AS (
+    SELECT coalesce(sum(e.weight * e.engaged) / nullif(sum(e.weight), 0), 0)::float8 AS rate FROM engagement e
+), topic_bonus AS (
+    SELECT st.topic_id,
+        $5::float8 * (
+            (sum(e.weight * e.engaged) + $6::float8 * o.rate)
+                / (sum(e.weight) + $6::float8)
+            - o.rate
+        ) AS bonus
+    FROM engagement e
+    JOIN story_topics st ON st.story_id = e.story_id
+    CROSS JOIN overall o
+    WHERE st.topic_id = ANY((SELECT it.ids FROM in_tier it)::bigint[])
+    GROUP BY st.topic_id, o.rate
 ), story_tier AS (
-    SELECT DISTINCT st.story_id, 0 AS tier
+    SELECT st.story_id, 0 AS tier, avg(coalesce(tb.bonus, 0))::float8 AS affinity
     FROM story_topics st
-    WHERE st.topic_id = ANY(ARRAY(SELECT f.id FROM followed f EXCEPT SELECT m.id FROM muted m))
+    LEFT JOIN topic_bonus tb ON tb.topic_id = st.topic_id
+    WHERE st.topic_id = ANY((SELECT it.ids FROM in_tier it)::bigint[])
+    GROUP BY st.story_id
 ), ranked AS (
     SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
+        s.key_points, s.action_required,
         (uss.read_at IS NOT NULL) AS is_read,
         (ub.story_id IS NOT NULL) AS is_bookmarked,
-        stt.tier
+        s.id IN (
+            SELECT sv.story_id FROM story_views sv
+            WHERE sv.user_id = $1 AND sv.seen_at < $3::timestamptz
+        ) AS is_seen,
+        stt.tier, stt.affinity
     FROM stories s
     JOIN story_tier stt ON stt.story_id = s.id
     LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = $1
     LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = $1
     LEFT JOIN user_story_dismissals usd ON usd.story_id = s.id AND usd.user_id = $1
-    WHERE s.published_at >= $2
+    WHERE s.published_at >= $7
     AND usd.story_id IS NULL
     AND (
         s.kind <> 'deal' OR cardinality(s.countries) = 0
         OR (SELECT u.country FROM users u WHERE u.id = $1) = ANY(s.countries)
     )
-    AND (cardinality($3::text[]) = 0 OR s.kind = ANY($3::text[]))
-    AND ($4::boolean IS NULL OR (uss.read_at IS NOT NULL) = $4::boolean)
+    AND (cardinality($8::text[]) = 0 OR s.kind = ANY($8::text[]))
+    AND ($9::boolean IS NULL OR (uss.read_at IS NOT NULL) = $9::boolean)
+    AND ($10::boolean IS NULL OR s.action_required = $10::boolean)
 ), scored AS (
     -- sqlc.arg, not @name: sqlc fails to resolve the ranked alias in arithmetic with @name params.
-    SELECT r.id, r.title, r.summary, r.kind, r.severity, r.importance, r.published_at, r.read_at, r.is_read, r.is_bookmarked, r.tier,
+    SELECT r.id, r.title, r.summary, r.kind, r.severity, r.importance, r.published_at, r.read_at, r.key_points, r.action_required, r.is_read, r.is_bookmarked, r.is_seen, r.tier, r.affinity,
         CASE WHEN r.is_read THEN 0 ELSE
-            $5::float8 * r.importance
-            - $6::float8 * CASE r.tier WHEN 0 THEN 0 ELSE r.tier - 1 END
-            + $7::float8
+            $11::float8 * r.importance
+            - $12::float8 * CASE r.tier WHEN 0 THEN 0 ELSE r.tier - 1 END
+            + r.affinity
+            + $13::float8
                 * CASE r.severity WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'medium' THEN 1 ELSE 0 END
-            - extract(epoch FROM greatest($8::timestamptz - r.published_at, interval '0'))
-                / 3600 / $9::float8
-            - CASE WHEN r.tier = 0 OR r.is_bookmarked THEN 0
+            + CASE WHEN r.action_required THEN $14::float8 ELSE 0 END
+            - extract(epoch FROM greatest($3::timestamptz - r.published_at, interval '0'))
+                / 3600 / $15::float8
+            - CASE WHEN r.is_bookmarked THEN 0
                 WHEN r.id IN (
                     SELECT sv.story_id FROM story_views sv
-                    WHERE sv.user_id = $1 AND sv.seen_at < $10::timestamptz
-                ) THEN $11::float8
+                    WHERE sv.user_id = $1 AND sv.seen_at < $16::timestamptz
+                ) THEN $17::float8
                 ELSE 0 END
         END::float8 AS score,
-        (NOT r.is_read AND r.tier = 0) AS is_followed
+        (NOT r.is_read AND r.tier = 0) AS is_followed,
+        count(*) FILTER (WHERE NOT r.is_read AND NOT r.is_seen) OVER () AS unseen_count
     FROM ranked r
 ), page AS (
-    SELECT sc.id, sc.title, sc.summary, sc.kind, sc.severity, sc.importance, sc.published_at, sc.read_at, sc.is_read, sc.is_bookmarked, sc.tier, sc.score, sc.is_followed FROM scored sc
-    WHERE $12::bigint IS NULL
-        OR sc.is_read > $13::boolean
+    SELECT sc.id, sc.title, sc.summary, sc.kind, sc.severity, sc.importance, sc.published_at, sc.read_at, sc.key_points, sc.action_required, sc.is_read, sc.is_bookmarked, sc.is_seen, sc.tier, sc.affinity, sc.score, sc.is_followed, sc.unseen_count FROM scored sc
+    WHERE $18::bigint IS NULL
+        OR sc.is_read > $19::boolean
         OR (
-            sc.is_read = $13::boolean
+            sc.is_read = $19::boolean
             AND (
-                sc.is_followed < $14::boolean
+                sc.is_followed < $20::boolean
                 OR (
-                    sc.is_followed = $14::boolean
+                    sc.is_followed = $20::boolean
                     AND (sc.score, sc.published_at, sc.id) < (
-                        $15::float8, $16::timestamptz, $12::bigint
+                        $21::float8, $22::timestamptz, $18::bigint
                     )
                 )
             )
         )
     ORDER BY sc.is_read ASC, sc.is_followed DESC, sc.score DESC, sc.published_at DESC, sc.id DESC
-    LIMIT $17
+    LIMIT $23
 )
 SELECT p.id, p.title, p.summary, p.kind, p.severity, p.importance, p.published_at, p.read_at,
+    p.key_points, p.action_required,
     p.is_bookmarked::boolean AS is_bookmarked,
     p.tier::integer AS tier,
     p.score::float8 AS score,
+    p.is_seen::boolean AS seen,
+    p.unseen_count::bigint AS unseen_count,
     ARRAY(
         SELECT tp.slug FROM story_topics stp JOIN topics tp ON tp.id = stp.topic_id
         WHERE stp.story_id = p.id ORDER BY tp.slug
@@ -291,13 +516,19 @@ ORDER BY p.is_read ASC, p.is_followed DESC, p.score DESC, p.published_at DESC, p
 
 type ListTimelineParams struct {
 	UserID            int64
+	AffinitySince     time.Time
+	AsOf              time.Time
+	BoostEngagements  float64
+	AffinityWeight    float64
+	AffinityPrior     float64
 	Since             time.Time
 	Kinds             []string
 	ReadFilter        *bool
+	ActionFilter      *bool
 	ImportanceWeight  float64
 	TierWeight        float64
 	SeverityWeight    float64
-	AsOf              time.Time
+	ActionWeight      float64
 	DecayHours        float64
 	SeenBefore        time.Time
 	SeenPenalty       float64
@@ -310,33 +541,47 @@ type ListTimelineParams struct {
 }
 
 type ListTimelineRow struct {
-	ID           int64
-	Title        string
-	Summary      string
-	Kind         string
-	Severity     *string
-	Importance   int16
-	PublishedAt  time.Time
-	ReadAt       *time.Time
-	IsBookmarked bool
-	Tier         int32
-	Score        float64
-	Topics       []string
+	ID             int64
+	Title          string
+	Summary        string
+	Kind           string
+	Severity       *string
+	Importance     int16
+	PublishedAt    time.Time
+	ReadAt         *time.Time
+	KeyPoints      []string
+	ActionRequired bool
+	IsBookmarked   bool
+	Tier           int32
+	Score          float64
+	Seen           bool
+	UnseenCount    int64
+	Topics         []string
 }
 
 // Stories in the window (deals only for the user's country, or global ones) that match the user's
 // followed topics, and nothing else: tier 0 is tagged with a followed topic (or a descendant of one);
 // professions only suggest topics at onboarding and add no stories. Unread first, by score: tier,
-// importance and severity points minus one point per decay_hours of age at as_of, minus seen_penalty
-// for a story first seen before seen_before and not saved (never for a followed topic). Read stories
-// (score 0) follow, newest first. Every input is fixed for a given as_of, so later views or new stories
-// don't move rows across a page boundary.
+// importance and severity points, action_weight for an action-required story, plus the topic
+// affinity bonus, minus one point per decay_hours of age at as_of, minus seen_penalty for a story
+// first seen before seen_before and not saved. Read
+// stories (score 0) follow, newest first. Every input is fixed for a given as_of, so later views or
+// new stories don't move rows across a page boundary.
+// Affinity: the user's history is every story they saw, read, saved, boosted or dismissed from
+// affinity_since to as_of; a story counts as engaged when it was read, saved or boosted and not
+// dismissed, and a boosted one ("More like this") weighs as boost_engagements engaged stories. A
+// topic's rate is its weighted engaged share, smoothed toward the user's overall rate by affinity_prior pseudo-stories, and
+// its bonus is affinity_weight times its rate minus the overall rate, so a topic without history,
+// or a user without any, adds nothing. A story takes the mean bonus of its in-tier topics.
 // Feedback: dismissed stories are left out. A muted topic covers its descendants down to (not
 // including) a followed one, and following likewise stops at a muted descendant, so the most
 // specific choice wins. Muted topics give no tier, so a story needs a followed topic that isn't muted.
-// Optional filters: kinds (empty means all) and read_filter (NULL both, true read only, false unread only).
+// Optional filters: kinds (empty means all), read_filter (NULL both, true read only, false unread only)
+// and action_filter (NULL both, true action-required only, false the others).
 // Unread stories of a followed topic (tier 0) come before every other unread story, whatever their score.
 // Keyset pagination on (is_read, is_followed, score, published_at, id).
+// seen: the story was on screen (story_views) before as_of; unseen_count counts the unread, unseen
+// stories of the whole filtered set, not only the page, so the first page can say how many are new.
 // Tiers come from one pass over the in-tier topics' story_topics rows instead of per-story
 // subqueries, and topic slugs are built only for the page: per-row subplans over the whole window
 // inflated the plan cost past jit_above_cost, and JIT compilation took ~90% of the query time.
@@ -346,13 +591,19 @@ type ListTimelineRow struct {
 func (q *Queries) ListTimeline(ctx context.Context, arg ListTimelineParams) ([]ListTimelineRow, error) {
 	rows, err := q.db.Query(ctx, listTimeline,
 		arg.UserID,
+		arg.AffinitySince,
+		arg.AsOf,
+		arg.BoostEngagements,
+		arg.AffinityWeight,
+		arg.AffinityPrior,
 		arg.Since,
 		arg.Kinds,
 		arg.ReadFilter,
+		arg.ActionFilter,
 		arg.ImportanceWeight,
 		arg.TierWeight,
 		arg.SeverityWeight,
-		arg.AsOf,
+		arg.ActionWeight,
 		arg.DecayHours,
 		arg.SeenBefore,
 		arg.SeenPenalty,
@@ -379,9 +630,13 @@ func (q *Queries) ListTimeline(ctx context.Context, arg ListTimelineParams) ([]L
 			&i.Importance,
 			&i.PublishedAt,
 			&i.ReadAt,
+			&i.KeyPoints,
+			&i.ActionRequired,
 			&i.IsBookmarked,
 			&i.Tier,
 			&i.Score,
+			&i.Seen,
+			&i.UnseenCount,
 			&i.Topics,
 		); err != nil {
 			return nil, err
@@ -485,6 +740,7 @@ func (q *Queries) RemoveBookmarks(ctx context.Context, arg RemoveBookmarksParams
 
 const searchStories = `-- name: SearchStories :many
 SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
+    s.key_points, s.action_required,
     (ub.story_id IS NOT NULL)::boolean AS is_bookmarked,
     ARRAY(
         SELECT tp.slug FROM story_topics stp JOIN topics tp ON tp.id = stp.topic_id
@@ -518,16 +774,18 @@ type SearchStoriesParams struct {
 }
 
 type SearchStoriesRow struct {
-	ID           int64
-	Title        string
-	Summary      string
-	Kind         string
-	Severity     *string
-	Importance   int16
-	PublishedAt  time.Time
-	ReadAt       *time.Time
-	IsBookmarked bool
-	Topics       []string
+	ID             int64
+	Title          string
+	Summary        string
+	Kind           string
+	Severity       *string
+	Importance     int16
+	PublishedAt    time.Time
+	ReadAt         *time.Time
+	KeyPoints      []string
+	ActionRequired bool
+	IsBookmarked   bool
+	Topics         []string
 }
 
 // Full-text search over all stories visible to the user, newest first; titles also match fuzzily (typos) by trigram
@@ -557,6 +815,8 @@ func (q *Queries) SearchStories(ctx context.Context, arg SearchStoriesParams) ([
 			&i.Importance,
 			&i.PublishedAt,
 			&i.ReadAt,
+			&i.KeyPoints,
+			&i.ActionRequired,
 			&i.IsBookmarked,
 			&i.Topics,
 		); err != nil {
@@ -579,6 +839,23 @@ SELECT set_config('pg_trgm.word_similarity_threshold', '0.4', true)
 func (q *Queries) SetSearchSimilarityThreshold(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, setSearchSimilarityThreshold)
 	return err
+}
+
+const unboostStory = `-- name: UnboostStory :one
+WITH del AS (DELETE FROM user_story_boosts WHERE user_id = $2 AND story_id = $1)
+SELECT EXISTS (SELECT 1 FROM stories WHERE id = $1)
+`
+
+type UnboostStoryParams struct {
+	StoryID int64
+	UserID  int64
+}
+
+func (q *Queries) UnboostStory(ctx context.Context, arg UnboostStoryParams) (bool, error) {
+	row := q.db.QueryRow(ctx, unboostStory, arg.StoryID, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const undismissStory = `-- name: UndismissStory :one

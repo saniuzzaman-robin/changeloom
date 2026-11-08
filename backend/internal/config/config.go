@@ -22,6 +22,12 @@ const (
 	EnvProd    Env = "prod"
 )
 
+// maxStoryThreadLimit bounds STORY_THREAD_LIMIT, so one story request can't read an unbounded thread.
+const maxStoryThreadLimit = 50
+
+// maxTopicSuggestionLimit bounds TOPIC_SUGGESTION_LIMIT.
+const maxTopicSuggestionLimit = 20
+
 // Config holds the api settings.
 type Config struct {
 	Env Env
@@ -35,6 +41,14 @@ type Config struct {
 	TimelineScore TimelineScore
 	// TimelineMix spreads topics within each timeline page.
 	TimelineMix TimelineMix
+	// StoryThreadWindow is how far back GET /v1/stories/{id} looks for the story's thread (STORY_THREAD_DAYS).
+	StoryThreadWindow time.Duration
+	// StoryThreadLimit caps the stories in a thread (STORY_THREAD_LIMIT).
+	StoryThreadLimit int
+	// TopicSuggestionWindow is how recent a story must be for its topic to be suggested
+	// (TOPIC_SUGGESTION_DAYS); TopicSuggestionLimit caps the suggestions (TOPIC_SUGGESTION_LIMIT).
+	TopicSuggestionWindow time.Duration
+	TopicSuggestionLimit  int
 	// FirebaseProjectID is the Firebase project whose ID tokens the api accepts (required unless ENV=dev).
 	FirebaseProjectID string
 	// PushEnabled turns on FCM push notifications (FCM_ENABLED). It needs
@@ -75,9 +89,9 @@ type Config struct {
 	ServiceName string
 }
 
-// TimelineScore is the unread timeline ranking: tier, importance and severity points, minus one
-// point per AgeDecay of age and SeenPenalty for a story seen longer than SeenGrace ago but never
-// opened or saved.
+// TimelineScore is the unread timeline ranking: tier, importance, severity and action-required
+// points plus the topic affinity bonus, minus one point per AgeDecay of age and SeenPenalty for a story seen longer
+// than SeenGrace ago but never opened or saved.
 type TimelineScore struct {
 	// TierWeight is the points between adjacent tiers (TIMELINE_TIER_WEIGHT).
 	TierWeight float64
@@ -91,6 +105,20 @@ type TimelineScore struct {
 	SeenPenalty float64
 	// SeenGrace is how long after it was first seen the penalty starts (TIMELINE_SEEN_GRACE_HOURS).
 	SeenGrace time.Duration
+	// AffinityWeight is the points a topic gains per unit its engaged share of the user's stories
+	// exceeds the user's overall share, or loses when below it (TIMELINE_AFFINITY_WEIGHT).
+	AffinityWeight float64
+	// AffinityWindow is how far back the user's history counts for affinity (TIMELINE_AFFINITY_DAYS).
+	AffinityWindow time.Duration
+	// AffinityPrior is the pseudo-stories at the user's overall share that every topic's share
+	// starts from, so a few stories move it little (TIMELINE_AFFINITY_PRIOR).
+	AffinityPrior float64
+	// BoostEngagements is how many engaged stories a "More like this" story counts as in its
+	// topics' affinity (TIMELINE_BOOST_ENGAGEMENTS).
+	BoostEngagements float64
+	// ActionWeight is the points for a story whose readers must upgrade, migrate or patch
+	// (TIMELINE_ACTION_WEIGHT).
+	ActionWeight float64
 }
 
 // TimelineMix is the re-order of each timeline page that keeps one topic from filling it.
@@ -132,9 +160,24 @@ func Load() (Config, error) {
 		AgeDecay:         time.Duration(envInt(&errs, "TIMELINE_DECAY_HOURS", 24)) * time.Hour,
 		SeenPenalty:      envWeight(&errs, "TIMELINE_SEEN_PENALTY", 3),
 		SeenGrace:        time.Duration(envInt(&errs, "TIMELINE_SEEN_GRACE_HOURS", 12)) * time.Hour,
+		AffinityWeight:   envWeight(&errs, "TIMELINE_AFFINITY_WEIGHT", 1.5),
+		AffinityWindow:   time.Duration(envInt(&errs, "TIMELINE_AFFINITY_DAYS", 30)) * 24 * time.Hour,
+		AffinityPrior:    envWeight(&errs, "TIMELINE_AFFINITY_PRIOR", 4),
+		BoostEngagements: envWeight(&errs, "TIMELINE_BOOST_ENGAGEMENTS", 3),
+		ActionWeight:     envWeight(&errs, "TIMELINE_ACTION_WEIGHT", 1),
 	}
 	mix := TimelineMix{
 		MaxTopicRun: envInt(&errs, "TIMELINE_MAX_TOPIC_RUN", 2),
+	}
+	threadWindow := time.Duration(envInt(&errs, "STORY_THREAD_DAYS", 180)) * 24 * time.Hour
+	threadLimit := envInt(&errs, "STORY_THREAD_LIMIT", 6)
+	if threadLimit > maxStoryThreadLimit {
+		errs = append(errs, fmt.Errorf("STORY_THREAD_LIMIT must be at most %d, got %d", maxStoryThreadLimit, threadLimit))
+	}
+	suggestionWindow := time.Duration(envInt(&errs, "TOPIC_SUGGESTION_DAYS", 7)) * 24 * time.Hour
+	suggestionLimit := envInt(&errs, "TOPIC_SUGGESTION_LIMIT", 5)
+	if suggestionLimit > maxTopicSuggestionLimit {
+		errs = append(errs, fmt.Errorf("TOPIC_SUGGESTION_LIMIT must be at most %d, got %d", maxTopicSuggestionLimit, suggestionLimit))
 	}
 
 	httpAddr := getenv("HTTP_ADDR", ":8080")
@@ -191,6 +234,12 @@ func Load() (Config, error) {
 		TimelineWindow: time.Duration(windowDays) * 24 * time.Hour,
 		TimelineScore:  score,
 		TimelineMix:    mix,
+
+		StoryThreadWindow: threadWindow,
+		StoryThreadLimit:  threadLimit,
+
+		TopicSuggestionWindow: suggestionWindow,
+		TopicSuggestionLimit:  suggestionLimit,
 
 		FirebaseProjectID: firebaseProjectID,
 		PushEnabled:       pushEnabled,

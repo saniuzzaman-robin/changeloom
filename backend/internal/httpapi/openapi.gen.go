@@ -137,6 +137,36 @@ func (e StorySummaryMatch) Valid() bool {
 	}
 }
 
+// Defines values for StoryThreadItemMatch.
+const (
+	StoryThreadItemMatchAffinity   StoryThreadItemMatch = "affinity"
+	StoryThreadItemMatchExplore    StoryThreadItemMatch = "explore"
+	StoryThreadItemMatchFollowed   StoryThreadItemMatch = "followed"
+	StoryThreadItemMatchHeadline   StoryThreadItemMatch = "headline"
+	StoryThreadItemMatchProfession StoryThreadItemMatch = "profession"
+	StoryThreadItemMatchRelated    StoryThreadItemMatch = "related"
+)
+
+// Valid indicates whether the value is a known member of the StoryThreadItemMatch enum.
+func (e StoryThreadItemMatch) Valid() bool {
+	switch e {
+	case StoryThreadItemMatchAffinity:
+		return true
+	case StoryThreadItemMatchExplore:
+		return true
+	case StoryThreadItemMatchFollowed:
+		return true
+	case StoryThreadItemMatchHeadline:
+		return true
+	case StoryThreadItemMatchProfession:
+		return true
+	case StoryThreadItemMatchRelated:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TopicRequestStatus.
 const (
 	Accepted TopicRequestStatus = "accepted"
@@ -259,23 +289,38 @@ type Severity string
 
 // Story defines model for Story.
 type Story struct {
+	// ActionRequired Readers must upgrade, migrate or patch something because of this story.
+	ActionRequired *bool `json:"action_required,omitempty"`
+
 	// BodyMd Markdown body.
-	BodyMd       string    `json:"body_md"`
-	Id           int64     `json:"id"`
-	Importance   int       `json:"importance"`
-	IsBookmarked bool      `json:"is_bookmarked"`
-	IsRead       bool      `json:"is_read"`
-	Kind         StoryKind `json:"kind"`
+	BodyMd       string `json:"body_md"`
+	Id           int64  `json:"id"`
+	Importance   int    `json:"importance"`
+	IsBookmarked bool   `json:"is_bookmarked"`
+	IsRead       bool   `json:"is_read"`
+
+	// KeyPoints Up to 3 short takeaways that add to the summary; empty when the story has none.
+	KeyPoints *[]string `json:"key_points,omitempty"`
+	Kind      StoryKind `json:"kind"`
 
 	// Match Timeline only: whether the story is in a followed topic, a topic of a story the user recently opened or saved, an area of one of the user's professions, a topic related to a followed one, an important story in a headline topic, or none of these (only important stories, unless the user has no interests). Clients must tolerate values added later.
-	Match       *StoryMatch   `json:"match,omitempty"`
-	PublishedAt time.Time     `json:"published_at"`
-	ReadAt      *time.Time    `json:"read_at,omitempty"`
-	Severity    *Severity     `json:"severity,omitempty"`
-	Sources     []StorySource `json:"sources"`
-	Summary     string        `json:"summary"`
-	Title       string        `json:"title"`
-	Topics      []string      `json:"topics"`
+	Match       *StoryMatch `json:"match,omitempty"`
+	PublishedAt time.Time   `json:"published_at"`
+	ReadAt      *time.Time  `json:"read_at,omitempty"`
+
+	// Seen Timeline only: the story was on screen (POST /v1/stories/views) before the page's time, on any device. False marks a story that is new to the user.
+	Seen     *bool         `json:"seen,omitempty"`
+	Severity *Severity     `json:"severity,omitempty"`
+	Sources  []StorySource `json:"sources"`
+	Summary  string        `json:"summary"`
+
+	// Thread The newest other stories (6 by default) of the last 180 days about the same project or sharing a CVE id, without the user's dismissed stories or ones only in muted topics; empty when there are none.
+	Thread *[]StoryThreadItem `json:"thread,omitempty"`
+	Title  string             `json:"title"`
+	Topics []string           `json:"topics"`
+
+	// Version The release this story is about (e.g. "1.25.0", no "v"); absent when it has none.
+	Version *string `json:"version,omitempty"`
 }
 
 // StoryMatch Timeline only: whether the story is in a followed topic, a topic of a story the user recently opened or saved, an area of one of the user's professions, a topic related to a followed one, an important story in a headline topic, or none of these (only important stories, unless the user has no interests). Clients must tolerate values added later.
@@ -292,24 +337,64 @@ type StorySource struct {
 
 // StorySummary defines model for StorySummary.
 type StorySummary struct {
-	Id           int64     `json:"id"`
-	Importance   int       `json:"importance"`
-	IsBookmarked bool      `json:"is_bookmarked"`
-	IsRead       bool      `json:"is_read"`
-	Kind         StoryKind `json:"kind"`
+	// ActionRequired Readers must upgrade, migrate or patch something because of this story.
+	ActionRequired *bool `json:"action_required,omitempty"`
+	Id             int64 `json:"id"`
+	Importance     int   `json:"importance"`
+	IsBookmarked   bool  `json:"is_bookmarked"`
+	IsRead         bool  `json:"is_read"`
+
+	// KeyPoints Up to 3 short takeaways that add to the summary; empty when the story has none.
+	KeyPoints *[]string `json:"key_points,omitempty"`
+	Kind      StoryKind `json:"kind"`
 
 	// Match Timeline only: whether the story is in a followed topic, a topic of a story the user recently opened or saved, an area of one of the user's professions, a topic related to a followed one, an important story in a headline topic, or none of these (only important stories, unless the user has no interests). Clients must tolerate values added later.
 	Match       *StorySummaryMatch `json:"match,omitempty"`
 	PublishedAt time.Time          `json:"published_at"`
 	ReadAt      *time.Time         `json:"read_at,omitempty"`
-	Severity    *Severity          `json:"severity,omitempty"`
-	Summary     string             `json:"summary"`
-	Title       string             `json:"title"`
-	Topics      []string           `json:"topics"`
+
+	// Seen Timeline only: the story was on screen (POST /v1/stories/views) before the page's time, on any device. False marks a story that is new to the user.
+	Seen     *bool     `json:"seen,omitempty"`
+	Severity *Severity `json:"severity,omitempty"`
+	Summary  string    `json:"summary"`
+	Title    string    `json:"title"`
+	Topics   []string  `json:"topics"`
 }
 
 // StorySummaryMatch Timeline only: whether the story is in a followed topic, a topic of a story the user recently opened or saved, an area of one of the user's professions, a topic related to a followed one, an important story in a headline topic, or none of these (only important stories, unless the user has no interests). Clients must tolerate values added later.
 type StorySummaryMatch string
+
+// StoryThreadItem defines model for StoryThreadItem.
+type StoryThreadItem struct {
+	// ActionRequired Readers must upgrade, migrate or patch something because of this story.
+	ActionRequired *bool `json:"action_required,omitempty"`
+	Id             int64 `json:"id"`
+	Importance     int   `json:"importance"`
+	IsBookmarked   bool  `json:"is_bookmarked"`
+	IsRead         bool  `json:"is_read"`
+
+	// KeyPoints Up to 3 short takeaways that add to the summary; empty when the story has none.
+	KeyPoints *[]string `json:"key_points,omitempty"`
+	Kind      StoryKind `json:"kind"`
+
+	// Match Timeline only: whether the story is in a followed topic, a topic of a story the user recently opened or saved, an area of one of the user's professions, a topic related to a followed one, an important story in a headline topic, or none of these (only important stories, unless the user has no interests). Clients must tolerate values added later.
+	Match       *StoryThreadItemMatch `json:"match,omitempty"`
+	PublishedAt time.Time             `json:"published_at"`
+	ReadAt      *time.Time            `json:"read_at,omitempty"`
+
+	// Seen Timeline only: the story was on screen (POST /v1/stories/views) before the page's time, on any device. False marks a story that is new to the user.
+	Seen     *bool     `json:"seen,omitempty"`
+	Severity *Severity `json:"severity,omitempty"`
+	Summary  string    `json:"summary"`
+	Title    string    `json:"title"`
+	Topics   []string  `json:"topics"`
+
+	// Version The release this story is about; absent when it has none.
+	Version *string `json:"version,omitempty"`
+}
+
+// StoryThreadItemMatch Timeline only: whether the story is in a followed topic, a topic of a story the user recently opened or saved, an area of one of the user's professions, a topic related to a followed one, an important story in a headline topic, or none of these (only important stories, unless the user has no interests). Clients must tolerate values added later.
+type StoryThreadItemMatch string
 
 // Topic defines model for Topic.
 type Topic struct {
@@ -460,6 +545,9 @@ type GetTimelineParams struct {
 
 	// Read `true` returns only read stories, `false` only unread ones. Absent returns both.
 	Read *bool `form:"read,omitempty" json:"read,omitempty"`
+
+	// Action `true` returns only stories whose readers must upgrade, migrate or patch (`action_required`), `false` only the others. Absent returns both.
+	Action *bool `form:"action,omitempty" json:"action,omitempty"`
 }
 
 // CreateTopicRequestJSONBody defines parameters for CreateTopicRequest.
@@ -536,6 +624,9 @@ type ServerInterface interface {
 	// PutMyProfessions Replace the user's professions.
 	// (PUT /v1/me/professions)
 	PutMyProfessions(w http.ResponseWriter, r *http.Request)
+	// ListMyTopicSuggestions Topics the user might want to follow.
+	// (GET /v1/me/topic-suggestions)
+	ListMyTopicSuggestions(w http.ResponseWriter, r *http.Request)
 	// PutMyTopics Replace the set of followed topics.
 	// (PUT /v1/me/topics)
 	PutMyTopics(w http.ResponseWriter, r *http.Request)
@@ -545,7 +636,7 @@ type ServerInterface interface {
 	// RecordStoryViews Record stories that were visible in the user's feed (idempotent).
 	// (POST /v1/stories/views)
 	RecordStoryViews(w http.ResponseWriter, r *http.Request)
-	// GetStory Get a story with its full body and sources.
+	// GetStory Get a story with its full body, sources and story thread.
 	// (GET /v1/stories/{id})
 	GetStory(w http.ResponseWriter, r *http.Request, id StoryID)
 	// RemoveBookmark Remove a bookmark (idempotent).
@@ -554,6 +645,12 @@ type ServerInterface interface {
 	// AddBookmark Bookmark a story (idempotent).
 	// (PUT /v1/stories/{id}/bookmark)
 	AddBookmark(w http.ResponseWriter, r *http.Request, id StoryID)
+	// UnboostStory Undo "More like this" for a story (idempotent).
+	// (DELETE /v1/stories/{id}/boost)
+	UnboostStory(w http.ResponseWriter, r *http.Request, id StoryID)
+	// BoostStory Rank more stories like this one higher ("More like this"; idempotent).
+	// (PUT /v1/stories/{id}/boost)
+	BoostStory(w http.ResponseWriter, r *http.Request, id StoryID)
 	// UndismissStory Show a dismissed story in the timeline again (idempotent).
 	// (DELETE /v1/stories/{id}/dismiss)
 	UndismissStory(w http.ResponseWriter, r *http.Request, id StoryID)
@@ -822,6 +919,20 @@ func (siw *ServerInterfaceWrapper) PutMyProfessions(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// ListMyTopicSuggestions operation middleware
+func (siw *ServerInterfaceWrapper) ListMyTopicSuggestions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMyTopicSuggestions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PutMyTopics operation middleware
 func (siw *ServerInterfaceWrapper) PutMyTopics(w http.ResponseWriter, r *http.Request) {
 
@@ -978,6 +1089,58 @@ func (siw *ServerInterfaceWrapper) AddBookmark(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AddBookmark(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnboostStory operation middleware
+func (siw *ServerInterfaceWrapper) UnboostStory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id StoryID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnboostStory(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// BoostStory operation middleware
+func (siw *ServerInterfaceWrapper) BoostStory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id StoryID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BoostStory(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1148,6 +1311,19 @@ func (siw *ServerInterfaceWrapper) GetTimeline(w http.ResponseWriter, r *http.Re
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "read"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "read", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "action" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "action", r.URL.Query(), &params.Action, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "action"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "action", Err: err})
 		}
 		return
 	}
@@ -1332,6 +1508,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/me", wrapper.DeleteMe)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/me", wrapper.GetMe)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/topics", wrapper.PutMyTopics)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/me/topic-suggestions", wrapper.ListMyTopicSuggestions)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/muted-topics", wrapper.PutMyMutedTopics)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/professions", wrapper.PutMyProfessions)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/country", wrapper.PutMyCountry)
@@ -1343,6 +1520,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/stories/{id}/read", wrapper.MarkStoryRead)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/stories/{id}/dismiss", wrapper.UndismissStory)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/stories/{id}/dismiss", wrapper.DismissStory)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/stories/{id}/boost", wrapper.UnboostStory)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/stories/{id}/boost", wrapper.BoostStory)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/search", wrapper.SearchStories)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/bookmarks", wrapper.ListBookmarks)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/bookmarks/sync", wrapper.SyncBookmarks)

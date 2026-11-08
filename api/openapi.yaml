@@ -81,7 +81,7 @@ paths:
       operationId: deleteMe
       summary: Delete the signed-in user's account data.
       description: >
-        Deletes the user with their followed and muted topics, read and dismissed state,
+        Deletes the user with their followed and muted topics, read, dismissed and boosted state,
         bookmarks, devices and topic requests. The Firebase account itself is not deleted; the app deletes it and
         signs out, or the next request recreates an empty user.
       responses:
@@ -114,6 +114,28 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/Me"}
         "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/me/topic-suggestions:
+    get:
+      operationId: listMyTopicSuggestions
+      summary: Topics the user might want to follow.
+      description: >
+        Topics related to a followed topic, or siblings of a followed child topic, that the user
+        neither follows (directly or through a followed parent) nor mutes, and that had stories
+        recently. Best first: those coming from the followed topics the user opens or saves most,
+        then those with more recent stories. Empty when there is nothing to suggest.
+      responses:
+        "200":
+          description: The suggestions, best first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/Topic"}
         "401": {$ref: "#/components/responses/Unauthorized"}
   /v1/me/muted-topics:
     put:
@@ -233,10 +255,11 @@ paths:
       operationId: getTimeline
       summary: Recent stories ranked by interest.
       description: >
-        Unread stories first, best first: a score from how the story matches the user (followed,
-        profession, related, headline, other), its importance and severity, less its age, and
-        lower once it has been on screen for a while without being opened or saved. Read stories
-        follow, newest first.
+        Stories of the user's followed topics only. Unread stories first, best first: a score from
+        the story's importance and severity, higher when the user opens or saves its topics' stories
+        more often than their stories overall (lower when less often), less its age, and lower once
+        it has been on screen for a while without being opened or saved. A story boosted with "More
+        like this" counts as several opens for its topics. Read stories follow, newest first.
       parameters:
         - name: cursor
           in: query
@@ -265,6 +288,13 @@ paths:
           required: false
           description: "`true` returns only read stories, `false` only unread ones. Absent returns both."
           schema: {type: boolean}
+        - name: action
+          in: query
+          required: false
+          description: >
+            `true` returns only stories whose readers must upgrade, migrate or patch (`action_required`),
+            `false` only the others. Absent returns both.
+          schema: {type: boolean}
       responses:
         "200":
           description: One page of the timeline.
@@ -280,6 +310,12 @@ paths:
                   next_cursor:
                     type: string
                     description: Absent when there are no more pages.
+                  unseen_count:
+                    type: integer
+                    format: int64
+                    description: >
+                      First page only: how many stories matching the filters are unread and were
+                      not on screen before this page's time (`seen` false), across all pages.
         "400": {$ref: "#/components/responses/BadRequest"}
         "401": {$ref: "#/components/responses/Unauthorized"}
   /v1/stories/{id}:
@@ -287,7 +323,7 @@ paths:
       - $ref: "#/components/parameters/StoryID"
     get:
       operationId: getStory
-      summary: Get a story with its full body and sources.
+      summary: Get a story with its full body, sources and story thread.
       responses:
         "200":
           description: The story.
@@ -328,6 +364,26 @@ paths:
       summary: Show a dismissed story in the timeline again (idempotent).
       responses:
         "204": {description: Restored.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /v1/stories/{id}/boost:
+    parameters:
+      - $ref: "#/components/parameters/StoryID"
+    put:
+      operationId: boostStory
+      summary: Rank more stories like this one higher ("More like this"; idempotent).
+      description: >
+        The story counts as several opens for its topics in the user's timeline ranking. The story
+        itself stays in the timeline.
+      responses:
+        "204": {description: Boosted.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    delete:
+      operationId: unboostStory
+      summary: Undo "More like this" for a story (idempotent).
+      responses:
+        "204": {description: Removed.}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "404": {$ref: "#/components/responses/NotFound"}
   /v1/search:
@@ -641,6 +697,18 @@ components:
         is_read: {type: boolean}
         is_bookmarked: {type: boolean}
         read_at: {type: string, format: date-time}
+        key_points:
+          type: array
+          items: {type: string}
+          description: Up to 3 short takeaways that add to the summary; empty when the story has none.
+        action_required:
+          type: boolean
+          description: Readers must upgrade, migrate or patch something because of this story.
+        seen:
+          type: boolean
+          description: >
+            Timeline only: the story was on screen (POST /v1/stories/views) before the page's time,
+            on any device. False marks a story that is new to the user.
         match:
           type: string
           enum: [followed, affinity, profession, related, headline, explore]
@@ -680,3 +748,20 @@ components:
             sources:
               type: array
               items: {$ref: "#/components/schemas/StorySource"}
+            version:
+              type: string
+              description: The release this story is about (e.g. "1.25.0", no "v"); absent when it has none.
+            thread:
+              type: array
+              items: {$ref: "#/components/schemas/StoryThreadItem"}
+              description: >
+                The newest other stories (6 by default) of the last 180 days about the same project or sharing a CVE id,
+                without the user's dismissed stories or ones only in muted topics; empty when there are none.
+    StoryThreadItem:
+      allOf:
+        - $ref: "#/components/schemas/StorySummary"
+        - type: object
+          properties:
+            version:
+              type: string
+              description: The release this story is about; absent when it has none.
