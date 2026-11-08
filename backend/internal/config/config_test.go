@@ -17,6 +17,8 @@ func setBase(t *testing.T) {
 		"FIREBASE_PROJECT_ID":         "",
 		"FCM_ENABLED":                 "",
 		"DB_MAX_CONNS":                "",
+		"DB_MAX_CONN_IDLE_TIME":       "",
+		"DB_HEALTH_CHECK_PERIOD":      "",
 		"REQUEST_TIMEOUT":             "",
 		"TIMELINE_WINDOW_DAYS":        "",
 		"TIMELINE_TIER_WEIGHT":        "",
@@ -67,6 +69,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Env != EnvDev || cfg.DBMaxConns != 10 || cfg.RequestTimeout != 30*time.Second {
 		t.Errorf("Load() = env %q, max conns %d, timeout %s; want dev, 10, 30s", cfg.Env, cfg.DBMaxConns, cfg.RequestTimeout)
 	}
+	if cfg.DBMaxConnIdleTime != 3*time.Minute || cfg.DBHealthCheckPeriod != 30*time.Second {
+		t.Errorf("Load() = idle time %s, health check %s; want 3m, 30s", cfg.DBMaxConnIdleTime, cfg.DBHealthCheckPeriod)
+	}
 	if cfg.RateLimitIPPerMin != 300 || cfg.RateLimitUserPerMin != 120 {
 		t.Errorf("Load() = rate limits %d per IP, %d per user; want 300, 120", cfg.RateLimitIPPerMin, cfg.RateLimitUserPerMin)
 	}
@@ -106,12 +111,17 @@ func TestLoadPoolAndTimeout(t *testing.T) {
 	setBase(t)
 	t.Setenv("DB_MAX_CONNS", "25")
 	t.Setenv("REQUEST_TIMEOUT", "45s")
+	t.Setenv("DB_MAX_CONN_IDLE_TIME", "2m")
+	t.Setenv("DB_HEALTH_CHECK_PERIOD", "15s")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
 	if cfg.DBMaxConns != 25 || cfg.RequestTimeout != 45*time.Second {
 		t.Errorf("Load() = max conns %d, timeout %s; want 25, 45s", cfg.DBMaxConns, cfg.RequestTimeout)
+	}
+	if cfg.DBMaxConnIdleTime != 2*time.Minute || cfg.DBHealthCheckPeriod != 15*time.Second {
+		t.Errorf("Load() = idle time %s, health check %s; want 2m, 15s", cfg.DBMaxConnIdleTime, cfg.DBHealthCheckPeriod)
 	}
 }
 
@@ -121,6 +131,8 @@ func TestLoadRejectsBadPoolAndTimeout(t *testing.T) {
 		{"DB_MAX_CONNS", "99999999999"},
 		{"REQUEST_TIMEOUT", "30"},
 		{"REQUEST_TIMEOUT", "-1s"},
+		{"DB_MAX_CONN_IDLE_TIME", "3"},
+		{"DB_HEALTH_CHECK_PERIOD", "0s"},
 		{"RATE_LIMIT_IP_PER_MIN", "0"},
 		{"RATE_LIMIT_USER_PER_MIN", "many"},
 		{"OTEL_SAMPLE_RATIO", "1.5"},

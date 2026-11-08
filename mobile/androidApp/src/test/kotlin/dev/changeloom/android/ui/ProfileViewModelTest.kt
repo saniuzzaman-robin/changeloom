@@ -1,8 +1,10 @@
 package dev.changeloom.android.ui
 
 import dev.changeloom.android.auth.SessionManager
+import dev.changeloom.android.data.AvatarLoader
 import dev.changeloom.android.data.FollowSuggester
 import dev.changeloom.android.push.DeviceRegistrar
+import dev.changeloom.android.push.MemoryRegistrationStore
 import dev.changeloom.android.ui.theme.ThemePreferences
 import dev.changeloom.shared.auth.SignInMethod
 import dev.changeloom.shared.data.TimelineRepository
@@ -16,16 +18,27 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import okhttp3.OkHttpClient
 import org.junit.Rule
+import java.util.Collections
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.TestTimeSource
+
+private const val AWAIT_MS = 5_000L
+private const val POLL_MS = 10L
 
 class ProfileViewModelTest {
     @get:Rule val main = MainDispatcherRule()
@@ -37,18 +50,54 @@ class ProfileViewModelTest {
         deleteStatus: HttpStatusCode = HttpStatusCode.NoContent,
         handler: (suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData)? = null,
     ) {
-        val requests = mutableListOf<String>()
+        val requests: MutableList<String> = Collections.synchronizedList(mutableListOf())
         val cache = MemoryCache()
+        val time = TestTimeSource()
+        val repo: TimelineRepository
         val vm: ProfileViewModel
 
         init {
             val api = fakeApi(auth, requests, handler ?: { request ->
                 if (request.url.encodedPath == "/v1/me" && deleteStatus.value >= 400) respondError(deleteStatus) else respond("", deleteStatus)
             })
-            val repo = TimelineRepository(api, cache)
+            repo = TimelineRepository(api, cache)
             val appScope = CoroutineScope(scope.backgroundScope.coroutineContext + SupervisorJob(scope.backgroundScope.coroutineContext[Job]))
-            val session = SessionManager(auth, DeviceRegistrar(api), repo, api, FollowSuggester(PrefsContext()), appScope)
-            vm = ProfileViewModel(api, repo, auth, session, ThemePreferences(PrefsContext()), NoAnalytics, testStrings)
+            val registrar = DeviceRegistrar(api, auth, MemoryRegistrationStore())
+            val session = SessionManager(auth, registrar, repo, api, FollowSuggester(PrefsContext()), appScope)
+            vm = ProfileViewModel(
+                api, repo, auth, session, ThemePreferences(PrefsContext()), NoAnalytics, testStrings, AvatarLoader(OkHttpClient()), time,
+            )
+        }
+    }
+
+    @Test
+    fun showingAgainReusesTheProfileUntilAReadOrSaveOrItIsOld() = runTest {
+        val json = headersOf(HttpHeaders.ContentType, "application/json")
+        val f = Fixture(this, FakeAuth()) { request ->
+            when (request.url.encodedPath) {
+                "/v1/me" -> respond("""{"id":1,"topics":[],"country":"BD"}""", headers = json)
+                else -> respond("""{"items":[]}""", headers = json)
+            }
+        }
+        suspend fun loads(n: Int) = withContext(Dispatchers.Default) {
+            withTimeout(AWAIT_MS) { while (f.requests.count { it == "GET /v1/me" } < n || f.requests.count { it == "GET /v1/topic-requests" } < n) delay(POLL_MS) }
+        }
+        try {
+            f.vm.shown()
+            loads(1)
+            f.vm.state.await { it.stats != null && it.requests != null }
+            f.vm.shown()
+            assertEquals(2, f.requests.size)
+
+            f.repo.setBookmarked(1, true)
+            f.vm.shown()
+            loads(2)
+
+            f.time += 10.minutes
+            f.vm.shown()
+            loads(3)
+        } finally {
+            f.vm.stop()
         }
     }
 

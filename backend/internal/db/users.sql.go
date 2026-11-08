@@ -75,6 +75,50 @@ func (q *Queries) DeleteUserTopicsByIDs(ctx context.Context, arg DeleteUserTopic
 	return err
 }
 
+const getMe = `-- name: GetMe :one
+SELECT u.country,
+    ARRAY(
+        SELECT t.slug FROM user_topics ut JOIN topics t ON t.id = ut.topic_id
+        WHERE ut.user_id = u.id ORDER BY t.slug
+    )::text[] AS topics,
+    ARRAY(
+        SELECT p.slug FROM user_professions up JOIN professions p ON p.id = up.profession_id
+        WHERE up.user_id = u.id ORDER BY p.position, p.slug
+    )::text[] AS professions,
+    ARRAY(
+        SELECT t.slug FROM user_topic_mutes um JOIN topics t ON t.id = um.topic_id
+        WHERE um.user_id = u.id ORDER BY t.slug
+    )::text[] AS muted_topics,
+    (SELECT count(*) FROM user_bookmarks ub WHERE ub.user_id = u.id)::bigint AS saved,
+    (SELECT count(*) FROM user_story_state uss WHERE uss.user_id = u.id)::bigint AS read
+FROM users u
+WHERE u.id = $1
+`
+
+type GetMeRow struct {
+	Country     *string
+	Topics      []string
+	Professions []string
+	MutedTopics []string
+	Saved       int64
+	Read        int64
+}
+
+// Everything GET /v1/me returns beyond the user's id and email, in one round trip.
+func (q *Queries) GetMe(ctx context.Context, userID int64) (GetMeRow, error) {
+	row := q.db.QueryRow(ctx, getMe, userID)
+	var i GetMeRow
+	err := row.Scan(
+		&i.Country,
+		&i.Topics,
+		&i.Professions,
+		&i.MutedTopics,
+		&i.Saved,
+		&i.Read,
+	)
+	return i, err
+}
+
 const getUserByFirebaseUID = `-- name: GetUserByFirebaseUID :one
 SELECT id, firebase_uid, email FROM users WHERE firebase_uid = $1
 `
@@ -89,35 +133,6 @@ func (q *Queries) GetUserByFirebaseUID(ctx context.Context, firebaseUid string) 
 	row := q.db.QueryRow(ctx, getUserByFirebaseUID, firebaseUid)
 	var i GetUserByFirebaseUIDRow
 	err := row.Scan(&i.ID, &i.FirebaseUid, &i.Email)
-	return i, err
-}
-
-const getUserCountry = `-- name: GetUserCountry :one
-SELECT country FROM users WHERE id = $1
-`
-
-func (q *Queries) GetUserCountry(ctx context.Context, userID int64) (*string, error) {
-	row := q.db.QueryRow(ctx, getUserCountry, userID)
-	var country *string
-	err := row.Scan(&country)
-	return country, err
-}
-
-const getUserStats = `-- name: GetUserStats :one
-SELECT
-    (SELECT count(*) FROM user_bookmarks ub WHERE ub.user_id = $1)::bigint AS saved,
-    (SELECT count(*) FROM user_story_state uss WHERE uss.user_id = $1)::bigint AS read
-`
-
-type GetUserStatsRow struct {
-	Saved int64
-	Read  int64
-}
-
-func (q *Queries) GetUserStats(ctx context.Context, userID int64) (GetUserStatsRow, error) {
-	row := q.db.QueryRow(ctx, getUserStats, userID)
-	var i GetUserStatsRow
-	err := row.Scan(&i.Saved, &i.Read)
 	return i, err
 }
 
@@ -164,90 +179,6 @@ type InsertUserTopicsParams struct {
 func (q *Queries) InsertUserTopics(ctx context.Context, arg InsertUserTopicsParams) error {
 	_, err := q.db.Exec(ctx, insertUserTopics, arg.UserID, arg.TopicIds)
 	return err
-}
-
-const listUserMutedTopicSlugs = `-- name: ListUserMutedTopicSlugs :many
-SELECT t.slug
-FROM user_topic_mutes um
-JOIN topics t ON t.id = um.topic_id
-WHERE um.user_id = $1
-ORDER BY t.slug
-`
-
-func (q *Queries) ListUserMutedTopicSlugs(ctx context.Context, userID int64) ([]string, error) {
-	rows, err := q.db.Query(ctx, listUserMutedTopicSlugs, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var slug string
-		if err := rows.Scan(&slug); err != nil {
-			return nil, err
-		}
-		items = append(items, slug)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listUserProfessionSlugs = `-- name: ListUserProfessionSlugs :many
-SELECT p.slug
-FROM user_professions up
-JOIN professions p ON p.id = up.profession_id
-WHERE up.user_id = $1
-ORDER BY p.position, p.slug
-`
-
-func (q *Queries) ListUserProfessionSlugs(ctx context.Context, userID int64) ([]string, error) {
-	rows, err := q.db.Query(ctx, listUserProfessionSlugs, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var slug string
-		if err := rows.Scan(&slug); err != nil {
-			return nil, err
-		}
-		items = append(items, slug)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listUserTopicSlugs = `-- name: ListUserTopicSlugs :many
-SELECT t.slug
-FROM user_topics ut
-JOIN topics t ON t.id = ut.topic_id
-WHERE ut.user_id = $1
-ORDER BY t.slug
-`
-
-func (q *Queries) ListUserTopicSlugs(ctx context.Context, userID int64) ([]string, error) {
-	rows, err := q.db.Query(ctx, listUserTopicSlugs, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var slug string
-		if err := rows.Scan(&slug); err != nil {
-			return nil, err
-		}
-		items = append(items, slug)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const setUserCountry = `-- name: SetUserCountry :exec

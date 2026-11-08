@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func TestBookmarks(t *testing.T) {
@@ -97,6 +99,54 @@ func TestSearch(t *testing.T) {
 	for _, bad := range []string{"/v1/search", "/v1/search?q=%20", "/v1/search?q=go&limit=0"} {
 		if code := e.do(http.MethodGet, bad, aliceToken, nil, nil); code != http.StatusBadRequest {
 			t.Errorf("GET %s: status %d, want 400", bad, code)
+		}
+	}
+}
+
+// TestSearchMatchesWordSimilarity checks the indexed `<%` match returns exactly what the former
+// predicate, word_similarity(q, title) >= 0.4 or a full-text match, did.
+func TestSearchMatchesWordSimilarity(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+	titles := []string{
+		"Go 1.30 released with new iterators",
+		"Rust 2.0 borrow checker overhaul",
+		"Kubernetes 1.40 deprecates dockershim successor",
+		"PostgreSQL 18 adds asynchronous I/O",
+		"Postgres extension pg_trgm gets faster GIN builds",
+		"Android 17 changes background location limits",
+		"Jetpack Compose 2.0 stable",
+		"C++26 contracts land in GCC",
+		"Kotlin Multiplatform reaches iOS stable",
+		"Critical OpenSSL vulnerability patched",
+		"Gradle 10 drops Java 17 support",
+		"Chrome removes third-party cookies",
+	}
+	for i, title := range titles {
+		e.insertStory(title, now.Add(-time.Duration(i)*time.Minute), "languages/go")
+	}
+	queries := []string{
+		"borow chekcer", "kubernets", "postgress", "postgres 18", "go", "a", "C++", "compose stable", //nolint:misspell // deliberate typos exercise fuzzy search
+		"kotln multiplatfrom", "openssl", "gradel", "cookie", "asynchronus io", "nonexistentterm", "release",
+	}
+	for _, q := range queries {
+		rows, err := e.pool.Query(t.Context(), `
+			SELECT id FROM stories
+			WHERE search @@ websearch_to_tsquery('english', $1) OR word_similarity($1, title) >= 0.4
+			ORDER BY published_at DESC, id DESC`, q)
+		if err != nil {
+			t.Fatalf("expected ids for %q: %v", q, err)
+		}
+		want, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+		if err != nil {
+			t.Fatalf("collect expected ids for %q: %v", q, err)
+		}
+		var page timelinePage
+		if code := e.do(http.MethodGet, "/v1/search?"+url.Values{"q": {q}, "limit": {"100"}}.Encode(), aliceToken, nil, &page); code != http.StatusOK {
+			t.Fatalf("search %q: status %d", q, code)
+		}
+		if got := ids(page.Items); !slices.Equal(got, want) {
+			t.Errorf("search %q = %v, want %v", q, got, want)
 		}
 	}
 }

@@ -1,13 +1,14 @@
 package dev.changeloom.android.ui
 
 import android.graphics.Bitmap
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.changeloom.android.R
 import dev.changeloom.android.auth.SessionManager
 import dev.changeloom.android.play.ReviewPrompter
-import dev.changeloom.android.data.fetchAvatar
+import dev.changeloom.android.data.AvatarLoader
 import dev.changeloom.android.telemetry.Analytics
 import dev.changeloom.android.data.FollowSuggester
 import dev.changeloom.android.telemetry.AppLog
@@ -46,6 +47,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -53,8 +55,15 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.IOException
 import java.util.Locale
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
-private const val VIEW_FLUSH_INTERVAL_MS = 30_000L
+internal const val VIEW_FLUSH_INTERVAL_MS = 30_000L
+
+/** How long a tab reuses what it loaded when shown again; reads and saves elsewhere reload it sooner. */
+private val TAB_DATA_MAX_AGE = 10.minutes
 private const val TAG_SIGN_IN = "SignIn"
 private const val TAG_TOPICS = "Topics"
 private const val TAG_STORY = "Story"
@@ -164,6 +173,7 @@ class TopicCatalog(private val api: ChangeloomApi) {
 /** The picker's two steps: pick professions, then topics (the professions' areas come first). */
 enum class PickerStep { Professions, Topics }
 
+@Immutable
 data class TopicPickerState(
     val loading: Boolean = true,
     val saving: Boolean = false,
@@ -350,6 +360,7 @@ class TopicPickerViewModel(
 }
 
 /** The last "Not interested" or "Less about" on the feed, which a snackbar offers to undo. */
+@Immutable
 sealed interface FeedUndo {
     data class Dismissed(val story: StorySummary) : FeedUndo
 
@@ -371,8 +382,19 @@ class TimelineViewModel(
     init {
         // After a sign-in the topic picker has already started the first refresh.
         if (!repo.state.value.refreshing) refresh()
-        viewModelScope.launch { views.run(VIEW_FLUSH_INTERVAL_MS) }
         viewModelScope.launch { suggester.load() }
+    }
+
+    /**
+     * Reports seen stories every [VIEW_FLUSH_INTERVAL_MS] until cancelled, then once more. The feed runs it while it
+     * is started, so nothing is sent from the background and leaving (a tab switch, the app) sends what is queued.
+     */
+    suspend fun trackViews(): Nothing {
+        try {
+            views.run(VIEW_FLUSH_INTERVAL_MS)
+        } finally {
+            flushViews()
+        }
     }
 
     /** A story was on screen long enough to count as seen. */
@@ -457,6 +479,11 @@ class StoryDetailViewModel(
     private val _state = MutableStateFlow(StoryDetailState())
     val state: StateFlow<StoryDetailState> = _state.asStateFlow()
 
+    /** This story's card in the timeline, or null when it isn't there; nothing else in the timeline reaches the screen. */
+    val cached: StateFlow<StorySummary?> = repo.state
+        .map { timeline -> timeline.items.firstOrNull { it.id == id } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(), repo.state.value.items.firstOrNull { it.id == id })
+
     init {
         load()
     }
@@ -494,20 +521,54 @@ class StoryDetailViewModel(
     fun shared() = analytics.share(id)
 }
 
-/** Bookmarked stories. Reloaded each time the screen opens so changes made elsewhere show up. */
+/**
+ * Whether a screen shown again needs a reload: it never loaded, its last load failed, the user read or saved a story
+ * since ([changes]), or what it has is older than [maxAge]. Main thread only.
+ */
+internal class ReloadPolicy(
+    private val time: TimeSource,
+    private val changes: StateFlow<Int>,
+    private val maxAge: Duration = TAB_DATA_MAX_AGE,
+) {
+    private var loadedAt: TimeMark? = null
+    private var version = 0
+
+    val due: Boolean get() = loadedAt.let { it == null || it.elapsedNow() >= maxAge || changes.value != version }
+
+    /** A load starts; changes made while it runs still count, so they reload the next showing. */
+    fun started() {
+        loadedAt = time.markNow()
+        version = changes.value
+    }
+
+    fun failed() {
+        loadedAt = null
+    }
+}
+
+/** Bookmarked stories. Reloaded when the screen is shown if a bookmark changed since, or the list is old. */
 class BookmarksViewModel(
     api: ChangeloomApi,
     private val repo: TimelineRepository,
     private val analytics: Analytics,
+    time: TimeSource,
 ) : ViewModel() {
     private val pager = StoryPager { cursor -> api.bookmarks(cursor) }
     val state: StateFlow<PagerState> = pager.state
+    private val reload = ReloadPolicy(time, repo.changes)
+
+    /** The screen is shown: reloads unless the list loaded earlier is still current. */
+    fun shown() {
+        if (reload.due) refresh()
+    }
 
     /** Syncs queued changes first (only if there are any), since the list is read from the server. */
     fun refresh() {
+        reload.started()
         viewModelScope.launch {
             repo.flushBookmarks()
             pager.refresh()
+            if (pager.state.value.error != null) reload.failed()
         }
     }
 
@@ -636,6 +697,8 @@ class ProfileViewModel(
     private val theme: ThemePreferences,
     private val analytics: Analytics,
     private val strings: Strings,
+    avatars: AvatarLoader,
+    time: TimeSource,
 ) : ViewModel() {
     val email: String? = auth.currentUser.value?.email
     val displayName: String? = auth.currentUser.value?.displayName
@@ -652,7 +715,7 @@ class ProfileViewModel(
         auth.currentUser.value?.photoUrl?.let { url ->
             viewModelScope.launch {
                 try {
-                    _photo.value = fetchAvatar(url)
+                    _photo.value = avatars.load(url)
                 } catch (e: IOException) {
                     AppLog.w(TAG_PROFILE, "Couldn't load the profile photo; showing initials", e)
                 }
@@ -660,11 +723,16 @@ class ProfileViewModel(
         }
     }
 
-    /**
-     * Counts change whenever the user saves or reads a story, so the screen refreshes them each time it is shown.
-     * The stats and the topic requests load side by side.
-     */
+    private val reload = ReloadPolicy(time, timeline.changes)
+
+    /** The screen is shown: reloads unless what it loaded earlier is still current (no reads or saves since). */
+    fun shown() {
+        if (reload.due) refresh()
+    }
+
+    /** The stats and the topic requests load side by side. */
     fun refresh() {
+        reload.started()
         viewModelScope.launch {
             try {
                 val me = api.me()
@@ -673,6 +741,7 @@ class ProfileViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                reload.failed()
                 AppLog.failure(TAG_PROFILE, "Couldn't load stats", e)
                 _state.update { it.copy(error = strings.errorText(e, R.string.stats_load_failed)) }
             }
@@ -684,6 +753,7 @@ class ProfileViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                reload.failed()
                 AppLog.failure(TAG_PROFILE, "Couldn't load topic requests", e)
             }
         }

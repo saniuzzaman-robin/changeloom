@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -57,9 +58,12 @@ fun ThemeMode.isDark(): Boolean = when (this) {
 fun ChangeloomTheme(mode: ThemeMode = ThemeMode.Dark, content: @Composable () -> Unit) {
     val dark = mode.isDark()
     val colors = if (dark) DarkColors else LightColors
+    val shimmer = remember { ShimmerClock() }
+    shimmer.Run()
     CompositionLocalProvider(
         LocalChangeloomColors provides colors,
         LocalChangeloomGradients provides if (dark) DarkGradients else LightGradients,
+        LocalShimmerClock provides shimmer,
     ) {
         MaterialTheme(
             colorScheme = colors.toColorScheme(),

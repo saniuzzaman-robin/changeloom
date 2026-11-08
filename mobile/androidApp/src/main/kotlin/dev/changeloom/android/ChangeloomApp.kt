@@ -8,6 +8,7 @@ import dev.changeloom.android.ads.NativeAdRepository
 import dev.changeloom.android.auth.FirebaseAppCheckTokens
 import dev.changeloom.android.auth.FirebaseAuthRepository
 import dev.changeloom.android.auth.SessionManager
+import dev.changeloom.android.data.AvatarLoader
 import dev.changeloom.android.data.FileStoryCache
 import dev.changeloom.android.data.FollowSuggester
 import dev.changeloom.android.push.DeviceRegistrar
@@ -31,9 +32,12 @@ import dev.changeloom.android.ui.TopicPickerViewModel
 import dev.changeloom.android.ui.theme.ThemePreferences
 import dev.changeloom.shared.auth.AuthRepository
 import dev.changeloom.shared.data.AppCheckTokens
+import dev.changeloom.shared.data.ChangeloomApi
 import dev.changeloom.shared.data.StoryCache
 import dev.changeloom.shared.di.sharedModule
 import io.ktor.client.engine.okhttp.OkHttp
+import okhttp3.Cache
+import okhttp3.OkHttpClient
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.startKoin
 import org.koin.core.module.dsl.viewModelOf
@@ -41,8 +45,25 @@ import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.bind
 import org.koin.dsl.module
 import java.io.File
+import java.util.concurrent.TimeUnit
+import kotlin.time.TimeSource
+
+private const val HTTP_CACHE_DIR = "http"
+private const val HTTP_CACHE_BYTES = 10L * 1024 * 1024
 
 class ChangeloomApp : Application() {
+    /**
+     * One client for the api and the avatar: a shared connection pool, and a disk cache that serves what the server
+     * marks cacheable (`/v1/topics`, the profile photo); `no-store` responses are never stored. Built on first use.
+     */
+    private val httpClient by lazy {
+        OkHttpClient.Builder()
+            .cache(Cache(File(cacheDir, HTTP_CACHE_DIR), HTTP_CACHE_BYTES))
+            .connectTimeout(ChangeloomApi.CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .callTimeout(ChangeloomApi.REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .build()
+    }
+
     override fun onCreate() {
         super.onCreate()
         if (BuildConfig.DEBUG) enableStrictMode()
@@ -51,8 +72,10 @@ class ChangeloomApp : Application() {
         startKoin {
             androidContext(this@ChangeloomApp)
             modules(
-                sharedModule(BuildConfig.API_BASE_URL) { OkHttp.create() },
+                sharedModule(BuildConfig.API_BASE_URL) { OkHttp.create { preconfigured = httpClient } },
                 module {
+                    single<TimeSource> { TimeSource.Monotonic }
+                    single { AvatarLoader(httpClient) }
                     single { FirebaseAuthRepository() } bind AuthRepository::class
                     single { FirebaseAppCheckTokens() } bind AppCheckTokens::class
                     single { AndroidStrings(androidContext()) } bind Strings::class
@@ -72,7 +95,7 @@ class ChangeloomApp : Application() {
                     single { TopicCatalog(get()) }
                     viewModelOf(::TopicPickerViewModel)
                     viewModelOf(::TimelineViewModel)
-                    single { DeviceRegistrar(get()) }
+                    single { DeviceRegistrar(get(), get(), get<AppPreferences>()) }
                     viewModelOf(::ProfileViewModel)
                     viewModelOf(::SearchViewModel)
                     viewModelOf(::BookmarksViewModel)

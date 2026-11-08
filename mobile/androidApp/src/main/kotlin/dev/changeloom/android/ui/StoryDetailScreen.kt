@@ -115,13 +115,11 @@ import java.net.URISyntaxException
 @Composable
 internal fun StoryDetailScreen(id: Long, onBack: () -> Unit) {
     val vm: StoryDetailViewModel = koinViewModel(key = "story-$id") { parametersOf(id) }
-    val timeline: TimelineViewModel = koinViewModel()
     val state by vm.state.collectAsStateWithLifecycle()
-    val timelineState by timeline.state.collectAsStateWithLifecycle()
+    val cached by vm.cached.collectAsStateWithLifecycle()
     val context = LocalContext.current
     // The feed's copy shows the hero (and lands the shared title) before the full story loads. Read state only
     // syncs for stories in the timeline, so the Read action is hidden for the rest.
-    val cached = timelineState.items.firstOrNull { it.id == id }
     StoryDetailContent(
         state = state,
         placeholder = cached,

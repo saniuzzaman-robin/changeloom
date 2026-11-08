@@ -9,7 +9,10 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -32,7 +35,7 @@ class TimelineViewModelTest {
 
     private val suggester = FollowSuggester(PrefsContext())
 
-    private fun vm(requests: MutableList<String>): TimelineViewModel {
+    private fun vm(requests: MutableList<String>, views: ViewTracker = ViewTracker { }): TimelineViewModel {
         val api = fakeApi(FakeAuth(), requests) { request ->
             when {
                 request.url.encodedPath.endsWith("/dismiss") -> respond("", HttpStatusCode.NoContent)
@@ -42,7 +45,28 @@ class TimelineViewModelTest {
                 else -> respond(TWO_STORIES, headers = json)
             }
         }
-        return TimelineViewModel(TimelineRepository(api, MemoryCache()), NoAnalytics, ViewTracker { }, suggester)
+        return TimelineViewModel(TimelineRepository(api, MemoryCache()), NoAnalytics, views, suggester)
+    }
+
+    @Test
+    fun viewsAreSentOnlyWhileTrackedAndOnceMoreWhenTrackingStops() = runTest {
+        val sent: MutableList<Long> = Collections.synchronizedList(mutableListOf())
+        val vm = vm(Collections.synchronizedList(mutableListOf()), ViewTracker { sent += it })
+        try {
+            vm.storySeen(1)
+            advanceTimeBy(VIEW_FLUSH_INTERVAL_MS * 2)
+            assertTrue(sent.isEmpty()) // not tracked (the app is in the background): nothing is sent
+
+            val tracking = launch { vm.trackViews() }
+            advanceTimeBy(VIEW_FLUSH_INTERVAL_MS + 1)
+            assertEquals(listOf(1L), sent)
+
+            vm.storySeen(2)
+            tracking.cancelAndJoin()
+            assertEquals(listOf(1L, 2L), sent)
+        } finally {
+            vm.stop()
+        }
     }
 
     @Test
@@ -52,7 +76,7 @@ class TimelineViewModelTest {
         try {
             notInterested(vm, requests)
         } finally {
-            vm.stop() // also ends the view tracker's endless flush loop, or runTest never idles
+            vm.stop()
         }
     }
 

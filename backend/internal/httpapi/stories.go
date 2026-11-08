@@ -188,14 +188,13 @@ func (s *Server) GetStory(w http.ResponseWriter, r *http.Request, id StoryID) {
 		internalError(w, r, "get story", err)
 		return
 	}
-	srcRows, err := s.q.ListStorySources(r.Context(), id)
-	if err != nil {
-		internalError(w, r, "list story sources", err)
+	if len(row.SourceUrls) != len(row.SourceNames) {
+		internalError(w, r, "get story", fmt.Errorf("story %d: %d source urls but %d names", id, len(row.SourceUrls), len(row.SourceNames)))
 		return
 	}
-	sources := make([]StorySource, len(srcRows))
-	for i, src := range srcRows {
-		sources[i] = StorySource{Url: src.Url, Name: src.SourceName}
+	sources := make([]StorySource, len(row.SourceUrls))
+	for i, url := range row.SourceUrls {
+		sources[i] = StorySource{Url: url, Name: row.SourceNames[i]}
 	}
 	writeJSON(w, http.StatusOK, Story{
 		Id:           row.ID,
@@ -263,22 +262,19 @@ func (s *Server) RecordStoryViews(w http.ResponseWriter, r *http.Request) {
 func (s *Server) setRead(w http.ResponseWriter, r *http.Request, id StoryID, read bool) {
 	user := mustUser(r)
 
-	exists, err := s.q.StoryExists(r.Context(), id)
+	var exists bool
+	var err error
+	if read {
+		exists, err = s.q.MarkStoryRead(r.Context(), db.MarkStoryReadParams{UserID: user.ID, StoryID: id})
+	} else {
+		exists, err = s.q.MarkStoryUnread(r.Context(), db.MarkStoryUnreadParams{UserID: user.ID, StoryID: id})
+	}
 	if err != nil {
-		internalError(w, r, "check story exists", err)
+		internalError(w, r, "set story read state", err)
 		return
 	}
 	if !exists {
 		writeError(w, http.StatusNotFound, "not_found", "story not found")
-		return
-	}
-	if read {
-		err = s.q.MarkStoryRead(r.Context(), db.MarkStoryReadParams{UserID: user.ID, StoryID: id})
-	} else {
-		err = s.q.MarkStoryUnread(r.Context(), db.MarkStoryUnreadParams{UserID: user.ID, StoryID: id})
-	}
-	if err != nil {
-		internalError(w, r, "set story read state", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -287,22 +283,19 @@ func (s *Server) setRead(w http.ResponseWriter, r *http.Request, id StoryID, rea
 func (s *Server) setDismissed(w http.ResponseWriter, r *http.Request, id StoryID, dismissed bool) {
 	user := mustUser(r)
 
-	exists, err := s.q.StoryExists(r.Context(), id)
+	var exists bool
+	var err error
+	if dismissed {
+		exists, err = s.q.DismissStory(r.Context(), db.DismissStoryParams{UserID: user.ID, StoryID: id})
+	} else {
+		exists, err = s.q.UndismissStory(r.Context(), db.UndismissStoryParams{UserID: user.ID, StoryID: id})
+	}
 	if err != nil {
-		internalError(w, r, "check story exists", err)
+		internalError(w, r, "set story dismissed", err)
 		return
 	}
 	if !exists {
 		writeError(w, http.StatusNotFound, "not_found", "story not found")
-		return
-	}
-	if dismissed {
-		err = s.q.DismissStory(r.Context(), db.DismissStoryParams{UserID: user.ID, StoryID: id})
-	} else {
-		err = s.q.UndismissStory(r.Context(), db.UndismissStoryParams{UserID: user.ID, StoryID: id})
-	}
-	if err != nil {
-		internalError(w, r, "set story dismissed", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

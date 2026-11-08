@@ -122,22 +122,27 @@ internal fun inlineMarkdown(text: String, styles: InlineStyles): AnnotatedString
     append(text.substring(pos))
 }
 
+@Composable
+private fun rememberInline(text: String, styles: InlineStyles): AnnotatedString = remember(text, styles) { inlineMarkdown(text, styles) }
+
 /** Story body in the site's prose style: muted copy, bright headings and emphasis, mono code on `surface-2`. */
 @Composable
 fun MarkdownText(markdown: String, modifier: Modifier = Modifier) {
     val c = ChangeloomTheme.colors
     val type = MaterialTheme.typography
     val blocks = remember(markdown) { parseMarkdown(markdown) }
-    val styles = InlineStyles(
-        strong = SpanStyle(fontWeight = FontWeight.SemiBold, color = c.fg),
-        code = SpanStyle(fontFamily = MonoFamily, color = c.primaryText, background = c.primary.copy(alpha = 0.10f)),
-        link = SpanStyle(color = c.primaryText, textDecoration = TextDecoration.Underline),
-    )
+    val styles = remember(c) {
+        InlineStyles(
+            strong = SpanStyle(fontWeight = FontWeight.SemiBold, color = c.fg),
+            code = SpanStyle(fontFamily = MonoFamily, color = c.primaryText, background = c.primary.copy(alpha = 0.10f)),
+            link = SpanStyle(color = c.primaryText, textDecoration = TextDecoration.Underline),
+        )
+    }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         blocks.forEachIndexed { i, block ->
             when (block) {
                 is MdBlock.Heading -> Text(
-                    inlineMarkdown(block.text, styles),
+                    rememberInline(block.text, styles),
                     // Headings get extra air above, except at the very top.
                     Modifier.padding(top = if (i == 0) 0.dp else 10.dp),
                     style = when (block.level) {
@@ -147,7 +152,7 @@ fun MarkdownText(markdown: String, modifier: Modifier = Modifier) {
                     },
                     color = c.fg,
                 )
-                is MdBlock.Paragraph -> Text(inlineMarkdown(block.text, styles), style = type.bodyLarge, color = c.fgMuted)
+                is MdBlock.Paragraph -> Text(rememberInline(block.text, styles), style = type.bodyLarge, color = c.fgMuted)
                 is MdBlock.Bullet -> Row(Modifier.padding(start = 4.dp)) {
                     Box(Modifier.widthIn(min = 20.dp).height(26.dp), contentAlignment = Alignment.CenterStart) {
                         if (block.marker == "•") {
@@ -157,12 +162,12 @@ fun MarkdownText(markdown: String, modifier: Modifier = Modifier) {
                         }
                     }
                     Spacer(Modifier.width(6.dp))
-                    Text(inlineMarkdown(block.text, styles), style = type.bodyLarge, color = c.fgMuted)
+                    Text(rememberInline(block.text, styles), style = type.bodyLarge, color = c.fgMuted)
                 }
                 is MdBlock.Quote -> Row(Modifier.height(IntrinsicSize.Min)) {
                     Box(Modifier.width(3.dp).padding(vertical = 2.dp).fillMaxHeight().clip(Radius.pill).background(ChangeloomTheme.gradients.brand))
                     Text(
-                        inlineMarkdown(block.text, styles),
+                        rememberInline(block.text, styles),
                         Modifier.padding(start = 14.dp),
                         style = type.bodyLarge.copy(fontStyle = FontStyle.Italic),
                         color = c.fg,

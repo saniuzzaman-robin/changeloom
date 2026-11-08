@@ -512,17 +512,38 @@ func TestMeStats(t *testing.T) {
 func TestStoryDetailAndNotFound(t *testing.T) {
 	e := newEnv(t)
 	id := e.insertStory("detail", time.Now(), "languages/go", "security")
-	if _, err := e.pool.Exec(t.Context(),
-		`INSERT INTO story_sources (story_id, url, source_name) VALUES ($1, 'https://go.dev/blog/x', 'Go Blog')`, id); err != nil {
+	if _, err := e.pool.Exec(t.Context(), `
+		INSERT INTO story_sources (story_id, url, source_name) VALUES
+			($1, 'https://go.dev/blog/x', 'Go Blog'),
+			($1, 'https://a.example/go', 'Aggregator'),
+			($1, 'https://go.dev/blog/a', 'Go Blog')`, id); err != nil {
 		t.Fatalf("insert source: %v", err)
+	}
+	other := e.insertStory("other", time.Now(), "languages/go")
+	if _, err := e.pool.Exec(t.Context(),
+		`INSERT INTO story_sources (story_id, url, source_name) VALUES ($1, 'https://other.example', 'Other')`, other); err != nil {
+		t.Fatalf("insert other source: %v", err)
 	}
 
 	var story httpapi.Story
 	if code := e.do(http.MethodGet, "/v1/stories/"+strconv.FormatInt(id, 10), aliceToken, nil, &story); code != http.StatusOK {
 		t.Fatalf("get story: status %d", code)
 	}
-	if story.BodyMd != "body" || len(story.Sources) != 1 || !slices.Equal(story.Topics, []string{"languages/go", "security"}) {
+	if story.BodyMd != "body" || !slices.Equal(story.Topics, []string{"languages/go", "security"}) {
 		t.Fatalf("story = %+v", story)
+	}
+	wantSources := []httpapi.StorySource{
+		{Url: "https://a.example/go", Name: "Aggregator"},
+		{Url: "https://go.dev/blog/a", Name: "Go Blog"},
+		{Url: "https://go.dev/blog/x", Name: "Go Blog"},
+	}
+	if !slices.Equal(story.Sources, wantSources) {
+		t.Fatalf("sources = %+v, want %+v", story.Sources, wantSources)
+	}
+	var bare httpapi.Story
+	e.do(http.MethodGet, "/v1/stories/"+strconv.FormatInt(e.insertStory("no sources", time.Now(), "languages/go"), 10), aliceToken, nil, &bare)
+	if bare.Sources == nil || len(bare.Sources) != 0 {
+		t.Fatalf("story without sources: sources = %#v, want empty", bare.Sources)
 	}
 
 	missing := "/v1/stories/999999"
@@ -530,6 +551,8 @@ func TestStoryDetailAndNotFound(t *testing.T) {
 		{http.MethodGet, missing},
 		{http.MethodPut, missing + "/read"},
 		{http.MethodDelete, missing + "/read"},
+		{http.MethodPut, missing + "/bookmark"},
+		{http.MethodDelete, missing + "/bookmark"},
 	} {
 		if code := e.do(req.method, req.path, aliceToken, nil, nil); code != http.StatusNotFound {
 			t.Errorf("%s %s: status %d, want 404", req.method, req.path, code)
@@ -772,6 +795,7 @@ func TestDeleteMe(t *testing.T) {
 
 func TestCacheHeaders(t *testing.T) {
 	e := newEnv(t)
+	acceptEncoding := "identity"
 	get := func(path, ifNoneMatch string) (int, http.Header) {
 		t.Helper()
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, e.srv.URL+path, nil)
@@ -779,6 +803,8 @@ func TestCacheHeaders(t *testing.T) {
 			t.Fatalf("new request: %v", err)
 		}
 		req.Header.Set("Authorization", "Bearer "+aliceToken)
+		// Uncompressed, so the ETag stays strong (gzip clients are checked below).
+		req.Header.Set("Accept-Encoding", acceptEncoding)
 		if ifNoneMatch != "" {
 			req.Header.Set("If-None-Match", ifNoneMatch)
 		}
@@ -803,6 +829,17 @@ func TestCacheHeaders(t *testing.T) {
 	if code, _ := get("/v1/topics", `"stale"`); code != http.StatusOK {
 		t.Errorf("stale If-None-Match: status %d, want 200", code)
 	}
+
+	acceptEncoding = "gzip"
+	code, header = get("/v1/topics", "")
+	if code != http.StatusOK || header.Get("Content-Encoding") != "gzip" || header.Get("ETag") != "W/"+etag {
+		t.Fatalf("gzip topics: status %d, Content-Encoding %q, ETag %q; want 200, gzip, W/%s",
+			code, header.Get("Content-Encoding"), header.Get("ETag"), etag)
+	}
+	if code, header := get("/v1/topics", "W/"+etag); code != http.StatusNotModified || header.Get("ETag") != "W/"+etag {
+		t.Errorf("gzip If-None-Match: status %d, ETag %q; want 304 with W/%s", code, header.Get("ETag"), etag)
+	}
+	acceptEncoding = "identity"
 
 	for _, path := range []string{"/v1/me", "/v1/timeline", "/v1/nope"} {
 		if _, header := get(path, ""); header.Get("Cache-Control") != "private, no-store" {

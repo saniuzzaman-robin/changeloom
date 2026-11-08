@@ -104,7 +104,8 @@ func NewServer(pool *pgxpool.Pool, opts Options) *Server {
 
 // NewHandler routes all API operations and requires a verified bearer token on /v1/ paths.
 // POST /internal/notify sits outside /v1/ and checks its own shared secret. Every request is
-// traced, logged and protected from panics, bounded by Options.RequestTimeout and rate limited.
+// traced, logged and protected from panics, bounded by Options.RequestTimeout, rate limited and
+// gzipped when large enough.
 func NewHandler(s *Server, verifier auth.Verifier) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(http.MethodPost+" /internal/notify", s.notify)
@@ -119,7 +120,7 @@ func NewHandler(s *Server, verifier auth.Verifier) http.Handler {
 	if s.opts.RequestTimeout > 0 {
 		h = withTimeout(s.opts.RequestTimeout, h)
 	}
-	return withTrace(observe(h))
+	return withTrace(observe(compress(h)))
 }
 
 // badParam reports a request parameter that failed to bind, naming the parameter but not echoing

@@ -158,7 +158,7 @@ internal fun SearchContent(
                     contentPadding = listPadding(),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    items(state.items, key = { it.id }) { story ->
+                    items(state.items, key = { it.id }, contentType = { STORY_CONTENT }) { story ->
                         StoryCard(
                             story,
                             onOpen = { onOpen(story.id) },
@@ -166,7 +166,7 @@ internal fun SearchContent(
                             modifier = Modifier.animateItem(),
                         )
                     }
-                    if (state.loadingMore) item(key = "more") { SkeletonStoryCard() }
+                    if (state.loadingMore) item(key = "more", contentType = SKELETON_CONTENT) { SkeletonStoryCard() }
                 }
             }
         }
@@ -199,11 +199,11 @@ private fun SearchField(query: String, onChange: (String) -> Unit, onSearch: () 
     )
 }
 
-/** Saved stories. Reloaded each time the tab opens so changes made elsewhere show up. */
+/** Saved stories. Reloaded when the tab opens if a bookmark changed since or the list is old. */
 @Composable
 internal fun SavedScreen(onOpen: (Long) -> Unit, onBrowse: () -> Unit, contentPadding: PaddingValues, vm: BookmarksViewModel = koinViewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { vm.refresh() }
+    LaunchedEffect(Unit) { vm.shown() }
     SavedContent(
         state = state,
         contentPadding = contentPadding,
@@ -239,7 +239,7 @@ internal fun SavedContent(
             contentPadding = listPadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item(key = "header") {
+            item(key = "header", contentType = "header") {
                 Column(Modifier.padding(top = 8.dp, bottom = 4.dp)) {
                     Eyebrow(stringResource(R.string.tab_saved), Modifier.enter(delayMillis = 0, enabled = animateIn), color = c.primaryText)
                     Spacer(Modifier.height(8.dp))
@@ -266,8 +266,8 @@ internal fun SavedContent(
             when {
                 // Only until the first load finishes: the list reloads on every visit, and an empty list that is
                 // already known keeps showing its empty state instead of flashing the skeleton.
-                state.items.isEmpty() && !state.loaded -> items(LIST_SKELETON_CARDS) { SkeletonStoryCard() }
-                state.items.isEmpty() -> item(key = "empty") {
+                state.items.isEmpty() && !state.loaded -> items(LIST_SKELETON_CARDS, key = { "skeleton-$it" }, contentType = { SKELETON_CONTENT }) { SkeletonStoryCard() }
+                state.items.isEmpty() -> item(key = "empty", contentType = "empty") {
                     EmptyState(
                         title = stringResource(R.string.saved_empty_title),
                         message = stringResource(R.string.saved_empty_body),
@@ -276,7 +276,7 @@ internal fun SavedContent(
                     )
                 }
                 else -> {
-                    items(state.items, key = { it.id }) { story ->
+                    items(state.items, key = { it.id }, contentType = { STORY_CONTENT }) { story ->
                         SwipeActions(
                             startToEnd = null,
                             endToStart = SwipeAction(stringResource(R.string.remove), Icons.Rounded.BookmarkRemove, c.rose, onSwipe = { onRemove(story.id) }),
@@ -286,7 +286,7 @@ internal fun SavedContent(
                             StoryCard(story, onOpen = { onOpen(story.id) }, onToggleSave = { onToggleSave(story.id, !story.isBookmarked) })
                         }
                     }
-                    if (state.loadingMore) item(key = "more") { SkeletonStoryCard() }
+                    if (state.loadingMore) item(key = "more", contentType = SKELETON_CONTENT) { SkeletonStoryCard() }
                 }
             }
         }
