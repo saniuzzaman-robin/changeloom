@@ -35,10 +35,16 @@ class TimelineViewModelTest {
 
     private val suggester = FollowSuggester(PrefsContext())
 
+    /** What GET /v1/me/topic-suggestions answers; null fails it. */
+    @Volatile private var suggestions: String? = """{"items":[{"slug":"web/react","name":"React","description":""}]}"""
+
     private fun vm(requests: MutableList<String>, views: ViewTracker = ViewTracker { }): TimelineViewModel {
         val api = fakeApi(FakeAuth(), requests) { request ->
             when {
-                request.url.encodedPath.endsWith("/dismiss") -> respond("", HttpStatusCode.NoContent)
+                request.url.encodedPath == "/v1/me/topic-suggestions" ->
+                    suggestions?.let { respond(it, headers = json) } ?: respond("", HttpStatusCode.InternalServerError)
+                request.url.encodedPath.endsWith("/dismiss") || request.url.encodedPath.endsWith("/boost") ->
+                    respond("", HttpStatusCode.NoContent)
                 request.url.encodedPath == "/v1/me" -> respond("""{"id":1,"topics":[]}""", headers = json)
                 request.url.encodedPath == "/v1/me/muted-topics" && request.method == HttpMethod.Put ->
                     respond("""{"id":1,"topics":[],"muted_topics":["web/vue"]}""", headers = json)
@@ -54,6 +60,7 @@ class TimelineViewModelTest {
         val vm = vm(Collections.synchronizedList(mutableListOf()), ViewTracker { sent += it })
         try {
             vm.storySeen(1)
+            assertEquals(setOf(1L), vm.seenInSession.value) // catch-up leaves it out right away, before any send
             advanceTimeBy(VIEW_FLUSH_INTERVAL_MS * 2)
             assertTrue(sent.isEmpty()) // not tracked (the app is in the background): nothing is sent
 
@@ -64,6 +71,26 @@ class TimelineViewModelTest {
             vm.storySeen(2)
             tracking.cancelAndJoin()
             assertEquals(listOf(1L, 2L), sent)
+        } finally {
+            vm.stop()
+        }
+    }
+
+    @Test
+    fun topicSuggestionsLoadBesideTheTimelineAndAFailureKeepsThem() = runTest {
+        val requests: MutableList<String> = Collections.synchronizedList(mutableListOf())
+        val vm = vm(requests)
+        try {
+            assertEquals(listOf("web/react"), vm.topicSuggestions.await { it.isNotEmpty() })
+            vm.state.await { it.items.size == 2 }
+
+            suggestions = null
+            vm.refresh()
+            withContext(Dispatchers.Default) {
+                withTimeout(AWAIT_MS) { while (requests.count { it == "GET /v1/me/topic-suggestions" } < 2) delay(POLL_MS) }
+            }
+            vm.state.await { !it.refreshing }
+            assertEquals(listOf("web/react"), vm.topicSuggestions.value)
         } finally {
             vm.stop()
         }
@@ -92,6 +119,28 @@ class TimelineViewModelTest {
         assertTrue("PUT /v1/stories/1/dismiss" in requests)
         // The undo changes no state once the server has it, so wait for the request itself.
         withContext(Dispatchers.Default) { withTimeout(AWAIT_MS) { while ("DELETE /v1/stories/1/dismiss" !in requests) delay(POLL_MS) } }
+    }
+
+    @Test
+    fun moreLikeThisKeepsTheStoryAndUndoUnboostsIt() = runTest {
+        val requests: MutableList<String> = Collections.synchronizedList(mutableListOf())
+        val vm = vm(requests)
+        try {
+            vm.state.await { it.items.size == 2 }
+            vm.boost(1)
+            val undo = assertIs<FeedUndo.Boosted>(vm.undo.await { it != null })
+            assertEquals(FeedUndo.Boosted(1, "web/vue"), undo)
+            assertEquals(listOf(1L, 2L), vm.state.value.items.map { it.id })
+            assertEquals(setOf(1L), vm.state.value.boosted)
+            assertTrue("PUT /v1/stories/1/boost" in requests)
+
+            vm.undo(undo)
+            assertEquals(null, vm.undo.value)
+            vm.state.await { it.boosted.isEmpty() }
+            withContext(Dispatchers.Default) { withTimeout(AWAIT_MS) { while ("DELETE /v1/stories/1/boost" !in requests) delay(POLL_MS) } }
+        } finally {
+            vm.stop()
+        }
     }
 
     @Test

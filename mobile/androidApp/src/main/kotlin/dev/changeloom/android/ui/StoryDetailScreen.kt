@@ -61,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -81,11 +82,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.changeloom.android.BuildConfig
 import dev.changeloom.android.R
 import dev.changeloom.android.telemetry.AppLog
+import dev.changeloom.android.ui.components.ActionPill
 import dev.changeloom.android.ui.components.BannerTone
 import dev.changeloom.android.ui.components.EmptyState
 import dev.changeloom.android.ui.components.Eyebrow
 import dev.changeloom.android.ui.components.GlassCard
 import dev.changeloom.android.ui.components.ImportanceMeter
+import dev.changeloom.android.ui.components.KeyPoints
 import dev.changeloom.android.ui.components.KindPill
 import dev.changeloom.android.ui.components.MAX_IMPORTANCE
 import dev.changeloom.android.ui.components.PrimaryButton
@@ -107,13 +110,16 @@ import dev.changeloom.android.ui.theme.severityColor
 import dev.changeloom.shared.data.Story
 import dev.changeloom.shared.data.StorySource
 import dev.changeloom.shared.data.StorySummary
+import dev.changeloom.shared.data.StoryThreadItem
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import java.net.URI
 import java.net.URISyntaxException
+import java.time.Instant
+import java.time.format.DateTimeParseException
 
 @Composable
-internal fun StoryDetailScreen(id: Long, onBack: () -> Unit) {
+internal fun StoryDetailScreen(id: Long, onBack: () -> Unit, onOpenStory: (Long) -> Unit) {
     val vm: StoryDetailViewModel = koinViewModel(key = "story-$id") { parametersOf(id) }
     val state by vm.state.collectAsStateWithLifecycle()
     val cached by vm.cached.collectAsStateWithLifecycle()
@@ -125,6 +131,7 @@ internal fun StoryDetailScreen(id: Long, onBack: () -> Unit) {
         placeholder = cached,
         isRead = cached?.isRead,
         onBack = onBack,
+        onOpenStory = onOpenStory,
         onRetry = vm::load,
         onToggleSave = { state.story?.let { vm.setBookmarked(!it.isBookmarked) } },
         onToggleRead = { cached?.let { vm.setRead(!it.isRead) } },
@@ -141,6 +148,7 @@ internal fun StoryDetailContent(
     placeholder: StorySummary?,
     isRead: Boolean?,
     onBack: () -> Unit,
+    onOpenStory: (Long) -> Unit,
     onRetry: () -> Unit,
     onToggleSave: () -> Unit,
     onToggleRead: () -> Unit,
@@ -152,6 +160,7 @@ internal fun StoryDetailContent(
     val scroll = rememberScrollState()
     val uriHandler = LocalUriHandler.current
     val context = LocalContext.current
+    val thread = remember(story) { story?.let(::threadEntries).orEmpty() }
     Box(Modifier.fillMaxSize().background(c.bg)) {
         // Fixed behind the page and the bars, tinted by the story's kind; the grid stays near the top for clean reading.
         ScreenBackdrop(Modifier.matchParentSize(), glow = hero?.let { kindColor(it.kind) } ?: c.primary, gridFade = DETAIL_GRID_FADE)
@@ -176,6 +185,9 @@ internal fun StoryDetailContent(
                     when {
                         story != null -> {
                             MarkdownText(story.bodyMd, Modifier.enter(BODY_ENTER_DELAY))
+                            if (thread.isNotEmpty()) {
+                                StoryThread(thread, onOpen = onOpenStory, Modifier.padding(top = 32.dp).enter(SOURCES_ENTER_DELAY))
+                            }
                             if (story.sources.isNotEmpty()) {
                                 SourceList(story.sources, onOpen = { uriHandler.openOrToast(it, context) }, Modifier.padding(top = 32.dp).enter(SOURCES_ENTER_DELAY))
                             }
@@ -226,6 +238,7 @@ private fun DetailHero(story: StorySummary) {
                     SeverityDot(story.severity, Modifier.padding(start = 4.dp))
                     Eyebrow(story.severity.orEmpty(), color = severityColor(story.severity))
                 }
+                if (story.actionRequired) ActionPill(Modifier.padding(start = 8.dp))
                 Spacer(Modifier.weight(1f))
                 Eyebrow(relativeTime(story.publishedAt))
             }
@@ -233,6 +246,14 @@ private fun DetailHero(story: StorySummary) {
             Text(story.title, Modifier.sharedStoryTitle(story.id), style = MaterialTheme.typography.headlineMedium, color = c.fg)
             Spacer(Modifier.height(12.dp))
             Text(story.summary, Modifier.enter(LEDE_ENTER_DELAY), style = MaterialTheme.typography.bodyLarge, color = c.fgMuted)
+            if (story.keyPoints.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                Column(Modifier.enter(LEDE_ENTER_DELAY)) {
+                    Eyebrow(stringResource(R.string.quick_take), color = c.primaryText)
+                    Spacer(Modifier.height(8.dp))
+                    KeyPoints(story.keyPoints)
+                }
+            }
             Spacer(Modifier.height(20.dp))
             Row(Modifier.enter(META_ENTER_DELAY), verticalAlignment = Alignment.CenterVertically) {
                 ImportanceMeter(story.importance)
@@ -376,6 +397,82 @@ private fun SourceList(sources: List<StorySource>, onOpen: (String) -> Unit, mod
     }
 }
 
+/** One row of a story's thread; [current] is the open story. */
+internal data class ThreadEntry(val id: Long, val title: String, val version: String?, val publishedAt: String, val current: Boolean)
+
+/** The open story among its thread, newest first; empty when the story has no thread. */
+internal fun threadEntries(story: Story): List<ThreadEntry> {
+    if (story.thread.isEmpty()) return emptyList()
+    val current = ThreadEntry(story.id, story.title, story.version, story.publishedAt, current = true)
+    return (story.thread.map { ThreadEntry(it.id, it.title, it.version, it.publishedAt, current = false) } + current)
+        .sortedWith(compareByDescending<ThreadEntry> { instantOrNull(it.publishedAt) }.thenByDescending { it.id })
+}
+
+private fun instantOrNull(timestamp: String): Instant? = try {
+    Instant.parse(timestamp)
+} catch (e: DateTimeParseException) {
+    null
+}
+
+/** A vertical timeline of the project's stories: a rail of dots, each with version, date and title. */
+@Composable
+private fun StoryThread(entries: List<ThreadEntry>, onOpen: (Long) -> Unit, modifier: Modifier = Modifier) {
+    val c = ChangeloomTheme.colors
+    Column(modifier) {
+        Eyebrow(stringResource(R.string.story_thread))
+        Spacer(Modifier.height(10.dp))
+        entries.forEachIndexed { i, entry ->
+            val first = i == 0
+            val last = i == entries.lastIndex
+            val dot = if (entry.current) c.primary else c.fgSubtle
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(Radius.md)
+                    .then(
+                        if (entry.current) {
+                            Modifier.background(c.primary.copy(alpha = 0.10f))
+                        } else {
+                            Modifier.clickable(role = Role.Button, onClickLabel = stringResource(R.string.open_story)) { onOpen(entry.id) }
+                        },
+                    )
+                    .drawBehind {
+                        // The rail runs through every dot, from the first entry's dot to the last one's.
+                        val x = THREAD_RAIL_X.toPx()
+                        val dotY = THREAD_DOT_Y.toPx()
+                        val top = if (first) dotY else 0f
+                        val bottom = if (last) dotY else size.height
+                        if (bottom > top) drawLine(c.line, Offset(x, top), Offset(x, bottom), strokeWidth = 2.dp.toPx())
+                        drawCircle(dot, radius = (if (entry.current) 6.dp else 4.dp).toPx(), center = Offset(x, dotY))
+                    }
+                    .padding(start = THREAD_RAIL_X * 2, end = 12.dp, top = 10.dp, bottom = 10.dp),
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (entry.version != null) {
+                            Text(entry.version, style = ChangeloomTextStyles.code, color = if (entry.current) c.primaryText else c.fgMuted)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Eyebrow(relativeTime(entry.publishedAt))
+                        if (entry.current) {
+                            Spacer(Modifier.width(8.dp))
+                            Eyebrow(stringResource(R.string.story_thread_current), color = c.primaryText)
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        entry.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = if (entry.current) c.fg else c.fgMuted,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** Floating glass pill with Save, Read (only when [read] is known) and Share. */
 @Composable
 private fun DetailActionBar(saved: Boolean, read: Boolean?, onToggleSave: () -> Unit, onToggleRead: () -> Unit, onShare: () -> Unit) {
@@ -437,7 +534,11 @@ private fun ActionItem(icon: ImageVector, label: String, actionLabel: String, ac
     }
 }
 
-private fun Story.asSummary() = StorySummary(id, title, summary, kind, severity, importance, publishedAt, topics, isRead, readAt, isBookmarked)
+private fun Story.asSummary() = StorySummary(
+    id, title, summary, kind, severity, importance, publishedAt, topics, isRead, readAt, isBookmarked,
+    keyPoints = keyPoints,
+    actionRequired = actionRequired,
+)
 
 /** "https://www.kotlinlang.org/docs" → "kotlinlang.org"; the raw URL if it won't parse. */
 private fun hostOf(url: String): String = try {
@@ -476,6 +577,11 @@ private fun previewStory(): Story = previewStories()[0].let {
     Story(
         it.id, it.title, it.summary, it.kind, it.severity, it.importance, it.publishedAt, it.topics,
         isRead = true, bodyMd = PREVIEW_MARKDOWN, isBookmarked = true,
+        version = "2.4.0",
+        thread = listOf(
+            StoryThreadItem(it.id + 100, "Kotlin 2.4.10 fixes K2 incremental builds", "release", publishedAt = Instant.now().toString(), version = "2.4.10"),
+            StoryThreadItem(it.id + 101, "Kotlin 2.3.0: guard conditions are stable", "release", publishedAt = "2026-06-12T09:00:00Z", isRead = true, version = "2.3.0"),
+        ),
         sources = listOf(
             StorySource("https://kotlinlang.org/docs/whatsnew24.html", "What's new in Kotlin 2.4"),
             StorySource("https://github.com/JetBrains/kotlin/releases", "JetBrains/kotlin releases"),
@@ -485,7 +591,7 @@ private fun previewStory(): Story = previewStories()[0].let {
 
 @Composable
 private fun DetailPreview(state: StoryDetailState, placeholder: StorySummary? = null, isRead: Boolean? = true) = StoryDetailContent(
-    state, placeholder, isRead, onBack = {}, onRetry = {}, onToggleSave = {}, onToggleRead = {}, onShare = {},
+    state, placeholder, isRead, onBack = {}, onOpenStory = {}, onRetry = {}, onToggleSave = {}, onToggleRead = {}, onShare = {},
 )
 
 @Preview(name = "Detail, dark", heightDp = 1400)
@@ -520,3 +626,6 @@ private const val META_ENTER_DELAY = 340
 private const val BODY_ENTER_DELAY = 400
 private const val SOURCES_ENTER_DELAY = 480
 private const val BODY_SKELETON_LINES = 7
+/** The thread rail's centre from the row's start, and its dots' centre from the row's top (level with the version line). */
+private val THREAD_RAIL_X = 12.dp
+private val THREAD_DOT_Y = 19.dp

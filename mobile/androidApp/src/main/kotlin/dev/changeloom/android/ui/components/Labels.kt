@@ -18,6 +18,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Article
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Gavel
@@ -90,6 +92,38 @@ fun KindPill(kind: String, modifier: Modifier = Modifier) {
     }
 }
 
+/** Amber pill for a story whose readers must upgrade, migrate or patch. */
+@Composable
+fun ActionPill(modifier: Modifier = Modifier) {
+    val color = ChangeloomTheme.colors.amber
+    Row(
+        modifier
+            .clip(Radius.pill)
+            .background(color.copy(alpha = 0.12f))
+            .border(1.dp, color.copy(alpha = 0.28f), Radius.pill)
+            .padding(start = 7.dp, end = 9.dp, top = 3.dp, bottom = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Build, contentDescription = null, tint = color, modifier = Modifier.size(12.dp))
+        Eyebrow(stringResource(R.string.action_needed), color = color)
+    }
+}
+
+/** A story's quick take: each key point as a short line behind a dot. */
+@Composable
+fun KeyPoints(points: List<String>, modifier: Modifier = Modifier) {
+    val c = ChangeloomTheme.colors
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        points.forEach { point ->
+            Row {
+                Box(Modifier.padding(top = 8.dp, end = 10.dp).size(5.dp).clip(Radius.pill).background(c.primaryText))
+                Text(point, style = MaterialTheme.typography.bodyMedium, color = c.fg)
+            }
+        }
+    }
+}
+
 /** Severity dot; critical pulses like Tailwind's `animate-ping`. Draws nothing when [severity] is null. */
 @Composable
 fun SeverityDot(severity: String?, modifier: Modifier = Modifier, dotSize: Dp = 8.dp) {
@@ -108,6 +142,14 @@ fun SeverityDot(severity: String?, modifier: Modifier = Modifier, dotSize: Dp = 
         pulse?.value?.let { p -> drawCircle(color.copy(alpha = 0.6f * (1 - p)), radius = r * (1 + 1.4f * p)) }
         drawCircle(color, radius = r)
     }
+}
+
+/** Marks a story that wasn't on screen before the last refresh. */
+@Composable
+fun NewDot(modifier: Modifier = Modifier, dotSize: Dp = 6.dp) {
+    val color = ChangeloomTheme.colors.primary
+    val description = stringResource(R.string.story_new)
+    Canvas(modifier.size(dotSize).semantics { contentDescription = description }) { drawCircle(color) }
 }
 
 /** The top of the api's 1–5 importance scale. */

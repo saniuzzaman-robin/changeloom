@@ -86,12 +86,13 @@ class TimelineRepositoryTest {
             queries += request.url.parameters
             respond(page(item(5, "2026-09-03T10:00:00Z", false), next = if (request.url.parameters["cursor"] == null) "c1" else null), headers = json)
         }
-        repo.setFilter(TimelineFilter(kinds = setOf("security", "deprecation"), read = ReadFilter.Unread))
+        repo.setFilter(TimelineFilter(kinds = setOf("security", "deprecation"), read = ReadFilter.Unread, actionRequired = true))
         repo.loadMore()
         assertEquals(2, queries.size)
         for (q in queries) {
             assertEquals(listOf("security", "deprecation"), q.getAll("kind"))
             assertEquals("false", q["read"])
+            assertEquals("true", q["action"])
         }
         assertEquals("c1", queries[1]["cursor"])
         // The cache keeps the unfiltered timeline.
@@ -108,6 +109,7 @@ class TimelineRepositoryTest {
         repo.refresh()
         assertNull(query!!["kind"])
         assertNull(query!!["read"])
+        assertNull(query!!["action"])
     }
 
     @Test
@@ -241,6 +243,34 @@ class TimelineRepositoryTest {
     }
 
     @Test
+    fun unseenCountComesFromTheFirstPageAndSurvivesPaging() = runTest {
+        val repo = repo(MemoryCache()) { req ->
+            if (req.url.parameters["cursor"] == "c1") {
+                respond(page(item(4, "2026-08-01T00:00:00Z", true)), headers = json)
+            } else {
+                val fresh = item(1, "2026-09-03T10:00:00Z", false).dropLast(1) + ""","seen":false}"""
+                respond("""{"items":[$fresh,${item(2, "2026-09-02T10:00:00Z", false)}],"next_cursor":"c1","unseen_count":7}""", headers = json)
+            }
+        }
+        assertNull(repo.state.value.unseenCount)
+        repo.refresh()
+        assertEquals(7L, repo.state.value.unseenCount)
+        // A story the server doesn't mark isn't new: older servers, and lists other than the timeline, send no `seen`.
+        assertEquals(mapOf(1L to false, 2L to true), repo.state.value.items.associate { it.id to it.seen })
+        repo.loadMore()
+        assertEquals(7L, repo.state.value.unseenCount)
+        assertEquals(3, repo.state.value.items.size)
+    }
+
+    @Test
+    fun unseenCountIsNullFromAnOlderServer() = runTest {
+        val repo = repo(MemoryCache()) { respond(firstPage, headers = json) }
+        repo.refresh()
+        assertNull(repo.state.value.unseenCount)
+        assertTrue(repo.state.value.items.all { it.seen })
+    }
+
+    @Test
     fun loadMoreAppendsWithoutDuplicates() = runTest {
         val repo = repo(MemoryCache()) { req ->
             if (req.url.parameters["cursor"] == "c1") respond(page(item(3, "2026-09-04T10:00:00Z", true), item(4, "2026-08-01T00:00:00Z", true)), headers = json)
@@ -261,6 +291,32 @@ class TimelineRepositoryTest {
         assertEquals("# hi", repo.story(5).bodyMd)
         online = false
         assertEquals("A", repo.story(5).sources.single().name)
+    }
+
+    @Test
+    fun storyThreadDecodesAndDefaultsForOlderPayloads() = runTest {
+        val base = """"title":"t","summary":"s","kind":"release","importance":3,"published_at":"2026-09-01T00:00:00Z","topics":[],"is_read":false,"body_md":"b","sources":[]"""
+        val bodies = mapOf(
+            "/v1/stories/5" to """{"id":5,$base}""",
+            "/v1/stories/6" to """{"id":6,$base,"version":"1.25.0","thread":[{"id":7,"title":"go 1.26","summary":"s","kind":"release",""" +
+                """"importance":3,"published_at":"2026-10-01T00:00:00Z","topics":["languages/go"],"is_read":true,"is_bookmarked":false,""" +
+                """"key_points":[],"action_required":true,"version":"1.26.0"},{"id":8,"title":"go survey","summary":"s","kind":"article",""" +
+                """"importance":2,"published_at":"2026-08-01T00:00:00Z","topics":[],"is_read":false,"is_bookmarked":false}]}""",
+        )
+        val repo = repo(MemoryCache()) { req -> respond(bodies.getValue(req.url.encodedPath), headers = json) }
+
+        val older = repo.story(5)
+        assertNull(older.version)
+        assertEquals(emptyList(), older.thread)
+
+        val current = repo.story(6)
+        assertEquals("1.25.0", current.version)
+        assertEquals(listOf(7L, 8L), current.thread.map { it.id })
+        val (newer, unversioned) = current.thread
+        assertEquals("1.26.0", newer.version)
+        assertTrue(newer.isRead)
+        assertTrue(newer.actionRequired)
+        assertNull(unversioned.version)
     }
 
     @Test
@@ -322,6 +378,77 @@ class TimelineRepositoryTest {
         repo.undismiss(story)
         assertEquals(listOf(1L, 2L, 3L), repo.state.value.items.map { it.id })
         assertEquals(listOf("PUT /v1/stories/1/dismiss", "DELETE /v1/stories/1/dismiss"), calls)
+    }
+
+    @Test
+    fun boostMarksTheStoryKeepsItAcrossRefreshAndUndoes() = runTest {
+        val calls = mutableListOf<String>()
+        val repo = repo(MemoryCache()) { req ->
+            if (req.url.encodedPath.endsWith("/boost")) {
+                calls += "${req.method.value} ${req.url.encodedPath}"
+                respond("", HttpStatusCode.NoContent)
+            } else respond(firstPage, headers = json)
+        }
+        repo.refresh()
+        assertTrue(repo.boost(1))
+        assertEquals(setOf(1L), repo.state.value.boosted)
+        assertFalse(repo.boost(1)) // already boosted: not sent again
+        // The story stays where it is.
+        assertEquals(listOf(1L, 2L, 3L), repo.state.value.items.map { it.id })
+        repo.refresh()
+        assertEquals(setOf(1L), repo.state.value.boosted)
+
+        repo.unboost(1)
+        assertEquals(emptySet(), repo.state.value.boosted)
+        assertEquals(listOf("PUT /v1/stories/1/boost", "DELETE /v1/stories/1/boost"), calls)
+    }
+
+    @Test
+    fun failedBoostAndUnboostRollBack() = runTest {
+        var fail = true
+        val repo = repo(MemoryCache()) { req ->
+            when {
+                !req.url.encodedPath.endsWith("/boost") -> respond(firstPage, headers = json)
+                fail -> respondError(HttpStatusCode.InternalServerError)
+                else -> respond("", HttpStatusCode.NoContent)
+            }
+        }
+        repo.refresh()
+        assertFalse(repo.boost(1))
+        assertEquals(emptySet(), repo.state.value.boosted)
+        assertTrue(repo.state.value.error != null)
+
+        fail = false
+        repo.clearError()
+        assertTrue(repo.boost(1))
+        fail = true
+        repo.unboost(1)
+        assertEquals(setOf(1L), repo.state.value.boosted)
+        assertTrue(repo.state.value.error != null)
+    }
+
+    @Test
+    fun clearDropsBoosts() = runTest {
+        val repo = repo(MemoryCache()) { req ->
+            if (req.url.encodedPath.endsWith("/boost")) respond("", HttpStatusCode.NoContent) else respond(firstPage, headers = json)
+        }
+        repo.refresh()
+        repo.boost(1)
+        repo.clear()
+        assertEquals(emptySet(), repo.state.value.boosted)
+    }
+
+    @Test
+    fun keyPointsAndActionDefaultForOlderPayloads() = runTest {
+        val newer = """{"id":4,"title":"t4","summary":"s","kind":"release","importance":3,"published_at":"2026-09-01T00:00:00Z",""" +
+            """"topics":["x"],"is_read":false,"key_points":["Upgrade to 2.0"],"action_required":true}"""
+        val repo = repo(MemoryCache()) { respond(page(item(1, "2026-09-03T10:00:00Z", false), newer), headers = json) }
+        repo.refresh()
+        val (older, current) = repo.state.value.items
+        assertEquals(emptyList(), older.keyPoints)
+        assertFalse(older.actionRequired)
+        assertEquals(listOf("Upgrade to 2.0"), current.keyPoints)
+        assertTrue(current.actionRequired)
     }
 
     @Test
