@@ -2,7 +2,7 @@
 -- Every topic with what fetch planning needs: its parent, priority (@default_priority when it has
 -- none), hints, demand (summed over the hosted envs), the professions its root serves, whether one
 -- of them is launched, whether it or its parent is a headline, whether it has children and when a
--- fetch call covering it last succeeded.
+-- fetch call covering it last succeeded and how many have succeeded since it last got a story.
 SELECT t.id,
     t.slug,
     t.name,
@@ -29,7 +29,17 @@ SELECT t.id,
     COALESCE((
         SELECT max(fr.started_at) FROM fetch_runs fr
         WHERE fr.status = 'succeeded' AND fr.country IS NULL AND fr.topic_ids @> ARRAY[t.id]
-    ), 'epoch')::timestamptz AS last_fetched_at
+    ), 'epoch')::timestamptz AS last_fetched_at,
+    -- Successful global calls covering the topic since a story last landed in it (all of them when
+    -- none has), the signal for backing off topics that keep coming back empty.
+    COALESCE((
+        SELECT count(*) FROM fetch_runs fr
+        WHERE fr.status = 'succeeded' AND fr.country IS NULL AND fr.topic_ids @> ARRAY[t.id]
+            AND fr.started_at > COALESCE((
+                SELECT max(s.created_at) FROM story_topics st JOIN stories s ON s.id = st.story_id
+                WHERE st.topic_id = t.id
+            ), 'epoch')
+    ), 0)::integer AS empty_fetches
 FROM topics t
 LEFT JOIN topics p ON p.id = t.parent_id
 LEFT JOIN topic_priority tp ON tp.topic_id = t.id
@@ -65,13 +75,11 @@ JOIN topics b ON b.id = r.related_id;
 -- name: ListRecentStoryRefs :many
 -- Recent stories in the given topics, sent to Claude so it skips what we already have. A
 -- non-empty @country keeps only stories for that country.
-SELECT s.title, COALESCE(MIN(ss.url), '')::text AS url
+SELECT s.title
 FROM stories s
-LEFT JOIN story_sources ss ON ss.story_id = s.id
 WHERE s.published_at >= @since
     AND (@country::text = '' OR @country::text = ANY(s.countries))
     AND EXISTS (SELECT 1 FROM story_topics st WHERE st.story_id = s.id AND st.topic_id = ANY(@topic_ids::bigint[]))
-GROUP BY s.id
 ORDER BY s.published_at DESC, s.id DESC
 LIMIT @max_rows;
 

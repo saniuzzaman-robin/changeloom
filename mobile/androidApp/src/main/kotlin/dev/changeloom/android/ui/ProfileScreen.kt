@@ -42,7 +42,9 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DarkMode
@@ -54,6 +56,7 @@ import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PrivacyTip
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.RateReview
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SettingsBrightness
 import androidx.compose.material.icons.rounded.Tag
@@ -79,6 +82,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalLocale
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -168,6 +172,13 @@ internal fun ProfileScreen(
         onRetry = vm::refresh,
         onRequestText = vm::setRequestText,
         onSubmitRequest = vm::submitRequest,
+        feedbackActions = FeedbackActions(
+            text = vm::setFeedbackText,
+            category = vm::setFeedbackCategory,
+            rating = vm::setFeedbackRating,
+            send = { vm.sendFeedback(BuildConfig.VERSION_NAME) },
+            dismiss = vm::dismissFeedback,
+        ),
         onSignOut = vm::signOut,
         onPrivacyOptions = activity?.takeIf { privacyOptions }?.let { { consent.showPrivacyOptions(it) } },
         deleteActions = DeleteActions(
@@ -222,6 +233,7 @@ internal fun ProfileContent(
     onRequestText: (String) -> Unit,
     onSubmitRequest: () -> Unit,
     onSignOut: () -> Unit,
+    feedbackActions: FeedbackActions = FeedbackActions(),
     onPrivacyOptions: (() -> Unit)? = null,
     deleteActions: DeleteActions = DeleteActions(),
 ) {
@@ -229,6 +241,8 @@ internal fun ProfileContent(
     val topicName = LocalTopicName.current
     var confirmSignOut by rememberSaveable { mutableStateOf(false) }
     var pickCountry by rememberSaveable { mutableStateOf(false) }
+    var sheet by rememberSaveable { mutableStateOf<ProfileSheet?>(null) }
+    val pendingRequests = remember(state.requests) { state.requests.orEmpty().count { it.status == "pending" } }
     val scroll = rememberScrollState()
 
     Box(Modifier.fillMaxSize().tabContentBounds(contentPadding)) {
@@ -312,7 +326,27 @@ internal fun ProfileContent(
                 }
 
                 Column(Modifier.enter(280)) {
-                    TopicRequestSection(state, onRequestText, onSubmitRequest)
+                    Eyebrow(stringResource(R.string.improve_title))
+                    Spacer(Modifier.height(12.dp))
+                    GlassCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(vertical = 4.dp)) {
+                        ActionRow(
+                            Icons.Rounded.AddCircleOutline,
+                            stringResource(R.string.request_title),
+                            if (pendingRequests > 0) {
+                                pluralStringResource(R.plurals.request_row_pending, pendingRequests, pendingRequests)
+                            } else {
+                                stringResource(R.string.request_row_body)
+                            },
+                            onClick = { sheet = ProfileSheet.TopicRequest },
+                        )
+                        Box(Modifier.padding(start = 64.dp).fillMaxWidth().height(1.dp).background(c.line))
+                        ActionRow(
+                            Icons.Rounded.RateReview,
+                            stringResource(R.string.feedback_title),
+                            stringResource(R.string.feedback_row_body),
+                            onClick = { sheet = ProfileSheet.Feedback },
+                        )
+                    }
                 }
 
                 Column(Modifier.enter(320)) {
@@ -398,6 +432,11 @@ internal fun ProfileContent(
             }
             }
         }
+    }
+    when (sheet) {
+        ProfileSheet.TopicRequest -> TopicRequestSheet(state, onRequestText, onSubmitRequest, onDismiss = { sheet = null })
+        ProfileSheet.Feedback -> FeedbackSheet(state.feedback, feedbackActions, onClose = { sheet = null })
+        null -> Unit
     }
     if (confirmSignOut) {
         ChangeloomDialog(
@@ -542,6 +581,35 @@ private class StatFormatter(locale: Locale) {
 
     private companion object {
         const val COMPACT_FROM = 10_000L
+    }
+}
+
+/** The bottom sheets the profile opens. */
+private enum class ProfileSheet { TopicRequest, Feedback }
+
+/** Tappable card row: tinted icon badge, title and one-line detail, and a chevron; it opens a sheet. */
+@Composable
+private fun ActionRow(icon: ImageVector, title: String, detail: String, onClick: () -> Unit) {
+    val c = ChangeloomTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            Modifier.size(36.dp).clip(Radius.pill).background(c.primary.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, tint = c.primaryText, modifier = Modifier.size(20.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = c.fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = c.fgMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = c.fgSubtle)
     }
 }
 

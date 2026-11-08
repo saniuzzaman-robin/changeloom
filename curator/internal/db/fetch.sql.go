@@ -270,7 +270,17 @@ SELECT t.id,
     COALESCE((
         SELECT max(fr.started_at) FROM fetch_runs fr
         WHERE fr.status = 'succeeded' AND fr.country IS NULL AND fr.topic_ids @> ARRAY[t.id]
-    ), 'epoch')::timestamptz AS last_fetched_at
+    ), 'epoch')::timestamptz AS last_fetched_at,
+    -- Successful global calls covering the topic since a story last landed in it (all of them when
+    -- none has), the signal for backing off topics that keep coming back empty.
+    COALESCE((
+        SELECT count(*) FROM fetch_runs fr
+        WHERE fr.status = 'succeeded' AND fr.country IS NULL AND fr.topic_ids @> ARRAY[t.id]
+            AND fr.started_at > COALESCE((
+                SELECT max(s.created_at) FROM story_topics st JOIN stories s ON s.id = st.story_id
+                WHERE st.topic_id = t.id
+            ), 'epoch')
+    ), 0)::integer AS empty_fetches
 FROM topics t
 LEFT JOIN topics p ON p.id = t.parent_id
 LEFT JOIN topic_priority tp ON tp.topic_id = t.id
@@ -294,12 +304,13 @@ type ListFetchTopicsRow struct {
 	Launched        bool
 	Headline        bool
 	LastFetchedAt   time.Time
+	EmptyFetches    int32
 }
 
 // Every topic with what fetch planning needs: its parent, priority (@default_priority when it has
 // none), hints, demand (summed over the hosted envs), the professions its root serves, whether one
 // of them is launched, whether it or its parent is a headline, whether it has children and when a
-// fetch call covering it last succeeded.
+// fetch call covering it last succeeded and how many have succeeded since it last got a story.
 func (q *Queries) ListFetchTopics(ctx context.Context, defaultPriority int32) ([]ListFetchTopicsRow, error) {
 	rows, err := q.db.Query(ctx, listFetchTopics, defaultPriority)
 	if err != nil {
@@ -326,6 +337,7 @@ func (q *Queries) ListFetchTopics(ctx context.Context, defaultPriority int32) ([
 			&i.Launched,
 			&i.Headline,
 			&i.LastFetchedAt,
+			&i.EmptyFetches,
 		); err != nil {
 			return nil, err
 		}
@@ -338,13 +350,11 @@ func (q *Queries) ListFetchTopics(ctx context.Context, defaultPriority int32) ([
 }
 
 const listRecentStoryRefs = `-- name: ListRecentStoryRefs :many
-SELECT s.title, COALESCE(MIN(ss.url), '')::text AS url
+SELECT s.title
 FROM stories s
-LEFT JOIN story_sources ss ON ss.story_id = s.id
 WHERE s.published_at >= $1
     AND ($2::text = '' OR $2::text = ANY(s.countries))
     AND EXISTS (SELECT 1 FROM story_topics st WHERE st.story_id = s.id AND st.topic_id = ANY($3::bigint[]))
-GROUP BY s.id
 ORDER BY s.published_at DESC, s.id DESC
 LIMIT $4
 `
@@ -356,14 +366,9 @@ type ListRecentStoryRefsParams struct {
 	MaxRows  int32
 }
 
-type ListRecentStoryRefsRow struct {
-	Title string
-	Url   string
-}
-
 // Recent stories in the given topics, sent to Claude so it skips what we already have. A
 // non-empty @country keeps only stories for that country.
-func (q *Queries) ListRecentStoryRefs(ctx context.Context, arg ListRecentStoryRefsParams) ([]ListRecentStoryRefsRow, error) {
+func (q *Queries) ListRecentStoryRefs(ctx context.Context, arg ListRecentStoryRefsParams) ([]string, error) {
 	rows, err := q.db.Query(ctx, listRecentStoryRefs,
 		arg.Since,
 		arg.Country,
@@ -374,13 +379,13 @@ func (q *Queries) ListRecentStoryRefs(ctx context.Context, arg ListRecentStoryRe
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListRecentStoryRefsRow{}
+	items := []string{}
 	for rows.Next() {
-		var i ListRecentStoryRefsRow
-		if err := rows.Scan(&i.Title, &i.Url); err != nil {
+		var title string
+		if err := rows.Scan(&title); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, title)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

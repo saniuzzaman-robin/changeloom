@@ -130,3 +130,13 @@ data class TopicRequest(
 
 @Serializable
 data class TopicRequestList(val items: List<TopicRequest>)
+
+@Serializable
+data class CreateFeedback(
+    /** `bug`, `idea`, `praise` or `other`. */
+    val category: String,
+    val message: String,
+    /** Optional 1-5 star rating. */
+    val rating: Int? = null,
+    @SerialName("app_version") val appVersion: String? = null,
+)

@@ -88,6 +88,14 @@ type Config struct {
 	// MinLookback is the least history a news fetch call asks for, even for a topic fetched more
 	// recently (CURATOR_MIN_LOOKBACK_DAYS); capped by ItemMaxAge.
 	MinLookback time.Duration
+	// BackoffAfter is the consecutive empty fetches (no new story in the topic) after which a
+	// warm or cold topic's interval doubles for each further one, up to BackoffMaxMultiplier times
+	// the interval (CURATOR_BACKOFF_AFTER_EMPTY, CURATOR_BACKOFF_MAX_MULTIPLIER; a multiplier of 1
+	// turns it off).
+	BackoffAfter         int
+	BackoffMaxMultiplier int
+	// KnownStoriesMax caps the existing stories listed in a prompt (CURATOR_KNOWN_STORIES_MAX).
+	KnownStoriesMax int
 	// MergeWindow is how far back a new story about the same CVE or project+version is merged
 	// into an existing one (CURATOR_MERGE_WINDOW_DAYS).
 	MergeWindow time.Duration
@@ -285,19 +293,22 @@ func Load() (Config, error) {
 
 			ConfigDir: configDir,
 		},
-		MaxCallsPerRun:     envInt(&errs, "CURATOR_MAX_CALLS_PER_RUN", 8),
-		TopicsPerCall:      envInt(&errs, "CURATOR_TOPICS_PER_CALL", 5),
-		MaxNewTopicsPerRun: envInt(&errs, "CURATOR_MAX_NEW_TOPICS_PER_RUN", 5),
-		ItemMaxAge:         time.Duration(envInt(&errs, "CURATOR_ITEM_MAX_AGE_DAYS", 14)) * 24 * time.Hour,
-		MinLookback:        time.Duration(envInt(&errs, "CURATOR_MIN_LOOKBACK_DAYS", 7)) * 24 * time.Hour,
-		MergeWindow:        time.Duration(envInt(&errs, "CURATOR_MERGE_WINDOW_DAYS", 14)) * 24 * time.Hour,
-		HotMinEngaged:      envInt(&errs, "CURATOR_HOT_MIN_ENGAGED", 1),
-		HotMinInterval:     hotMinInterval,
-		FetchCooldown:      fetchCooldown,
-		WarmInterval:       time.Duration(envInt(&errs, "CURATOR_WARM_INTERVAL_HOURS", 24)) * time.Hour,
-		PriorityIntervals:  envHours(&errs, "CURATOR_PRIORITY_INTERVAL_HOURS", [5]int{48, 96, 168, 336, 672}),
-		StoriesPerTopic:    envInt(&errs, "CURATOR_STORIES_PER_TOPIC", 5),
-		Concurrency:        envInt(&errs, "CURATOR_CONCURRENCY", 2),
+		MaxCallsPerRun:       envInt(&errs, "CURATOR_MAX_CALLS_PER_RUN", 8),
+		TopicsPerCall:        envInt(&errs, "CURATOR_TOPICS_PER_CALL", 5),
+		MaxNewTopicsPerRun:   envInt(&errs, "CURATOR_MAX_NEW_TOPICS_PER_RUN", 5),
+		ItemMaxAge:           time.Duration(envInt(&errs, "CURATOR_ITEM_MAX_AGE_DAYS", 14)) * 24 * time.Hour,
+		MinLookback:          time.Duration(envInt(&errs, "CURATOR_MIN_LOOKBACK_DAYS", 7)) * 24 * time.Hour,
+		MergeWindow:          time.Duration(envInt(&errs, "CURATOR_MERGE_WINDOW_DAYS", 14)) * 24 * time.Hour,
+		BackoffAfter:         envInt(&errs, "CURATOR_BACKOFF_AFTER_EMPTY", 3),
+		BackoffMaxMultiplier: envInt(&errs, "CURATOR_BACKOFF_MAX_MULTIPLIER", 8),
+		KnownStoriesMax:      envInt(&errs, "CURATOR_KNOWN_STORIES_MAX", 50),
+		HotMinEngaged:        envInt(&errs, "CURATOR_HOT_MIN_ENGAGED", 1),
+		HotMinInterval:       hotMinInterval,
+		FetchCooldown:        fetchCooldown,
+		WarmInterval:         time.Duration(envInt(&errs, "CURATOR_WARM_INTERVAL_HOURS", 24)) * time.Hour,
+		PriorityIntervals:    envHours(&errs, "CURATOR_PRIORITY_INTERVAL_HOURS", [5]int{48, 96, 168, 336, 672}),
+		StoriesPerTopic:      envInt(&errs, "CURATOR_STORIES_PER_TOPIC", 5),
+		Concurrency:          envInt(&errs, "CURATOR_CONCURRENCY", 2),
 
 		DealsEnabled:        envBool(&errs, "CURATOR_DEALS_ENABLED", false),
 		DealsMaxCountries:   envInt(&errs, "CURATOR_DEALS_MAX_COUNTRIES", 5),

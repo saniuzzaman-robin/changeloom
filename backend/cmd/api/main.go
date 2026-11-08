@@ -96,6 +96,7 @@ func run() error {
 		TimelineScore:          httpapi.TimelineScore(cfg.TimelineScore),
 		TimelineMix:            httpapi.TimelineMix(cfg.TimelineMix),
 		TopicRequestMaxPending: cfg.TopicRequestMaxPending,
+		FeedbackMaxPerDay:      cfg.FeedbackMaxPerDay,
 		NotifySecret:           cfg.NotifySecret,
 		RequestTimeout:         cfg.RequestTimeout,
 		RateLimitPerIP:         cfg.RateLimitIPPerMin,

@@ -16,7 +16,7 @@ esac
 root="$(cd "$(dirname "$0")/.." && pwd)"
 conf="$root/deploy/$env.env"
 if [[ ! -f $conf ]]; then
-	echo "$conf is missing: copy deploy/$env.env.example to it and fill it in" >&2
+	echo "$conf is missing: it is committed, so check out the full repo" >&2
 	exit 1
 fi
 set -a

@@ -22,6 +22,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import dev.changeloom.android.R
+import dev.changeloom.android.ui.components.ChangeloomSheet
 import dev.changeloom.android.ui.components.ChangeloomTextField
 import dev.changeloom.android.ui.components.Eyebrow
 import dev.changeloom.android.ui.components.PrimaryButton
@@ -29,20 +30,11 @@ import dev.changeloom.android.ui.theme.ChangeloomTheme
 import dev.changeloom.android.ui.theme.Radius
 import dev.changeloom.shared.data.TopicRequest
 
-/** Profile section: ask for a topic that isn't in the catalog, and see how earlier requests were handled. */
+/** Sheet from the profile: ask for a topic that isn't in the catalog, and see how earlier requests were handled. */
 @Composable
-internal fun TopicRequestSection(state: ProfileState, onText: (String) -> Unit, onSubmit: () -> Unit) {
-    val c = ChangeloomTheme.colors
+internal fun TopicRequestSheet(state: ProfileState, onText: (String) -> Unit, onSubmit: () -> Unit, onDismiss: () -> Unit) {
     val canSubmit = state.requestText.trim().length >= REQUEST_MIN_LENGTH && !state.submittingRequest
-    Column {
-        Eyebrow(stringResource(R.string.request_title))
-        Spacer(Modifier.height(4.dp))
-        Text(
-            stringResource(R.string.request_body),
-            style = MaterialTheme.typography.bodyMedium,
-            color = c.fgMuted,
-        )
-        Spacer(Modifier.height(12.dp))
+    ChangeloomSheet(onDismiss, stringResource(R.string.request_title), stringResource(R.string.request_body)) {
         ChangeloomTextField(
             value = state.requestText,
             onValueChange = { if (it.length <= REQUEST_MAX_LENGTH) onText(it) },

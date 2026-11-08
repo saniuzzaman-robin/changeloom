@@ -41,6 +41,8 @@ type Options struct {
 	TimelineMix TimelineMix
 	// TopicRequestMaxPending caps the pending topic requests per user.
 	TopicRequestMaxPending int
+	// FeedbackMaxPerDay caps the feedback messages one user can send per 24 hours.
+	FeedbackMaxPerDay int
 	// NotifySecret is the bearer token POST /internal/notify requires; empty disables the route.
 	NotifySecret string
 	// Notifier is called by POST /internal/notify; nil when push is disabled.

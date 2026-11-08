@@ -1231,3 +1231,94 @@ func TestTimelineMix(t *testing.T) {
 		t.Fatalf("second page = %v, want [%d]", got, cloud)
 	}
 }
+
+func TestFeedback(t *testing.T) {
+	const maxPerDay = 2
+	e := newEnvWith(t, func(o *httpapi.Options) { o.FeedbackMaxPerDay = maxPerDay })
+	send := func(token string, body map[string]any) int {
+		t.Helper()
+		return e.do(http.MethodPost, "/v1/feedback", token, body, nil)
+	}
+	valid := map[string]any{"category": "idea", "message": "  Add a widget  ", "rating": 4, "app_version": "1.2.3"}
+
+	if code := send("", valid); code != http.StatusUnauthorized {
+		t.Errorf("no auth: status %d, want 401", code)
+	}
+	for name, body := range map[string]map[string]any{
+		"unknown category": {"category": "rant", "message": "long enough"},
+		"missing category": {"message": "long enough"},
+		"short message":    {"category": "bug", "message": " hey "},
+		"long message":     {"category": "bug", "message": strings.Repeat("a", 2001)},
+		"rating zero":      {"category": "bug", "message": "long enough", "rating": 0},
+		"rating six":       {"category": "bug", "message": "long enough", "rating": 6},
+		"long version":     {"category": "bug", "message": "long enough", "app_version": strings.Repeat("1", 33)},
+		"unknown field":    {"category": "bug", "message": "long enough", "extra": 1},
+	} {
+		if code := send(aliceToken, body); code != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400", name, code)
+		}
+	}
+	var n int
+	if err := e.pool.QueryRow(t.Context(), `SELECT count(*) FROM app_feedback`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("rejected requests stored %d rows (err %v), want 0", n, err)
+	}
+
+	var created struct {
+		ID int64 `json:"id"`
+	}
+	if code := e.do(http.MethodPost, "/v1/feedback", aliceToken, valid, &created); code != http.StatusCreated || created.ID == 0 {
+		t.Fatalf("create: status %d, %+v", code, created)
+	}
+	var category, message string
+	var rating *int16
+	var version *string
+	if err := e.pool.QueryRow(t.Context(),
+		`SELECT category, message, rating, app_version FROM app_feedback WHERE id = $1`, created.ID,
+	).Scan(&category, &message, &rating, &version); err != nil {
+		t.Fatalf("read row: %v", err)
+	}
+	if category != "idea" || message != "Add a widget" || rating == nil || *rating != 4 || version == nil || *version != "1.2.3" {
+		t.Errorf("stored %q %q %v %v", category, message, rating, version)
+	}
+	// Rating and version are optional.
+	if code := send(aliceToken, map[string]any{"category": "praise", "message": "Love it so much"}); code != http.StatusCreated {
+		t.Fatalf("minimal: status %d, want 201", code)
+	}
+	// The daily cap is per user, and only counts the last 24 hours.
+	if code := send(aliceToken, valid); code != http.StatusTooManyRequests {
+		t.Fatalf("over cap: status %d, want 429", code)
+	}
+	if code := send(bobToken, valid); code != http.StatusCreated {
+		t.Fatalf("other user: status %d, want 201", code)
+	}
+	if _, err := e.pool.Exec(t.Context(),
+		`UPDATE app_feedback SET created_at = now() - interval '25 hours' WHERE id = $1`, created.ID); err != nil {
+		t.Fatalf("age row: %v", err)
+	}
+	if code := send(aliceToken, valid); code != http.StatusCreated {
+		t.Fatalf("after window: status %d, want 201", code)
+	}
+}
+
+func TestFeedbackCapHoldsUnderConcurrency(t *testing.T) {
+	const maxPerDay = 3
+	e := newEnvWith(t, func(o *httpapi.Options) { o.FeedbackMaxPerDay = maxPerDay })
+	var wg sync.WaitGroup
+	codes := make([]int, 10)
+	for i := range codes {
+		wg.Go(func() {
+			codes[i] = e.do(http.MethodPost, "/v1/feedback", aliceToken,
+				map[string]any{"category": "bug", "message": "parallel " + strconv.Itoa(i)}, nil)
+		})
+	}
+	wg.Wait()
+	created := 0
+	for _, c := range codes {
+		if c == http.StatusCreated {
+			created++
+		}
+	}
+	if created != maxPerDay {
+		t.Errorf("%d feedback rows created, want %d (codes %v)", created, maxPerDay, codes)
+	}
+}

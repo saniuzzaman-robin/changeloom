@@ -37,6 +37,8 @@ type Topic struct {
 	Headline bool
 	// LastFetchedAt is when a call covering the topic last succeeded (the Unix epoch if never).
 	LastFetchedAt time.Time
+	// EmptyFetches is how many successful calls covered the topic since a story last landed in it.
+	EmptyFetches int
 }
 
 // Group is the topics fetched in one Claude call.
@@ -78,6 +80,24 @@ type PlanSettings struct {
 	// searched over this window (the stores skip what they already have). Zero asks only for what
 	// is new since the last fetch.
 	MinLookback time.Duration
+	// BackoffAfter and BackoffMaxMultiplier stretch the interval of a warm or cold topic whose
+	// EmptyFetches reached BackoffAfter: doubled for each further one, up to BackoffMaxMultiplier.
+	// A BackoffMaxMultiplier of 0 or 1 turns it off.
+	BackoffAfter         int
+	BackoffMaxMultiplier int
+}
+
+// backoff is the factor a topic's interval is stretched by after empty fetches: 1 below
+// s.BackoffAfter, then doubling for each further one, up to s.BackoffMaxMultiplier.
+func backoff(empty int, s PlanSettings) int {
+	if s.BackoffMaxMultiplier <= 1 || empty < s.BackoffAfter {
+		return 1
+	}
+	m := 2
+	for i := s.BackoffAfter; i < empty && m < s.BackoffMaxMultiplier; i++ {
+		m *= 2
+	}
+	return min(m, s.BackoffMaxMultiplier)
 }
 
 // tier ranks how much a topic is wanted; lower is fetched first.
@@ -148,6 +168,9 @@ func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferr
 			tr, interval = tierCold, s.PriorityIntervals[p-1]
 		default:
 			continue
+		}
+		if tr != tierHot {
+			interval *= time.Duration(backoff(t.EmptyFetches, s))
 		}
 		if now.Sub(t.LastFetchedAt) < max(interval, s.Cooldown) {
 			continue

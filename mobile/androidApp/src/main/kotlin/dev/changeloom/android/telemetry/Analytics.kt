@@ -22,6 +22,7 @@ interface Analytics {
     fun search()
     fun topicsUpdate(count: Int, onboarding: Boolean)
     fun topicRequest()
+    fun feedbackSent(category: String)
     fun notificationOpen(storyId: Long)
 
     /** Google consent mode, from the user's ad consent (see ConsentManager). */
@@ -92,6 +93,8 @@ class FirebaseAnalyticsTracker(context: Context) : Analytics {
     }
 
     override fun topicRequest() = log("topic_request") {}
+
+    override fun feedbackSent(category: String) = log("feedback_sent") { putString("category", category) }
 
     override fun notificationOpen(storyId: Long) = log("notification_open") {
         putString(FirebaseAnalytics.Param.ITEM_ID, storyId.toString())

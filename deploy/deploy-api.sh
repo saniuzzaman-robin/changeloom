@@ -5,7 +5,7 @@
 # Without --image it builds backend/ with Cloud Build and sends all traffic to the new revision.
 # With --image (the deploy workflow) it deploys that image with no traffic under the tag
 # "candidate"; deploy/promote-api.sh then smoke-tests it and shifts traffic.
-# Settings come from deploy/<env>.env (copy deploy/<env>.env.example). See deploy/README.md for the
+# Settings come from deploy/<env>.env (committed; no secret values). See deploy/README.md for the
 # one-time setup and for migrating the database first.
 set -euo pipefail
 
@@ -39,7 +39,7 @@ fi
 root="$(cd "$(dirname "$0")/.." && pwd)"
 conf="$root/deploy/$env.env"
 if [[ ! -f $conf ]]; then
-	echo "$conf is missing: copy deploy/$env.env.example to it and fill it in" >&2
+	echo "$conf is missing: it is committed, so check out the full repo" >&2
 	exit 1
 fi
 set -a
