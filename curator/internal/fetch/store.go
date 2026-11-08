@@ -30,7 +30,8 @@ type storeResult struct {
 
 // storeStories inserts each story, or merges it into an existing story with one of the same
 // source URLs, or about the same CVE or project+version since o.mergeSince. A merge adds the new
-// sources and topics, raises the importance and bumps updated_at.
+// sources and topics, raises the importance, ORs action_required, fills in missing key points and
+// bumps updated_at.
 //
 // A story only merges into one for the same countries, so a deal found for one country never
 // stands in for another's.
@@ -46,7 +47,9 @@ func storeStories(ctx context.Context, q *db.Queries, stories []Story, o storeOp
 			return storeResult{}, err
 		}
 		if found {
-			if err := q.TouchMergedStory(ctx, db.TouchMergedStoryParams{ID: id, Importance: s.Importance}); err != nil {
+			if err := q.TouchMergedStory(ctx, db.TouchMergedStoryParams{
+				ID: id, Importance: s.Importance, ActionRequired: s.ActionRequired, KeyPoints: s.KeyPoints,
+			}); err != nil {
 				return storeResult{}, fmt.Errorf("merge into story %d: %w", id, err)
 			}
 			res.merged++
@@ -59,6 +62,7 @@ func storeStories(ctx context.Context, q *db.Queries, stories []Story, o storeOp
 				Title: s.Title, Summary: s.Summary, BodyMd: s.BodyMD,
 				Kind: s.Kind, Severity: s.Severity, Importance: s.Importance,
 				PublishedAt: s.PublishedAt, DedupeKeys: keys, Model: o.model, PromptVersion: o.promptVer, Countries: s.Countries,
+				KeyPoints: s.KeyPoints, ActionRequired: s.ActionRequired,
 			})
 			if err != nil {
 				return storeResult{}, fmt.Errorf("insert story %q: %w", s.Title, err)

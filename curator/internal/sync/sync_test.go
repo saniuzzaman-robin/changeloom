@@ -98,7 +98,7 @@ func TestPushTopicsAndStories(t *testing.T) {
 	ctx := t.Context()
 	local, remote := setup(t)
 	addStory(t, local, "PG 18", "databases/postgres", "https://pg.example/18")
-	exec(t, local, `UPDATE stories SET countries = '{BD,US}'`)
+	exec(t, local, `UPDATE stories SET countries = '{BD,US}', key_points = '{"Upgrade to 18.1"}', action_required = true`)
 
 	// Stories published before the cutoff are not pushed: the hosted DB would prune them.
 	res, err := cursync.Push(ctx, local, remote, config.EnvStaging, time.Now().Add(time.Hour))
@@ -110,6 +110,9 @@ func TestPushTopicsAndStories(t *testing.T) {
 	}
 	if n := count(t, remote, `SELECT count(*) FROM stories WHERE countries = '{BD,US}'`); n != 1 {
 		t.Errorf("story countries not synced")
+	}
+	if n := count(t, remote, `SELECT count(*) FROM stories WHERE key_points = '{"Upgrade to 18.1"}' AND action_required`); n != 1 {
+		t.Errorf("story key points or action_required not synced")
 	}
 	if res.Topics != 3 || res.Professions != 1 || res.Stories != 1 {
 		t.Errorf("result = %+v, want 3 topics, 1 profession and 1 story", res)

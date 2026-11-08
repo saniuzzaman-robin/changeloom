@@ -137,23 +137,25 @@ func (q *Queries) FinishFetchRun(ctx context.Context, arg FinishFetchRunParams) 
 }
 
 const insertStory = `-- name: InsertStory :one
-INSERT INTO stories (title, summary, body_md, kind, severity, importance, published_at, dedupe_keys, model, prompt_version, countries)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::text[])
+INSERT INTO stories (title, summary, body_md, kind, severity, importance, published_at, dedupe_keys, model, prompt_version, countries, key_points, action_required)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::text[], $12::text[], $13)
 RETURNING id
 `
 
 type InsertStoryParams struct {
-	Title         string
-	Summary       string
-	BodyMd        string
-	Kind          string
-	Severity      *string
-	Importance    int16
-	PublishedAt   time.Time
-	DedupeKeys    []byte
-	Model         string
-	PromptVersion string
-	Countries     []string
+	Title          string
+	Summary        string
+	BodyMd         string
+	Kind           string
+	Severity       *string
+	Importance     int16
+	PublishedAt    time.Time
+	DedupeKeys     []byte
+	Model          string
+	PromptVersion  string
+	Countries      []string
+	KeyPoints      []string
+	ActionRequired bool
 }
 
 func (q *Queries) InsertStory(ctx context.Context, arg InsertStoryParams) (int64, error) {
@@ -169,6 +171,8 @@ func (q *Queries) InsertStory(ctx context.Context, arg InsertStoryParams) (int64
 		arg.Model,
 		arg.PromptVersion,
 		arg.Countries,
+		arg.KeyPoints,
+		arg.ActionRequired,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -453,17 +457,27 @@ func (q *Queries) StartFetchRun(ctx context.Context, arg StartFetchRunParams) (i
 const touchMergedStory = `-- name: TouchMergedStory :exec
 UPDATE stories
 SET importance = GREATEST(importance, $1::smallint),
+    action_required = action_required OR $2::boolean,
+    key_points = CASE WHEN cardinality(key_points) = 0 THEN $3::text[] ELSE key_points END,
     updated_at = now()
-WHERE id = $2
+WHERE id = $4
 `
 
 type TouchMergedStoryParams struct {
-	Importance int16
-	ID         int64
+	Importance     int16
+	ActionRequired bool
+	KeyPoints      []string
+	ID             int64
 }
 
-// A merged item raises the story's importance and marks it for the next sync.
+// A merged item raises the story's importance, makes it action-required when either is, fills in
+// key points when the story has none and marks it for the next sync.
 func (q *Queries) TouchMergedStory(ctx context.Context, arg TouchMergedStoryParams) error {
-	_, err := q.db.Exec(ctx, touchMergedStory, arg.Importance, arg.ID)
+	_, err := q.db.Exec(ctx, touchMergedStory,
+		arg.Importance,
+		arg.ActionRequired,
+		arg.KeyPoints,
+		arg.ID,
+	)
 	return err
 }

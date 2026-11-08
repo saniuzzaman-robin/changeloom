@@ -112,8 +112,8 @@ ORDER BY published_at DESC, id DESC
 LIMIT 1;
 
 -- name: InsertStory :one
-INSERT INTO stories (title, summary, body_md, kind, severity, importance, published_at, dedupe_keys, model, prompt_version, countries)
-VALUES (@title, @summary, @body_md, @kind, @severity, @importance, @published_at, @dedupe_keys, @model, @prompt_version, @countries::text[])
+INSERT INTO stories (title, summary, body_md, kind, severity, importance, published_at, dedupe_keys, model, prompt_version, countries, key_points, action_required)
+VALUES (@title, @summary, @body_md, @kind, @severity, @importance, @published_at, @dedupe_keys, @model, @prompt_version, @countries::text[], @key_points::text[], @action_required)
 RETURNING id;
 
 -- name: AddStorySource :exec
@@ -127,9 +127,12 @@ SELECT @story_id, unnest(@topic_ids::bigint[])
 ON CONFLICT DO NOTHING;
 
 -- name: TouchMergedStory :exec
--- A merged item raises the story's importance and marks it for the next sync.
+-- A merged item raises the story's importance, makes it action-required when either is, fills in
+-- key points when the story has none and marks it for the next sync.
 UPDATE stories
 SET importance = GREATEST(importance, @importance::smallint),
+    action_required = action_required OR @action_required::boolean,
+    key_points = CASE WHEN cardinality(key_points) = 0 THEN @key_points::text[] ELSE key_points END,
     updated_at = now()
 WHERE id = @id;
 

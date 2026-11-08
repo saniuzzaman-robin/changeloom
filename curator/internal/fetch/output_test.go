@@ -81,6 +81,32 @@ func TestParseOutputShortensLongTitle(t *testing.T) {
 	}
 }
 
+func TestParseOutputKeyPoints(t *testing.T) {
+	out, _ := parse(t, validStory())
+	if len(out) != 1 || out[0].KeyPoints == nil || len(out[0].KeyPoints) != 0 || out[0].ActionRequired {
+		t.Fatalf("missing key_points and action_required: key points %#v, action %v; want empty and false", out[0].KeyPoints, out[0].ActionRequired)
+	}
+
+	slightlyLong := strings.Repeat("patch ", 17) + "now" // 105 characters
+	st := validStory()
+	st["action_required"] = true
+	st["key_points"] = []string{
+		"  Generic   methods\n land ", "", "   ", "Generic methods land", strings.Repeat("x", 131),
+		slightlyLong, "Third", "Fourth",
+	}
+	out, rejected := parse(t, st)
+	if len(rejected) != 0 || len(out) != 1 {
+		t.Fatalf("out %d, rejected %v; want the story kept", len(out), rejected)
+	}
+	got := out[0].KeyPoints
+	if !out[0].ActionRequired || len(got) != 3 || got[0] != "Generic methods land" || got[2] != "Third" {
+		t.Fatalf("key points = %q, action %v", got, out[0].ActionRequired)
+	}
+	if n := utf8.RuneCountInString(got[1]); n > 100 || !strings.HasSuffix(got[1], "…") || !strings.HasPrefix(got[1], "patch patch") {
+		t.Errorf("long key point = %q (%d runes), want it shortened to 100", got[1], n)
+	}
+}
+
 func TestParseOutputClampsFuture(t *testing.T) {
 	st := validStory()
 	st["published_at"] = "2026-10-05"
