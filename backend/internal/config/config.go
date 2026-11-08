@@ -50,6 +50,11 @@ type Config struct {
 	// DBMaxConns caps the database pool per instance (DB_MAX_CONNS). Keep it at or below the
 	// connections Neon allows divided by the max Cloud Run instances.
 	DBMaxConns int32
+	// DBMaxConnIdleTime closes pooled connections idle this long (DB_MAX_CONN_IDLE_TIME), checked every
+	// DBHealthCheckPeriod (DB_HEALTH_CHECK_PERIOD). Keep their sum under Neon's scale-to-zero delay
+	// (5 minutes), which drops every connection, so the pool lets idle ones go first.
+	DBMaxConnIdleTime   time.Duration
+	DBHealthCheckPeriod time.Duration
 	// RequestTimeout bounds each request, including its database queries (REQUEST_TIMEOUT, a Go
 	// duration). It must leave room for POST /internal/notify, which sends every pending push.
 	RequestTimeout time.Duration
@@ -153,6 +158,8 @@ func Load() (Config, error) {
 		errs = append(errs, fmt.Errorf("DB_MAX_CONNS is too large, got %d", dbMaxConns))
 		dbMaxConns = 1
 	}
+	dbMaxConnIdleTime := envDuration(&errs, "DB_MAX_CONN_IDLE_TIME", 3*time.Minute)
+	dbHealthCheckPeriod := envDuration(&errs, "DB_HEALTH_CHECK_PERIOD", 30*time.Second)
 	requestTimeout := envDuration(&errs, "REQUEST_TIMEOUT", 30*time.Second)
 	rateLimitIP := envInt(&errs, "RATE_LIMIT_IP_PER_MIN", 300)
 	rateLimitUser := envInt(&errs, "RATE_LIMIT_USER_PER_MIN", 120)
@@ -192,6 +199,8 @@ func Load() (Config, error) {
 		TopicRequestMaxPending: topicRequestMaxPending,
 		FeedbackMaxPerDay:      feedbackMaxPerDay,
 		DBMaxConns:             int32(dbMaxConns),
+		DBMaxConnIdleTime:      dbMaxConnIdleTime,
+		DBHealthCheckPeriod:    dbHealthCheckPeriod,
 		RequestTimeout:         requestTimeout,
 		RateLimitIPPerMin:      rateLimitIP,
 		RateLimitUserPerMin:    rateLimitUser,

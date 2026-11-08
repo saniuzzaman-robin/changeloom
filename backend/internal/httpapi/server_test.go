@@ -795,6 +795,7 @@ func TestDeleteMe(t *testing.T) {
 
 func TestCacheHeaders(t *testing.T) {
 	e := newEnv(t)
+	acceptEncoding := "identity"
 	get := func(path, ifNoneMatch string) (int, http.Header) {
 		t.Helper()
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, e.srv.URL+path, nil)
@@ -802,6 +803,8 @@ func TestCacheHeaders(t *testing.T) {
 			t.Fatalf("new request: %v", err)
 		}
 		req.Header.Set("Authorization", "Bearer "+aliceToken)
+		// Uncompressed, so the ETag stays strong (gzip clients are checked below).
+		req.Header.Set("Accept-Encoding", acceptEncoding)
 		if ifNoneMatch != "" {
 			req.Header.Set("If-None-Match", ifNoneMatch)
 		}
@@ -826,6 +829,17 @@ func TestCacheHeaders(t *testing.T) {
 	if code, _ := get("/v1/topics", `"stale"`); code != http.StatusOK {
 		t.Errorf("stale If-None-Match: status %d, want 200", code)
 	}
+
+	acceptEncoding = "gzip"
+	code, header = get("/v1/topics", "")
+	if code != http.StatusOK || header.Get("Content-Encoding") != "gzip" || header.Get("ETag") != "W/"+etag {
+		t.Fatalf("gzip topics: status %d, Content-Encoding %q, ETag %q; want 200, gzip, W/%s",
+			code, header.Get("Content-Encoding"), header.Get("ETag"), etag)
+	}
+	if code, header := get("/v1/topics", "W/"+etag); code != http.StatusNotModified || header.Get("ETag") != "W/"+etag {
+		t.Errorf("gzip If-None-Match: status %d, ETag %q; want 304 with W/%s", code, header.Get("ETag"), etag)
+	}
+	acceptEncoding = "identity"
 
 	for _, path := range []string{"/v1/me", "/v1/timeline", "/v1/nope"} {
 		if _, header := get(path, ""); header.Get("Cache-Control") != "private, no-store" {

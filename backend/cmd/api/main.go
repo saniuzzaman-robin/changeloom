@@ -76,6 +76,8 @@ func run() error {
 		return fmt.Errorf("parse DATABASE_URL: %w", err)
 	}
 	poolCfg.MaxConns = cfg.DBMaxConns
+	poolCfg.MaxConnIdleTime = cfg.DBMaxConnIdleTime
+	poolCfg.HealthCheckPeriod = cfg.DBHealthCheckPeriod
 	if cfg.OTelEnabled {
 		poolCfg.ConnConfig.Tracer = telemetry.NewPgxTracer()
 	}

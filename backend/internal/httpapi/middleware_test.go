@@ -2,8 +2,10 @@ package httpapi
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -191,4 +193,114 @@ func TestLogsUseSampledSpan(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCompress(t *testing.T) {
+	large := `{"items":"` + strings.Repeat("x", gzipMinBytes) + `"}`
+	small := `{"items":"x"}`
+	for _, tc := range []struct {
+		name, acceptEncoding, contentType, contentEncoding, etag, body string
+		status                                                         int
+		wantGzip                                                       bool
+		wantETag                                                       string
+	}{
+		{name: "large json", acceptEncoding: "gzip", contentType: "application/json", etag: `"a"`, body: large, status: http.StatusOK, wantGzip: true, wantETag: `W/"a"`},
+		{name: "large json, error status", acceptEncoding: "br, GZIP;q=0.5", contentType: "application/json; charset=utf-8", body: large, status: http.StatusBadRequest, wantGzip: true},
+		{name: "small json", acceptEncoding: "gzip", contentType: "application/json", etag: `"a"`, body: small, status: http.StatusCreated, wantETag: `W/"a"`},
+		{name: "no gzip accepted", acceptEncoding: "", contentType: "application/json", etag: `"a"`, body: large, status: http.StatusOK, wantETag: `"a"`},
+		{name: "gzip refused", acceptEncoding: "gzip;q=0", contentType: "application/json", body: large, status: 200},
+		{name: "not json", acceptEncoding: "gzip", contentType: "text/plain", body: large, status: 200},
+		{name: "already encoded", acceptEncoding: "gzip", contentType: "application/json", contentEncoding: "br", body: large, status: 200},
+		{name: "not modified", acceptEncoding: "gzip", etag: `W/"a"`, status: http.StatusNotModified, wantETag: `W/"a"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := compress(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if tc.contentType != "" {
+					w.Header().Set("Content-Type", tc.contentType)
+				}
+				if tc.contentEncoding != "" {
+					w.Header().Set("Content-Encoding", tc.contentEncoding)
+				}
+				if tc.etag != "" {
+					w.Header().Set("ETag", tc.etag)
+				}
+				w.WriteHeader(tc.status)
+				// Small writes, so the body crosses gzipMinBytes part way through one.
+				for b := []byte(tc.body); len(b) > 0; {
+					n := min(len(b), 300)
+					if _, err := w.Write(b[:n]); err != nil {
+						t.Errorf("write: %v", err)
+					}
+					b = b[n:]
+				}
+			}))
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/timeline", nil)
+			if tc.acceptEncoding != "" {
+				req.Header.Set("Accept-Encoding", tc.acceptEncoding)
+			}
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != tc.status {
+				t.Errorf("status = %d, want %d", rec.Code, tc.status)
+			}
+			if got := rec.Header().Get("Vary"); got != "Accept-Encoding" {
+				t.Errorf("Vary = %q, want Accept-Encoding", got)
+			}
+			if got := rec.Header().Get("ETag"); got != tc.wantETag {
+				t.Errorf("ETag = %q, want %q", got, tc.wantETag)
+			}
+			body := rec.Body.String()
+			if tc.wantGzip {
+				if got := rec.Header().Get("Content-Encoding"); got != "gzip" {
+					t.Fatalf("Content-Encoding = %q, want gzip", got)
+				}
+				zr, err := gzip.NewReader(rec.Body)
+				if err != nil {
+					t.Fatalf("gzip reader: %v", err)
+				}
+				b, err := io.ReadAll(zr)
+				if err != nil {
+					t.Fatalf("gunzip body: %v", err)
+				}
+				body = string(b)
+			} else if got := rec.Header().Get("Content-Encoding"); got != tc.contentEncoding {
+				t.Errorf("Content-Encoding = %q, want %q", got, tc.contentEncoding)
+			}
+			if body != tc.body {
+				t.Errorf("body = %q (%d bytes), want %d bytes", body[:min(len(body), 40)], len(body), len(tc.body))
+			}
+		})
+	}
+}
+
+func TestCompressedHandlerPanics(t *testing.T) {
+	captureLogs(t)
+	// A panic while the body is still held still gets the JSON 500, uncompressed.
+	h := observe(compress(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"items": "partial"})
+		panic("boom")
+	})))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/timeline", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError || rec.Header().Get("Content-Encoding") != "" {
+		t.Fatalf("status %d, Content-Encoding %q; want 500 uncompressed", rec.Code, rec.Header().Get("Content-Encoding"))
+	}
+	if e := decodeError(t, rec); e.Code != "internal" {
+		t.Errorf("error code = %q, want internal", e.Code)
+	}
+
+	// Once compressed bytes are out, the connection is aborted instead.
+	h = observe(compress(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"items": strings.Repeat("x", 2*gzipMinBytes)})
+		panic("boom")
+	})))
+	defer func() {
+		if v := recover(); !isAbort(v) {
+			t.Errorf("recovered %v, want http.ErrAbortHandler", v)
+		}
+	}()
+	h.ServeHTTP(httptest.NewRecorder(), req)
 }

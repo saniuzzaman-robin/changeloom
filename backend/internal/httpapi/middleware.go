@@ -1,12 +1,17 @@
 package httpapi
 
 import (
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -150,4 +155,121 @@ func (f *fallbackWriter) Write(b []byte) (int, error) {
 		return len(b), nil
 	}
 	return f.ResponseWriter.Write(b)
+}
+
+// gzipMinBytes is the smallest JSON body worth compressing: below it gzip's header and trailer
+// outweigh the saving.
+const gzipMinBytes = 1024
+
+var gzipWriters = sync.Pool{New: func() any { return gzip.NewWriter(io.Discard) }}
+
+// compress gzips JSON responses of at least gzipMinBytes when the client accepts gzip. Every
+// response carries Vary: Accept-Encoding. For gzip clients a strong ETag is made weak, since the
+// bytes on the wire differ by encoding; handlers compare If-None-Match weakly, so it still matches.
+// A response that already has a Content-Encoding, or has no body, passes through unchanged.
+func compress(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Vary", "Accept-Encoding")
+		if r.Method == http.MethodHead || !acceptsGzip(strings.Join(r.Header.Values("Accept-Encoding"), ",")) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		gw := &gzipWriter{ResponseWriter: w}
+		next.ServeHTTP(gw, r)
+		// Not deferred: after a panic the held body must be dropped, so observe can still answer 500.
+		gw.finish()
+	})
+}
+
+// acceptsGzip reports whether an Accept-Encoding header lists gzip without q=0.
+func acceptsGzip(header string) bool {
+	for part := range strings.SplitSeq(header, ",") {
+		coding, params, _ := strings.Cut(part, ";")
+		if !strings.EqualFold(strings.TrimSpace(coding), "gzip") {
+			continue
+		}
+		name, value, _ := strings.Cut(strings.TrimSpace(params), "=")
+		if strings.EqualFold(strings.TrimSpace(name), "q") {
+			q, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+			return err == nil && q > 0
+		}
+		return true
+	}
+	return false
+}
+
+// gzipWriter holds a JSON body until it reaches gzipMinBytes, then compresses it; a shorter body
+// is sent as is when the handler returns. Anything else passes straight through.
+type gzipWriter struct {
+	http.ResponseWriter
+	status  int
+	through bool         // the status was sent uncompressed: writes go straight to ResponseWriter
+	held    []byte       // body written before deciding
+	gz      *gzip.Writer // non-nil once compressing
+}
+
+func (g *gzipWriter) WriteHeader(code int) {
+	if code < http.StatusOK {
+		// Informational: the final status is still to come.
+		g.ResponseWriter.WriteHeader(code)
+		return
+	}
+	if g.status != 0 {
+		return
+	}
+	g.status = code
+	h := g.Header()
+	if etag := h.Get("ETag"); etag != "" && !strings.HasPrefix(etag, "W/") {
+		h.Set("ETag", "W/"+etag)
+	}
+	mediaType, _, _ := strings.Cut(h.Get("Content-Type"), ";")
+	if code == http.StatusNoContent || code == http.StatusNotModified ||
+		h.Get("Content-Encoding") != "" || !strings.EqualFold(strings.TrimSpace(mediaType), "application/json") {
+		g.through = true
+		g.ResponseWriter.WriteHeader(code)
+	}
+}
+
+func (g *gzipWriter) Write(b []byte) (int, error) {
+	if g.status == 0 {
+		g.WriteHeader(http.StatusOK)
+	}
+	switch {
+	case g.through:
+		return g.ResponseWriter.Write(b)
+	case g.gz != nil:
+		return g.gz.Write(b)
+	}
+	g.held = append(g.held, b...)
+	if len(g.held) < gzipMinBytes {
+		return len(b), nil
+	}
+	h := g.Header()
+	h.Set("Content-Encoding", "gzip")
+	h.Del("Content-Length")
+	g.ResponseWriter.WriteHeader(g.status)
+	g.gz = gzipWriters.Get().(*gzip.Writer)
+	g.gz.Reset(g.ResponseWriter)
+	held := g.held
+	g.held = nil
+	if _, err := g.gz.Write(held); err != nil {
+		return 0, err
+	}
+	return len(b), nil
+}
+
+// finish sends a held short body, or ends the gzip stream.
+func (g *gzipWriter) finish() {
+	switch {
+	case g.gz != nil:
+		if err := g.gz.Close(); err != nil {
+			slog.Error("write gzip response", "err", err)
+		}
+		gzipWriters.Put(g.gz)
+	case g.status != 0 && !g.through:
+		g.ResponseWriter.WriteHeader(g.status)
+		if _, err := g.ResponseWriter.Write(g.held); err != nil {
+			slog.Error("write json response", "err", err)
+		}
+	}
 }
