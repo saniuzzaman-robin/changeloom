@@ -4,6 +4,7 @@ import dev.changeloom.shared.auth.AuthRepository
 import dev.changeloom.shared.auth.AuthUser
 import dev.changeloom.shared.data.ApiException
 import dev.changeloom.shared.data.ChangeloomApi
+import dev.changeloom.shared.data.CreateFeedback
 import dev.changeloom.shared.data.MeStats
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -272,6 +273,21 @@ class ChangeloomApiTest {
         val list = api.topicRequests()
         assertEquals(listOf("lang/rust"), list.map { it.topic })
         assertEquals("Already covered", list.single().note)
+    }
+
+    @Test
+    fun sendFeedbackPostsTheForm() = runTest {
+        var path: String? = null
+        var postBody: String? = null
+        val engine = MockEngine { request ->
+            path = request.url.encodedPath
+            postBody = (request.body as TextContent).text
+            respond("""{"id":1,"created_at":"2026-11-08T00:00:00Z"}""", HttpStatusCode.Created, jsonHeaders)
+        }
+        val api = ChangeloomApi(ChangeloomApi.createClient("http://api.test", engine), FakeAuth("tok"))
+        api.sendFeedback(CreateFeedback("bug", "It crashes", rating = 2, appVersion = "1.0"))
+        assertEquals("/v1/feedback", path)
+        assertEquals("""{"category":"bug","message":"It crashes","rating":2,"app_version":"1.0"}""", postBody)
     }
 
     @Test

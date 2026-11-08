@@ -171,4 +171,64 @@ class ProfileViewModelTest {
         assertEquals(listOf("a", "b"), state.muted)
         f.vm.stop()
     }
+
+    @Test
+    fun feedbackIsTrimmedSentAndTheFormClears() = runTest {
+        var body: String? = null
+        val f = Fixture(this, FakeAuth(), handler = { request ->
+            body = (request.body as io.ktor.http.content.TextContent).text
+            respond("""{"id":1,"created_at":"2026-11-08T00:00:00Z"}""", HttpStatusCode.Created, headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        f.vm.setFeedbackCategory("bug")
+        f.vm.setFeedbackRating(4)
+        f.vm.setFeedbackText("  It crashes on start  ")
+        f.vm.sendFeedback("1.2.3")
+        val state = f.vm.state.await { it.feedback.sent }.feedback
+        assertEquals("""{"category":"bug","message":"It crashes on start","rating":4,"app_version":"1.2.3"}""", body)
+        assertEquals(FeedbackState(category = "bug", sent = true), state)
+        f.vm.dismissFeedback()
+        assertEquals(FeedbackState(category = "bug"), f.vm.state.value.feedback)
+    }
+
+    @Test
+    fun closingTheSheetKeepsAnUnsentDraft() = runTest {
+        val f = Fixture(this, FakeAuth())
+        f.vm.setFeedbackCategory("idea")
+        f.vm.setFeedbackText("Half-written idea")
+        f.vm.dismissFeedback()
+        assertEquals(FeedbackState(category = "idea", text = "Half-written idea"), f.vm.state.value.feedback)
+    }
+
+    @Test
+    fun feedbackBelowTheMinimumLengthIsNotSent() = runTest {
+        val f = Fixture(this, FakeAuth())
+        f.vm.setFeedbackText("  hi  ")
+        f.vm.sendFeedback("1.2.3")
+        assertTrue(f.requests.isEmpty())
+        assertEquals(false, f.vm.state.value.feedback.sending)
+    }
+
+    @Test
+    fun tappingTheChosenStarClearsTheRating() = runTest {
+        val f = Fixture(this, FakeAuth())
+        f.vm.setFeedbackRating(3)
+        assertEquals(3, f.vm.state.value.feedback.rating)
+        f.vm.setFeedbackRating(5)
+        assertEquals(5, f.vm.state.value.feedback.rating)
+        f.vm.setFeedbackRating(5)
+        assertNull(f.vm.state.value.feedback.rating)
+    }
+
+    @Test
+    fun aFailedFeedbackKeepsTheTextAndShowsAnError() = runTest {
+        for (status in listOf(HttpStatusCode.TooManyRequests, HttpStatusCode.ServiceUnavailable)) {
+            val f = Fixture(this, FakeAuth(), handler = { respondError(status) })
+            f.vm.setFeedbackText("Please add dark mode")
+            f.vm.sendFeedback("1.2.3")
+            val feedback = f.vm.state.await { it.feedback.error != null }.feedback
+            assertEquals("Please add dark mode", feedback.text, "status $status")
+            assertEquals(false, feedback.sending)
+            assertEquals(false, feedback.sent)
+        }
+    }
 }

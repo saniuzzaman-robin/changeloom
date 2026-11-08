@@ -35,6 +35,8 @@
     <string name="story_load_failed">Couldn\'t load this story</string>
     <string name="stats_load_failed">Couldn\'t load your stats</string>
     <string name="request_send_failed">Couldn\'t send your request</string>
+    <string name="feedback_send_failed">Couldn\'t send your feedback</string>
+    <string name="feedback_too_many">You\'ve sent a lot of feedback today. Try again tomorrow.</string>
     <string name="reauth_failed">Couldn\'t confirm it\'s you</string>
     <string name="delete_failed">Couldn\'t delete your account</string>
 
@@ -225,6 +227,25 @@
     <string name="save_count">Save · %1$d</string>
 
     <!-- Topic requests -->
+    <string name="improve_title">Help us improve</string>
+    <string name="request_row_body">Can\'t find something to follow?</string>
+    <plurals name="request_row_pending">
+        <item quantity="one">%1$d request pending</item>
+        <item quantity="other">%1$d requests pending</item>
+    </plurals>
+    <string name="feedback_title">Send feedback</string>
+    <string name="feedback_row_body">Report a bug, suggest an idea or leave a review</string>
+    <string name="feedback_body">Tell us what\'s working, what\'s broken or what you\'d like to see.</string>
+    <string name="feedback_placeholder">Your feedback</string>
+    <string name="feedback_send">Send</string>
+    <string name="feedback_thanks_title">Thanks for the feedback</string>
+    <string name="feedback_thanks">We read every message.</string>
+    <string name="feedback_done">Done</string>
+    <string name="feedback_category_idea">Idea</string>
+    <string name="feedback_category_bug">Bug</string>
+    <string name="feedback_category_praise">Praise</string>
+    <string name="feedback_category_other">Other</string>
+    <string name="feedback_star">%1$d of 5 stars</string>
     <string name="request_title">Request a topic</string>
     <string name="request_body">Can\'t find what you want to follow? Tell us and we\'ll add it.</string>
     <string name="request_placeholder">e.g. a tool, law, product or field</string>

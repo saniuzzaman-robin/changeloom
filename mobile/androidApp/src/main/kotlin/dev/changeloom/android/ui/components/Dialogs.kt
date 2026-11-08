@@ -8,18 +8,28 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,6 +45,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.changeloom.android.ui.theme.ChangeloomTheme
 import dev.changeloom.android.ui.theme.Radius
+import kotlinx.coroutines.launch
 
 /**
  * Modal card in the app's style: a tinted icon badge, centred title and message, optional [content], and a row of
@@ -87,6 +98,49 @@ fun ChangeloomDialog(
             }
             Spacer(Modifier.height(24.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { actions() }
+        }
+    }
+}
+
+/**
+ * Bottom sheet in the app's style: a title, an optional message, then [content], which scrolls when the sheet is
+ * taller than the screen. The sheet keeps its content clear of the system bars and the keyboard. [content] gets a
+ * `close` that slides the sheet away before calling [onDismiss], as a swipe or a tap outside does.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChangeloomSheet(
+    onDismiss: () -> Unit,
+    title: String,
+    message: String? = null,
+    content: @Composable ColumnScope.(close: () -> Unit) -> Unit,
+) {
+    val c = ChangeloomTheme.colors
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    val close: () -> Unit = { scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() } }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = Radius.sheet,
+        containerColor = c.elevated,
+        contentColor = c.fg,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = c.lineStrong) },
+        contentWindowInsets = { WindowInsets.safeDrawing },
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleLarge, color = c.fg)
+            if (message != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(message, style = MaterialTheme.typography.bodyMedium, color = c.fgMuted)
+            }
+            Spacer(Modifier.height(16.dp))
+            content(close)
         }
     }
 }

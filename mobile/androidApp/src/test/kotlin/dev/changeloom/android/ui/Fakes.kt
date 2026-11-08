@@ -92,6 +92,7 @@ object NoAnalytics : Analytics {
     override fun search() = Unit
     override fun topicsUpdate(count: Int, onboarding: Boolean) = Unit
     override fun topicRequest() = Unit
+    override fun feedbackSent(category: String) = Unit
     override fun notificationOpen(storyId: Long) = Unit
     override fun setConsent(consent: AnalyticsConsent) = Unit
 }

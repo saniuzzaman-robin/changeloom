@@ -19,6 +19,7 @@ import dev.changeloom.shared.auth.SignInMethod
 import dev.changeloom.shared.data.ApiException
 import dev.changeloom.shared.data.ChangeloomApi
 import dev.changeloom.shared.data.CheckState
+import dev.changeloom.shared.data.CreateFeedback
 import dev.changeloom.shared.data.MeStats
 import dev.changeloom.shared.data.PagerState
 import dev.changeloom.shared.data.Profession
@@ -60,6 +61,9 @@ private const val TAG_STORY = "Story"
 private const val TAG_PROFILE = "Profile"
 internal const val REQUEST_MIN_LENGTH = 2
 internal const val REQUEST_MAX_LENGTH = 100
+internal const val FEEDBACK_MIN_LENGTH = 5
+internal const val FEEDBACK_MAX_LENGTH = 2000
+internal val FEEDBACK_CATEGORIES = listOf("idea", "bug", "praise", "other")
 
 private const val KEY_AUTH_MODE = "auth_mode"
 private const val KEY_EMAIL = "email"
@@ -594,6 +598,18 @@ enum class DeleteStep { Confirm, Password, Google, Deleting }
 /** Account deletion in progress; [step] is what the dialog asks for, [error] why the last attempt failed. */
 data class DeleteState(val step: DeleteStep, val error: String? = null)
 
+/** The feedback form on the profile screen. */
+data class FeedbackState(
+    val category: String = FEEDBACK_CATEGORIES.first(),
+    /** 1-5, or null when the user didn't rate. */
+    val rating: Int? = null,
+    val text: String = "",
+    val sending: Boolean = false,
+    val error: String? = null,
+    /** The sheet shows a thank-you until it closes. */
+    val sent: Boolean = false,
+)
+
 data class ProfileState(
     /** Null until the first `/v1/me` load succeeds. */
     val stats: MeStats? = null,
@@ -605,6 +621,7 @@ data class ProfileState(
     val requestText: String = "",
     val submittingRequest: Boolean = false,
     val requestError: String? = null,
+    val feedback: FeedbackState = FeedbackState(),
     /** Muted topic slugs; null until the first `/v1/me` load succeeds. */
     val muted: List<String>? = null,
     /** Null unless the user is deleting their account. */
@@ -729,6 +746,44 @@ class ProfileViewModel(
                     }
                 }
                 _state.update { it.copy(submittingRequest = false, requestError = message) }
+            }
+        }
+    }
+
+    fun setFeedbackText(text: String) = _state.update { it.copy(feedback = it.feedback.copy(text = text, error = null)) }
+
+    fun setFeedbackCategory(category: String) = _state.update { it.copy(feedback = it.feedback.copy(category = category)) }
+
+    /** Tapping the star that is already chosen clears the rating. */
+    fun setFeedbackRating(rating: Int) = _state.update {
+        it.copy(feedback = it.feedback.copy(rating = rating.takeIf { r -> r != it.feedback.rating }))
+    }
+
+    /** After a send the form starts over; an unsent draft is kept for next time. */
+    fun dismissFeedback() = _state.update { if (it.feedback.sent) it.copy(feedback = it.feedback.copy(sent = false)) else it }
+
+    fun sendFeedback(appVersion: String) {
+        val form = _state.value.feedback
+        val message = form.text.trim()
+        if (message.length < FEEDBACK_MIN_LENGTH || form.sending) return
+        _state.update { it.copy(feedback = it.feedback.copy(sending = true, error = null)) }
+        viewModelScope.launch {
+            try {
+                api.sendFeedback(CreateFeedback(form.category, message, form.rating, appVersion))
+                analytics.feedbackSent(form.category)
+                _state.update { it.copy(feedback = FeedbackState(category = form.category, sent = true)) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val text = when ((e as? ApiException)?.status) {
+                    400 -> strings.get(R.string.request_length, FEEDBACK_MIN_LENGTH, FEEDBACK_MAX_LENGTH)
+                    429 -> strings.get(R.string.feedback_too_many)
+                    else -> {
+                        AppLog.failure(TAG_PROFILE, "Couldn't send feedback", e)
+                        strings.errorText(e, R.string.feedback_send_failed)
+                    }
+                }
+                _state.update { it.copy(feedback = it.feedback.copy(sending = false, error = text)) }
             }
         }
     }

@@ -177,6 +177,13 @@ class ChangeloomApi(
             setBody(CreateTopicRequest(text))
         }.parse()
 
+    suspend fun sendFeedback(feedback: CreateFeedback) =
+        client.post("v1/feedback") {
+            authorize()
+            contentType(ContentType.Application.Json)
+            setBody(feedback)
+        }.checkSuccess()
+
     suspend fun registerDevice(token: String, platform: String) =
         client.put("v1/me/devices") {
             authorize()

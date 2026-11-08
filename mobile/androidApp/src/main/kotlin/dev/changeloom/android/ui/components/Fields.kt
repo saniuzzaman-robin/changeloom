@@ -79,6 +79,8 @@ fun ChangeloomTextField(
     visualTransformation: VisualTransformation = VisualTransformation.None,
     /** 48dp tall instead of 56dp, for screens that must fit without scrolling. */
     dense: Boolean = false,
+    /** More than 1 makes the field multi-line, growing with its text. */
+    minLines: Int = 1,
 ) {
     val c = ChangeloomTheme.colors
     val brand = ChangeloomTheme.gradients.brandHorizontal
@@ -112,7 +114,8 @@ fun ChangeloomTextField(
                     }
                 },
             enabled = enabled,
-            singleLine = true,
+            singleLine = minLines == 1,
+            minLines = minLines,
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = c.fg),
             cursorBrush = SolidColor(if (isError) c.rose else c.primary),
             keyboardOptions = keyboardOptions,
