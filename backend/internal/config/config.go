@@ -142,7 +142,7 @@ func Load() (Config, error) {
 
 	firebaseProjectID := getenv("FIREBASE_PROJECT_ID", "")
 	if (env == EnvStaging || env == EnvProd) && firebaseProjectID == "" {
-		errs = append(errs, fmt.Errorf("FIREBASE_PROJECT_ID is required when ENV=%s (see deploy/%s.env.example)", env, env))
+		errs = append(errs, fmt.Errorf("FIREBASE_PROJECT_ID is required when ENV=%s (see deploy/%s.env)", env, env))
 	}
 
 	pushEnabled := envBool(&errs, "FCM_ENABLED")

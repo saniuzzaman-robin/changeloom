@@ -4,7 +4,6 @@
 *service-account*.json
 google-services.json
 GoogleService-Info.plist
-/deploy/*.env
 keystore.properties
 *.jks
 *.keystore

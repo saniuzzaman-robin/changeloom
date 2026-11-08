@@ -15,8 +15,9 @@ Cloud Run service and Android app.
 Make targets that touch a hosted env take `DEPLOY_ENV=staging|prod`, which **defaults to staging**.
 Prod is only ever targeted by passing `DEPLOY_ENV=prod` explicitly.
 
-Files holding secrets or per-env values are gitignored and never committed: `deploy/<env>.env`,
-`curator/.env`, `mobile/keystore.properties`, the keystore itself, and `google-services.json`.
+Files holding secrets are gitignored and never committed: `curator/.env`, `mobile/keystore.properties`,
+the keystore itself, and `google-services.json`. The deploy settings `deploy/<env>.env` are committed
+(the repo is public): they hold no secret values, only the names of Secret Manager secrets.
 
 ## One-time setup (per env: staging first, then prod)
 
@@ -60,7 +61,7 @@ These commands create cloud resources and may cost money. Read them, then run th
    ```
    With `FCM_ENABLED=true`, the service account also needs permission to send FCM messages, e.g.
    `roles/firebasecloudmessaging.admin` on the project. Verifying Firebase ID tokens needs no IAM role.
-5. **Deploy settings.** `cp deploy/<env>.env.example deploy/<env>.env` and fill it in
+5. **Deploy settings.** Edit the committed `deploy/<env>.env`
    (`GCP_PROJECT`, `SERVICE_ACCOUNT=$SA`, `FIREBASE_PROJECT_ID`, ...). Secrets are pinned to a
    version: after `gcloud secrets versions add`, bump the matching `*_VERSION` and redeploy.
 6. **Curator.** In `curator/.env`, set `REMOTE_DATABASE_URL_<ENV>`, `NOTIFY_SECRET_<ENV>`, and after
@@ -412,7 +413,6 @@ GitHub environment: `staging`, or `production` for prod.
    |---|---|---|
    | `WIF_PROVIDER` | variable | `$WIF_PROVIDER` |
    | `DEPLOYER_SA` | variable | `$DEPLOYER` |
-   | `DEPLOY_ENV_FILE` | variable | the whole of `deploy/<env>.env` (no secret values in it) |
    | `ANDROID_RELEASE_SA` | variable | `$ANDROID_SA` |
    | `ANDROID_API_BASE_URL` | variable | the env's Cloud Run URL |
    | `FIREBASE_ANDROID_APP_ID` | variable, staging | the Firebase Android app id (`1:...:android:...`) |
@@ -423,8 +423,7 @@ GitHub environment: `staging`, or `production` for prod.
    | `ANDROID_KEYSTORE_BASE64` | secret | `base64 -i ~/keys/changeloom-upload.jks` |
    | `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | secrets | as in `mobile/keystore.properties` |
 
-   With the GitHub CLI: `gh variable set DEPLOY_ENV_FILE --env staging < deploy/staging.env`.
-   **Whenever `deploy/<env>.env` changes, update `DEPLOY_ENV_FILE` too.**
+   The deploy workflow reads `deploy/<env>.env` from the commit it deploys.
 6. **First deploy** of the env by hand (Backend above). After that, the workflows take over.
 
 ## Release order
