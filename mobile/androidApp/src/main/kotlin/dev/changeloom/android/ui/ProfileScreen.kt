@@ -150,7 +150,7 @@ internal fun ProfileScreen(
     }
     val photo = vm.photo.collectAsStateWithLifecycle().value
     val photoImage = remember(photo) { photo?.asImageBitmap() }
-    LaunchedEffect(Unit) { vm.refresh() }
+    LaunchedEffect(Unit) { vm.shown() }
     ProfileContent(
         displayName = vm.displayName,
         email = vm.email,

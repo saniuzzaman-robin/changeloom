@@ -15,10 +15,14 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import kotlinx.io.IOException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import kotlin.test.Test
@@ -174,6 +178,29 @@ class ChangeloomApiTest {
         val api = ChangeloomApi(ChangeloomApi.createClient("http://api.test", engine), auth)
         assertEquals(1L, api.me().id)
         assertEquals(listOf<String?>("Bearer old", "Bearer new"), tokens)
+        assertEquals(1, auth.refreshes)
+    }
+
+    @Test
+    fun concurrentUnauthorizedShareOneRefresh() = runTest {
+        val auth = RefreshingAuth()
+        val calls = 3
+        val arrived = Mutex()
+        var stale = 0
+        val allStale = CompletableDeferred<Unit>()
+        val engine = MockEngine { request ->
+            if (request.headers[HttpHeaders.Authorization] == "Bearer new") {
+                respond("""{"id":1,"topics":[]}""", headers = jsonHeaders)
+            } else {
+                // Every call is rejected only once all of them have sent the old token.
+                arrived.withLock { if (++stale == calls) allStale.complete(Unit) }
+                allStale.await()
+                respondError(HttpStatusCode.Unauthorized)
+            }
+        }
+        val api = ChangeloomApi(ChangeloomApi.createClient("http://api.test", engine), auth)
+        val results = List(calls) { async { api.me() } }.awaitAll()
+        assertEquals(List(calls) { 1L }, results.map { it.id })
         assertEquals(1, auth.refreshes)
     }
 

@@ -133,8 +133,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import dev.changeloom.android.R
 import dev.changeloom.android.ads.FeedAds
 import dev.changeloom.android.ads.NativeAdCard
@@ -440,7 +441,8 @@ private fun FeedScreen(
         onUndo = vm::undo,
         onUndoExpired = vm::undoExpired,
     )
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.flushViews() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) { lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.trackViews() } }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

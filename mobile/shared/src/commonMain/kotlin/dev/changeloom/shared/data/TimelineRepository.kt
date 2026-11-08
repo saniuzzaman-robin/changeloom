@@ -55,6 +55,11 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
     private val _state = MutableStateFlow(TimelineState())
     val state: StateFlow<TimelineState> = _state.asStateFlow()
 
+    private val _changes = MutableStateFlow(0)
+
+    /** Counts the user's read and bookmark changes, so screens built on them (stats, saved stories) know to reload. */
+    val changes: StateFlow<Int> = _changes.asStateFlow()
+
     private val bookmarkMutex = Mutex()
 
     /** Serializes mute changes: each one reads the server's set and writes it back whole. */
@@ -128,6 +133,7 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
         val before = _state.value.items.firstOrNull { it.id == id } ?: return
         if (before.isRead == read) return
         applyRead(id, read)
+        _changes.update { it + 1 }
         try {
             if (read) api.markRead(id) else api.markUnread(id)
             persist()
@@ -239,6 +245,7 @@ class TimelineRepository(private val api: ChangeloomApi, private val cache: Stor
      */
     suspend fun setBookmarked(id: Long, on: Boolean) {
         applyBookmark(id, on)
+        _changes.update { it + 1 }
         bookmarkMutex.withLock {
             if (pendingBookmarks[id] == !on) pendingBookmarks.remove(id) else pendingBookmarks[id] = on
         }

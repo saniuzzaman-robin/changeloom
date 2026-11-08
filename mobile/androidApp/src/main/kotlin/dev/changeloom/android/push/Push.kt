@@ -20,28 +20,58 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.android.ext.android.inject
+import java.security.MessageDigest
 
 private const val TAG = "Push"
 private const val PLATFORM = "android"
 private const val UNREGISTER_TIMEOUT_MS = 5_000L
 
+/** A registration the server already has is sent again after this long, in case the server dropped it. */
+internal const val REREGISTER_AFTER_MS = 24 * 60 * 60 * 1000L
+
 /** Intent extra (and FCM data key) holding the id of the story a notification is about. */
 const val EXTRA_STORY_ID = "story_id"
 
+/** The last registration the server accepted: a hash of (account, token) and when, in [now] millis. */
+interface RegistrationStore {
+    var registeredKey: String?
+    var registeredAt: Long
+}
+
 /**
- * Registers this device's FCM token with the API. Failures are logged: push is best-effort.
+ * Registers this device's FCM token with the API. Failures are logged: push is best-effort. A registration is sent
+ * only when the (account, token) pair changed or the last one is over [REREGISTER_AFTER_MS] old, not on every launch.
  *
  * FirebaseMessaging.getToken() is deprecated in favour of register()/FIDs, which also needs api, schema and
  * manifest changes (and the backend sender on FIDs), so it is suppressed until that migration is done.
  */
 @Suppress("DEPRECATION")
-class DeviceRegistrar(private val api: ChangeloomApi) {
-    /** Registers [token], or the current FCM token when null. */
+class DeviceRegistrar(
+    private val api: ChangeloomApi,
+    private val auth: AuthRepository,
+    private val store: RegistrationStore,
+    private val now: () -> Long = System::currentTimeMillis,
+    private val fcmToken: suspend () -> String = { FirebaseMessaging.getInstance().token.await() },
+) {
+    /** Registers [token], or the current FCM token when null, for the signed-in account. */
     suspend fun register(token: String? = null) {
         try {
-            api.registerDevice(token ?: FirebaseMessaging.getInstance().token.await(), PLATFORM)
+            val uid = auth.currentUser.value?.uid ?: return
+            val fcm = token ?: fcmToken()
+            val key = registrationKey(uid, fcm)
+            // Off the main thread: the first preferences read loads the file.
+            val fresh = withContext(Dispatchers.IO) {
+                store.registeredKey == key && now() - store.registeredAt in 0 until REREGISTER_AFTER_MS
+            }
+            if (fresh) return
+            api.registerDevice(fcm, PLATFORM)
+            withContext(Dispatchers.IO) {
+                store.registeredKey = key
+                store.registeredAt = now()
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -52,8 +82,10 @@ class DeviceRegistrar(private val api: ChangeloomApi) {
     /** Call while still signed in. Bounded wait so sign-out is not held up by a bad connection. */
     suspend fun unregister() {
         try {
+            // Forgotten first: whatever the call's outcome, the next sign-in registers again.
+            withContext(Dispatchers.IO) { store.registeredKey = null }
             withTimeoutOrNull(UNREGISTER_TIMEOUT_MS) {
-                api.unregisterDevice(FirebaseMessaging.getInstance().token.await())
+                api.unregisterDevice(fcmToken())
             } ?: AppLog.w(TAG, "Timed out unregistering device for push")
         } catch (e: CancellationException) {
             throw e
@@ -62,6 +94,10 @@ class DeviceRegistrar(private val api: ChangeloomApi) {
         }
     }
 }
+
+/** Hashed, so the account id and push token aren't stored in preferences in the clear. */
+private fun registrationKey(uid: String, token: String): String =
+    MessageDigest.getInstance("SHA-256").digest("$uid\n$token".toByteArray()).joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
 
 /** The channel early builds used for every push; [createNotificationChannels] replaces it. */
 private const val LEGACY_CHANNEL_ID = "security_alerts"

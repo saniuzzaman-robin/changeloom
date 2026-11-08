@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -24,6 +23,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.core.splashscreen.SplashScreen
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import dev.changeloom.android.ads.ConsentManager
 import dev.changeloom.android.auth.SessionManager
@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         lifecycleScope.launch { updater.check(updateFlow) }
         setContent {
-            val mode by themePreferences.mode.collectAsState()
+            val mode by themePreferences.mode.collectAsStateWithLifecycle()
             val dark = mode.isDark()
             // Also on every start, so a choice made before this existed reaches the next launch's splash.
             LaunchedEffect(mode) { applyNightMode(mode) }
@@ -98,12 +98,13 @@ class MainActivity : ComponentActivity() {
                 // Test tags double as resource ids for the macrobenchmarks in :baselineprofile.
                 @OptIn(ExperimentalComposeUiApi::class)
                 Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
-                    val user by auth.currentUser.collectAsState()
-                    val storyId by pendingStoryId.collectAsState()
-                    val updateReady by updater.readyToInstall.collectAsState()
-                    val signedIn = user != null
-                    LaunchedEffect(signedIn) {
-                        if (signedIn) registrar.register()
+                    val user by auth.currentUser.collectAsStateWithLifecycle()
+                    val storyId by pendingStoryId.collectAsStateWithLifecycle()
+                    val updateReady by updater.readyToInstall.collectAsStateWithLifecycle()
+                    val uid = user?.uid
+                    // Sends only when this account's registration is new or stale, so a rotation costs nothing.
+                    LaunchedEffect(uid) {
+                        if (uid != null) registrar.register()
                     }
                     Box {
                         AppRoot(

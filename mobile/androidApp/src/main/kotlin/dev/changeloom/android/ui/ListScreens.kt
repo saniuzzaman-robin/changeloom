@@ -199,11 +199,11 @@ private fun SearchField(query: String, onChange: (String) -> Unit, onSearch: () 
     )
 }
 
-/** Saved stories. Reloaded each time the tab opens so changes made elsewhere show up. */
+/** Saved stories. Reloaded when the tab opens if a bookmark changed since or the list is old. */
 @Composable
 internal fun SavedScreen(onOpen: (Long) -> Unit, onBrowse: () -> Unit, contentPadding: PaddingValues, vm: BookmarksViewModel = koinViewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { vm.refresh() }
+    LaunchedEffect(Unit) { vm.shown() }
     SavedContent(
         state = state,
         contentPadding = contentPadding,

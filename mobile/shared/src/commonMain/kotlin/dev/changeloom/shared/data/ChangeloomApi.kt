@@ -28,6 +28,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.io.IOException
 import kotlinx.serialization.json.Json
 
@@ -55,19 +57,31 @@ class ChangeloomApi(
     /** Emits when the api rejects even a freshly refreshed token; the app should sign out. */
     val sessionExpired: SharedFlow<Unit> = _sessionExpired.asSharedFlow()
 
+    private val refreshLock = Mutex()
+
     private val client: HttpClient by lazy {
         httpClient.value.also { client ->
             // On a 401, refresh the ID token once and resend; a second 401 means the session is gone.
             client.plugin(HttpSend).intercept { request ->
                 val call = execute(request)
                 if (call.response.status != HttpStatusCode.Unauthorized) return@intercept call
-                val fresh = auth.idToken(forceRefresh = true) ?: return@intercept call
+                val rejected = request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")
+                val fresh = refreshedToken(rejected) ?: return@intercept call
                 request.headers[HttpHeaders.Authorization] = "Bearer $fresh"
                 execute(request).also {
                     if (it.response.status == HttpStatusCode.Unauthorized) _sessionExpired.tryEmit(Unit)
                 }
             }
         }
+    }
+
+    /**
+     * Single flight: concurrent 401s wait for one forced refresh. A caller whose [rejected] token was already replaced
+     * by another caller's refresh gets the current token without refreshing again.
+     */
+    private suspend fun refreshedToken(rejected: String?): String? = refreshLock.withLock {
+        val current = auth.idToken()
+        if (current != null && current != rejected) current else auth.idToken(forceRefresh = true)
     }
 
     suspend fun topicList(): TopicList = client.get("v1/topics") { authorize() }.parse()
@@ -225,8 +239,8 @@ class ChangeloomApi(
         const val TIMELINE_PAGE_SIZE = 20
         const val MAX_VIEW_IDS = 100
         const val APP_CHECK_HEADER = "X-Firebase-AppCheck"
-        private const val REQUEST_TIMEOUT_MS = 15_000L
-        private const val CONNECT_TIMEOUT_MS = 10_000L
+        const val REQUEST_TIMEOUT_MS = 15_000L
+        const val CONNECT_TIMEOUT_MS = 10_000L
         private const val MAX_GET_RETRIES = 2
         private val retryableStatuses = setOf(502, 503, 504)
 
