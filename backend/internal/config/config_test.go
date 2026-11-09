@@ -83,7 +83,7 @@ func TestLoadDefaults(t *testing.T) {
 		t.Errorf("Load() = timeline window %s, want 14 days", cfg.TimelineWindow)
 	}
 	want := TimelineScore{
-		TierWeight: 2, ImportanceWeight: 1, SeverityWeight: 0.5, AgeDecay: 24 * time.Hour, SeenPenalty: 3, SeenGrace: 12 * time.Hour,
+		TierWeight: 2, ImportanceWeight: 1, SeverityWeight: 0.5, AgeDecay: 96 * time.Hour, SeenPenalty: 3, SeenGrace: 12 * time.Hour,
 		AffinityWeight: 1.5, AffinityWindow: 30 * 24 * time.Hour, AffinityPrior: 4, BoostEngagements: 3, ActionWeight: 1,
 	}
 	if cfg.TimelineScore != want {
