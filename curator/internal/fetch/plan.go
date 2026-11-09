@@ -52,6 +52,8 @@ type Group struct {
 	Since time.Time
 	// PerTopic is the most stories asked for per topic.
 	PerTopic int
+	// MinImportance is the least importance a story needs to be stored (deals have none).
+	MinImportance int
 	// Also are topic slugs besides Topics that stories may be tagged with: their parents and
 	// related topics.
 	Also []string
@@ -61,8 +63,9 @@ type Group struct {
 type PlanSettings struct {
 	TopicsPerCall int
 	MaxCalls      int
-	// StoriesPerTopic is copied to each group.
+	// StoriesPerTopic and MinImportance are copied to each group.
 	StoriesPerTopic int
+	MinImportance   int
 	// HotMinEngaged is the recent users who opened or saved a story that make a topic hot;
 	// WarmInterval is the least time between fetches of a warm topic, and PriorityIntervals[p-1]
 	// that of a cold topic of priority p.
@@ -244,6 +247,7 @@ func Plan(topics []Topic, s PlanSettings, now time.Time) (groups []Group, deferr
 		}
 		groups[i].Since = since
 		groups[i].PerTopic = s.StoriesPerTopic
+		groups[i].MinImportance = s.MinImportance
 	}
 	return groups, deferred
 }

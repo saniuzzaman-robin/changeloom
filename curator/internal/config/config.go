@@ -118,6 +118,9 @@ type Config struct {
 	// StoriesPerTopic is the most stories asked for per topic in one fetch call
 	// (CURATOR_STORIES_PER_TOPIC).
 	StoriesPerTopic int
+	// MinImportance is the least importance, 1 to 5, a news story needs to be stored; deals are exempt
+	// (CURATOR_MIN_IMPORTANCE).
+	MinImportance int
 	// Concurrency is how many Claude calls run at once (CURATOR_CONCURRENCY).
 	Concurrency int
 
@@ -296,9 +299,9 @@ func Load() (Config, error) {
 		MaxCallsPerRun:       envInt(&errs, "CURATOR_MAX_CALLS_PER_RUN", 8),
 		TopicsPerCall:        envInt(&errs, "CURATOR_TOPICS_PER_CALL", 5),
 		MaxNewTopicsPerRun:   envInt(&errs, "CURATOR_MAX_NEW_TOPICS_PER_RUN", 5),
-		ItemMaxAge:           time.Duration(envInt(&errs, "CURATOR_ITEM_MAX_AGE_DAYS", 14)) * 24 * time.Hour,
-		MinLookback:          time.Duration(envInt(&errs, "CURATOR_MIN_LOOKBACK_DAYS", 7)) * 24 * time.Hour,
-		MergeWindow:          time.Duration(envInt(&errs, "CURATOR_MERGE_WINDOW_DAYS", 14)) * 24 * time.Hour,
+		ItemMaxAge:           time.Duration(envInt(&errs, "CURATOR_ITEM_MAX_AGE_DAYS", 15)) * 24 * time.Hour,
+		MinLookback:          time.Duration(envInt(&errs, "CURATOR_MIN_LOOKBACK_DAYS", 15)) * 24 * time.Hour,
+		MergeWindow:          time.Duration(envInt(&errs, "CURATOR_MERGE_WINDOW_DAYS", 15)) * 24 * time.Hour,
 		BackoffAfter:         envInt(&errs, "CURATOR_BACKOFF_AFTER_EMPTY", 3),
 		BackoffMaxMultiplier: envInt(&errs, "CURATOR_BACKOFF_MAX_MULTIPLIER", 8),
 		KnownStoriesMax:      envInt(&errs, "CURATOR_KNOWN_STORIES_MAX", 50),
@@ -307,7 +310,8 @@ func Load() (Config, error) {
 		FetchCooldown:        fetchCooldown,
 		WarmInterval:         time.Duration(envInt(&errs, "CURATOR_WARM_INTERVAL_HOURS", 24)) * time.Hour,
 		PriorityIntervals:    envHours(&errs, "CURATOR_PRIORITY_INTERVAL_HOURS", [5]int{48, 96, 168, 336, 672}),
-		StoriesPerTopic:      envInt(&errs, "CURATOR_STORIES_PER_TOPIC", 5),
+		StoriesPerTopic:      envInt(&errs, "CURATOR_STORIES_PER_TOPIC", 3),
+		MinImportance:        envInt(&errs, "CURATOR_MIN_IMPORTANCE", 3),
 		Concurrency:          envInt(&errs, "CURATOR_CONCURRENCY", 2),
 
 		DealsEnabled:        envBool(&errs, "CURATOR_DEALS_ENABLED", false),
@@ -315,7 +319,7 @@ func Load() (Config, error) {
 		DealsMaxCallsPerRun: envInt(&errs, "CURATOR_DEALS_MAX_CALLS_PER_RUN", 4),
 		DealsMaxAge:         time.Duration(envInt(&errs, "CURATOR_DEALS_MAX_AGE_DAYS", 7)) * 24 * time.Hour,
 
-		PruneMaxAge: time.Duration(envInt(&errs, "CURATOR_PRUNE_MAX_AGE_DAYS", 14)) * 24 * time.Hour,
+		PruneMaxAge: time.Duration(envInt(&errs, "CURATOR_PRUNE_MAX_AGE_DAYS", 15)) * 24 * time.Hour,
 	}
 
 	for _, env := range Envs {
@@ -343,6 +347,10 @@ func Load() (Config, error) {
 
 	if provider == ProviderLocal && cfg.Ollama.Model == "" {
 		errs = append(errs, errors.New("OLLAMA_MODEL (or CURATOR_AI_MODEL) is required with CURATOR_AI_PROVIDER=local"))
+	}
+
+	if cfg.MinImportance > 5 {
+		errs = append(errs, fmt.Errorf("CURATOR_MIN_IMPORTANCE must be 1 to 5, got %d", cfg.MinImportance))
 	}
 
 	defaultStyle := PromptCompact
