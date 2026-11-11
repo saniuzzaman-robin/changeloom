@@ -111,7 +111,7 @@ internal fun SearchContent(
     val listState = rememberLazyListState()
     LoadMoreEffect(listState, onLoadMore)
 
-    Box(Modifier.fillMaxSize().tabContentBounds(contentPadding)) {
+    Box(Modifier.fillMaxSize().tabContentBounds(contentPadding).readableWidth()) {
         // Side insets are applied per child: listPadding() already includes them for the results.
         Column(Modifier.fillMaxSize()) {
             Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = Spacing.gutter).padding(top = 16.dp)) {
@@ -232,7 +232,7 @@ internal fun SavedContent(
     val animateIn = rememberStaggered(listState)
     LoadMoreEffect(listState, onLoadMore)
 
-    Box(Modifier.fillMaxSize().tabContentBounds(contentPadding)) {
+    Box(Modifier.fillMaxSize().tabContentBounds(contentPadding).readableWidth()) {
         LazyColumn(
             Modifier.fillMaxSize(),
             state = listState,

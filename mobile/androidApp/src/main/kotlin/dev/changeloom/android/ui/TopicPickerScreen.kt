@@ -235,7 +235,7 @@ internal fun TopicPickerContent(
     Box(Modifier.fillMaxSize().background(c.bg)) {
         GridBackground(Modifier.fillMaxWidth().height(360.dp))
         SpotlightGlow(Modifier.fillMaxWidth().height(420.dp))
-        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))) {
+        Column(Modifier.fillMaxSize().readableWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))) {
             PickerHeader(mode, professionStep, onExit)
             SearchField(
                 state.query,

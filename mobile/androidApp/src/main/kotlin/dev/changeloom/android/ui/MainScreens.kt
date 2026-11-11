@@ -4,6 +4,7 @@ import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -20,7 +21,9 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,6 +39,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -100,6 +104,7 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
@@ -123,6 +128,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -269,7 +275,10 @@ fun MainScreen(openStoryId: Long? = null, onOpenStoryHandled: () -> Unit = {}) {
         }
     }
 
-    val overlay = storyId?.let { Overlay.Story(it) } ?: when {
+    // At Expanded width a story opened from a list tab sits in the shell's detail pane; one opened from catch-up
+    // stays a full-screen overlay. Rotation, folding and resizing move it between the two with nothing lost.
+    val inPane = LocalWindowWidth.current == WindowWidth.Expanded && !catchingUp
+    val overlay = storyId?.takeIf { !inPane }?.let { Overlay.Story(it) } ?: when {
         catchingUp -> Overlay.CatchUp
         editingTopics -> Overlay.Topics
         else -> Overlay.None
@@ -287,7 +296,7 @@ fun MainScreen(openStoryId: Long? = null, onOpenStoryHandled: () -> Unit = {}) {
             Overlay.None -> tab.name.lowercase()
         },
     )
-    BackHandler(enabled = storyId != null) { storyId = null }
+    BackHandler(enabled = storyId != null && (overlay is Overlay.Story || (inPane && overlay == Overlay.None))) { storyId = null }
     BackHandler(enabled = overlay == Overlay.CatchUp) { closeCatchUp() }
     BackHandler(enabled = overlay == Overlay.None && tab != Tab.Feed) { tab = Tab.Feed }
     NotificationRationale()
@@ -299,7 +308,7 @@ fun MainScreen(openStoryId: Long? = null, onOpenStoryHandled: () -> Unit = {}) {
                 CompositionLocalProvider(LocalSharedTransitionScope provides this@SharedTransitionLayout, LocalOverlayScope provides this) {
                     when (target) {
                         Overlay.None -> shell.SaveableStateProvider("shell") {
-                            Shell(tab, onTab = { tab = it }, onOpen = { storyId = it }, onEditTopics = { editingTopics = true }, onCatchUp = { catchingUp = true })
+                            Shell(tab, storyId.takeIf { inPane }, onTab = { tab = it }, onOpen = { storyId = it }, onEditTopics = { editingTopics = true }, onCatchUp = { catchingUp = true })
                         }
                         Overlay.Topics -> TopicPickerScreen(TopicPickerMode.Edit, onExit = { editingTopics = false }, vm = picker)
                         Overlay.CatchUp -> shell.SaveableStateProvider(CATCH_UP_STATE) {
@@ -329,7 +338,7 @@ private fun AnimatedContentTransitionScope<Overlay>.overlayTransition(): Content
 }
 
 @Composable
-private fun Shell(tab: Tab, onTab: (Tab) -> Unit, onOpen: (Long) -> Unit, onEditTopics: () -> Unit, onCatchUp: () -> Unit) {
+private fun Shell(tab: Tab, paneStoryId: Long?, onTab: (Tab) -> Unit, onOpen: (Long) -> Unit, onEditTopics: () -> Unit, onCatchUp: () -> Unit) {
     val tabs = rememberSaveableStateHolder()
     val timeline: TimelineViewModel = koinViewModel()
     val profile: ProfileViewModel = koinViewModel()
@@ -347,38 +356,81 @@ private fun Shell(tab: Tab, onTab: (Tab) -> Unit, onOpen: (Long) -> Unit, onEdit
         shownTab = tab
     }
     // One backdrop behind every tab, so it spans the whole screen and stays put while tabs slide.
+    val railed = LocalWindowWidth.current != WindowWidth.Compact
     Box(Modifier.fillMaxSize()) {
         ScreenBackdrop(Modifier.matchParentSize())
-        Scaffold(
-            containerColor = Color.Transparent,
-            contentWindowInsets = WindowInsets(0),
-            bottomBar = { TabBar(tab, onTab, hasUnread) },
-        ) { padding ->
-            AnimatedContent(tab, transitionSpec = { tabTransition() }, label = "tabs") { current ->
-                tabs.SaveableStateProvider(current.name) {
-                    when (current) {
-                        Tab.Feed -> FeedScreen(
-                            onOpen,
-                            onProfile = { onTab(Tab.Profile) },
-                            onOpenSaved = { onTab(Tab.Saved) },
-                            onCatchUp = onCatchUp,
-                            displayName = profile.displayName,
-                            userEmail = profile.email,
-                            photo = photoImage,
-                            contentPadding = padding,
-                        )
-                        Tab.Search -> SearchScreen(onOpen, contentPadding = padding)
-                        Tab.Saved -> SavedScreen(onOpen, onBrowse = { onTab(Tab.Feed) }, contentPadding = padding)
-                        Tab.Profile -> ProfileScreen(onEditTopics, contentPadding = padding)
+        Row(Modifier.fillMaxSize()) {
+            if (railed) NavRail(tab, onTab, hasUnread)
+            val paned = LocalWindowWidth.current == WindowWidth.Expanded && tab != Tab.Profile
+            CompositionLocalProvider(LocalNavRail provides railed, LocalSelectedStory provides paneStoryId.takeIf { paned }) {
+            Scaffold(
+                modifier = Modifier.weight(if (paned) LIST_PANE_WEIGHT else 1f),
+                containerColor = Color.Transparent,
+                contentWindowInsets = WindowInsets(0),
+                bottomBar = { if (!railed) TabBar(tab, onTab, hasUnread) },
+            ) { padding ->
+                AnimatedContent(tab, transitionSpec = { tabTransition(railed) }, label = "tabs") { current ->
+                    tabs.SaveableStateProvider(current.name) {
+                        when (current) {
+                            Tab.Feed -> FeedScreen(
+                                onOpen,
+                                onProfile = { onTab(Tab.Profile) },
+                                onOpenSaved = { onTab(Tab.Saved) },
+                                onCatchUp = onCatchUp,
+                                displayName = profile.displayName,
+                                userEmail = profile.email,
+                                photo = photoImage,
+                                contentPadding = padding,
+                            )
+                            Tab.Search -> SearchScreen(onOpen, contentPadding = padding)
+                            Tab.Saved -> SavedScreen(onOpen, onBrowse = { onTab(Tab.Feed) }, contentPadding = padding)
+                            Tab.Profile -> ProfileScreen(onEditTopics, contentPadding = padding)
+                        }
                     }
                 }
+            }
+            }
+            if (paned) {
+                DetailPane(paneStoryId, onOpenStory = onOpen, Modifier.weight(1f - LIST_PANE_WEIGHT))
             }
         }
     }
 }
 
-private fun AnimatedContentTransitionScope<Tab>.tabTransition(): ContentTransform {
+/** The story open beside the list at Expanded width; it cross-fades between stories and keeps a scroll position per story. */
+@Composable
+private fun DetailPane(storyId: Long?, onOpenStory: (Long) -> Unit, modifier: Modifier = Modifier) {
+    val c = ChangeloomTheme.colors
+    Box(
+        modifier
+            .fillMaxHeight()
+            .drawBehind { drawLine(c.line, Offset.Zero, Offset(0f, size.height), 1.dp.toPx()) }
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.End)),
+    ) {
+        Crossfade(storyId, animationSpec = expoTween(Durations.MEDIUM), label = "detailPane") { id ->
+            if (id == null) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    EmptyState(title = stringResource(R.string.pane_empty_title), message = stringResource(R.string.pane_empty_body))
+                }
+            } else {
+                StoryDetailScreen(id, onBack = {}, onOpenStory = onOpenStory, paneMode = true)
+            }
+        }
+    }
+}
+
+/** The story shown in the detail pane, so its card in the list can be highlighted; null with no pane. */
+private val LocalSelectedStory = compositionLocalOf<Long?> { null }
+
+/** True while the nav rail (not the bottom bar) is shown: it owns the start and bottom insets. */
+private val LocalNavRail = compositionLocalOf { false }
+
+private fun AnimatedContentTransitionScope<Tab>.tabTransition(railed: Boolean): ContentTransform {
     val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
+    if (railed) {
+        return (fadeIn(expoTween(Durations.MEDIUM)) + slideInVertically(expoTween(Durations.SLOW)) { dir * it / TAB_SLIDE_DIVISOR }) togetherWith
+            (fadeOut(expoTween(Durations.FAST)) + slideOutVertically(expoTween(Durations.SLOW)) { -dir * it / TAB_SLIDE_DIVISOR })
+    }
     return (fadeIn(expoTween(Durations.MEDIUM)) + slideInHorizontally(expoTween(Durations.SLOW)) { dir * it / TAB_SLIDE_DIVISOR }) togetherWith
         (fadeOut(expoTween(Durations.FAST)) + slideOutHorizontally(expoTween(Durations.SLOW)) { -dir * it / TAB_SLIDE_DIVISOR })
 }
@@ -396,6 +448,25 @@ private fun TabBar(current: Tab, onSelect: (Tab) -> Unit, hasUnread: Boolean) {
     ) {
         Tab.entries.forEach { tab ->
             TabItem(tab, selected = tab == current, badge = tab == Tab.Feed && hasUnread, onClick = { onSelect(tab) }, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun NavRail(current: Tab, onSelect: (Tab) -> Unit, hasUnread: Boolean) {
+    val c = ChangeloomTheme.colors
+    Column(
+        Modifier
+            .fillMaxHeight()
+            .background(c.navGlass)
+            .drawBehind { drawLine(c.line, Offset(size.width, 0f), Offset(size.width, size.height), 1.dp.toPx()) }
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start + WindowInsetsSides.Vertical))
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Tab.entries.forEach { tab ->
+            TabItem(tab, selected = tab == current, badge = tab == Tab.Feed && hasUnread, onClick = { onSelect(tab) }, Modifier.width(RAIL_ITEM_WIDTH))
         }
     }
 }
@@ -542,7 +613,7 @@ internal fun FeedContent(
     LoadMoreEffect(listState, onLoadMore)
     SeenEffect(listState, onSeen)
 
-    Box(Modifier.fillMaxSize().tabContentBounds(contentPadding)) {
+    Box(Modifier.fillMaxSize().tabContentBounds(contentPadding).readableWidth()) {
         PullToRefreshBox(
             isRefreshing = state.refreshing && state.items.isNotEmpty(),
             onRefresh = onRefresh,
@@ -1089,9 +1160,11 @@ internal fun StoryCard(
     val topicName = LocalTopicName.current
     val brand = ChangeloomTheme.gradients.brand
     val accent by animateFloatAsState(if (story.isRead) 0f else 1f, expoTween(Durations.SLOW), label = "unreadAccent")
+    val selected = LocalSelectedStory.current == story.id
     GlassCard(
         modifier.fillMaxWidth().testTag("story_card"),
         onClick = onOpen,
+        border = if (selected) SolidColor(c.primary) else null,
         contentPadding = PaddingValues(start = Spacing.cardPadding, end = 4.dp, top = Spacing.cardPadding, bottom = 4.dp),
     ) {
         Column(
@@ -1373,16 +1446,23 @@ private const val SEEN_DWELL_MS = 1_000L
  */
 @Composable
 internal fun Modifier.tabContentBounds(shellPadding: PaddingValues): Modifier =
-    windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
-        .padding(bottom = shellPadding.calculateBottomPadding())
+    if (LocalNavRail.current) {
+        // The rail has no bottom bar to sit above, so the content stops at the navigation bar itself.
+        windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))
+    } else {
+        windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+            .padding(bottom = shellPadding.calculateBottomPadding())
+    }
 
 /** List padding inside [tabContentBounds]: the gutter plus any side insets (a 3-button nav bar or cutout in landscape). */
 @Composable
 internal fun listPadding(): PaddingValues {
     val safe = WindowInsets.safeDrawing.asPaddingValues()
     val direction = LocalLayoutDirection.current
+    // The nav rail already sits inside the start inset.
+    val startInset = if (LocalNavRail.current) 0.dp else safe.calculateStartPadding(direction)
     return PaddingValues(
-        start = safe.calculateStartPadding(direction) + Spacing.gutter,
+        start = startInset + Spacing.gutter,
         end = safe.calculateEndPadding(direction) + Spacing.gutter,
         top = 8.dp,
         bottom = 16.dp,
@@ -1489,16 +1569,54 @@ private fun FeedLoadingDark() = ChangeloomTheme(ThemeMode.Dark) {
     Box(Modifier.background(ChangeloomTheme.colors.bg)) { FeedPreview(TimelineState(refreshing = true)) }
 }
 
+@Preview(name = "Feed, tablet", widthDp = 1280, heightDp = 800)
+@Composable
+private fun FeedTablet() = ChangeloomTheme(ThemeMode.Dark) {
+    Box(Modifier.background(ChangeloomTheme.colors.bg)) { FeedPreview(TimelineState(items = previewStories())) }
+}
+
+@Preview(name = "Feed, foldable", widthDp = 673, heightDp = 841)
+@Composable
+private fun FeedFoldable() = ChangeloomTheme(ThemeMode.Light) {
+    Box(Modifier.background(ChangeloomTheme.colors.bg)) { FeedPreview(TimelineState(items = previewStories())) }
+}
+
+@Preview(name = "Nav rail, tablet", widthDp = 1280, heightDp = 800)
+@Composable
+private fun NavRailTablet() = ChangeloomTheme(ThemeMode.Light) {
+    Box(Modifier.background(ChangeloomTheme.colors.bg)) { NavRail(Tab.Feed, {}, hasUnread = true) }
+}
+
+@Preview(name = "Nav rail, foldable", widthDp = 673, heightDp = 841)
+@Composable
+private fun NavRailFoldable() = ChangeloomTheme(ThemeMode.Dark) {
+    Box(Modifier.background(ChangeloomTheme.colors.bg)) { NavRail(Tab.Saved, {}, hasUnread = false) }
+}
+
+@Preview(name = "Detail pane, empty, tablet", widthDp = 1280, heightDp = 800)
+@Composable
+private fun DetailPaneEmptyTablet() = ChangeloomTheme(ThemeMode.Dark) {
+    Row(Modifier.background(ChangeloomTheme.colors.bg)) {
+        NavRail(Tab.Feed, {}, hasUnread = true)
+        Spacer(Modifier.weight(LIST_PANE_WEIGHT))
+        DetailPane(null, onOpenStory = {}, Modifier.weight(1f - LIST_PANE_WEIGHT))
+    }
+}
+
 @Preview(name = "Tab bar, light")
 @Composable
 private fun TabBarLight() = ChangeloomTheme(ThemeMode.Light) { TabBar(Tab.Saved, {}, hasUnread = true) }
 
 private const val LOAD_MORE_THRESHOLD = 3
+private val RAIL_ITEM_WIDTH = 72.dp
 internal const val LIST_SKELETON_CARDS = 4
 private const val STAGGERED_CARDS = 6
 private const val STAGGER_START_MILLIS = 200
 private const val STAGGER_STEP_MILLIS = 60
 private const val TAB_SLIDE_DIVISOR = 12
+
+/** Share of the width beside the rail that the list takes when a detail pane is shown. */
+private const val LIST_PANE_WEIGHT = 0.42f
 private const val DATE_LENGTH = 10
 private const val WEEK_DAYS = 7
 private const val TITLE_LINES = 3

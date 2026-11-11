@@ -32,6 +32,8 @@
     <string name="sign_in_failed">Sign-in failed</string>
     <string name="topics_load_failed">Couldn\'t load topics</string>
     <string name="topics_save_failed">Couldn\'t save your topics</string>
+    <string name="pane_empty_title">Pick a story</string>
+    <string name="pane_empty_body">Choose one from the list to read it here.</string>
     <string name="story_load_failed">Couldn\'t load this story</string>
     <string name="stats_load_failed">Couldn\'t load your stats</string>
     <string name="request_send_failed">Couldn\'t send your request</string>

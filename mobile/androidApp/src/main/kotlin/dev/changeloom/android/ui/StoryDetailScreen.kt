@@ -119,7 +119,7 @@ import java.time.Instant
 import java.time.format.DateTimeParseException
 
 @Composable
-internal fun StoryDetailScreen(id: Long, onBack: () -> Unit, onOpenStory: (Long) -> Unit) {
+internal fun StoryDetailScreen(id: Long, onBack: () -> Unit, onOpenStory: (Long) -> Unit, paneMode: Boolean = false) {
     val vm: StoryDetailViewModel = koinViewModel(key = "story-$id") { parametersOf(id) }
     val state by vm.state.collectAsStateWithLifecycle()
     val cached by vm.cached.collectAsStateWithLifecycle()
@@ -132,6 +132,7 @@ internal fun StoryDetailScreen(id: Long, onBack: () -> Unit, onOpenStory: (Long)
         isRead = cached?.isRead,
         onBack = onBack,
         onOpenStory = onOpenStory,
+        paneMode = paneMode,
         onRetry = vm::load,
         onToggleSave = { state.story?.let { vm.setBookmarked(!it.isBookmarked) } },
         onToggleRead = { cached?.let { vm.setRead(!it.isRead) } },
@@ -153,6 +154,7 @@ internal fun StoryDetailContent(
     onToggleSave: () -> Unit,
     onToggleRead: () -> Unit,
     onShare: (Story) -> Unit,
+    paneMode: Boolean = false,
 ) {
     val c = ChangeloomTheme.colors
     val story = state.story
@@ -180,32 +182,34 @@ internal fun StoryDetailContent(
                     .testTag("story_detail")
                     .verticalScroll(scroll),
             ) {
-                if (hero != null) DetailHero(hero) else HeroSkeleton()
-                Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = Spacing.gutter)) {
-                    when {
-                        story != null -> {
-                            MarkdownText(story.bodyMd, Modifier.enter(BODY_ENTER_DELAY))
-                            if (thread.isNotEmpty()) {
-                                StoryThread(thread, onOpen = onOpenStory, Modifier.padding(top = 32.dp).enter(SOURCES_ENTER_DELAY))
+                Column(Modifier.readableWidth()) {
+                    if (hero != null) DetailHero(hero) else HeroSkeleton()
+                    Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = Spacing.gutter)) {
+                        when {
+                            story != null -> {
+                                MarkdownText(story.bodyMd, Modifier.enter(BODY_ENTER_DELAY))
+                                if (thread.isNotEmpty()) {
+                                    StoryThread(thread, onOpen = onOpenStory, Modifier.padding(top = 32.dp).enter(SOURCES_ENTER_DELAY))
+                                }
+                                if (story.sources.isNotEmpty()) {
+                                    SourceList(story.sources, onOpen = { uriHandler.openOrToast(it, context) }, Modifier.padding(top = 32.dp).enter(SOURCES_ENTER_DELAY))
+                                }
                             }
-                            if (story.sources.isNotEmpty()) {
-                                SourceList(story.sources, onOpen = { uriHandler.openOrToast(it, context) }, Modifier.padding(top = 32.dp).enter(SOURCES_ENTER_DELAY))
-                            }
+                            state.loading -> BodySkeleton()
+                            else -> StatusBanner(
+                                state.error ?: stringResource(R.string.story_load_failed),
+                                Icons.Rounded.ErrorOutline,
+                                tone = BannerTone.Error,
+                                actionLabel = stringResource(R.string.retry),
+                                onAction = onRetry,
+                            )
                         }
-                        state.loading -> BodySkeleton()
-                        else -> StatusBanner(
-                            state.error ?: stringResource(R.string.story_load_failed),
-                            Icons.Rounded.ErrorOutline,
-                            tone = BannerTone.Error,
-                            actionLabel = stringResource(R.string.retry),
-                            onAction = onRetry,
-                        )
                     }
+                    Spacer(Modifier.height(ACTION_BAR_SPACE))
                 }
-                Spacer(Modifier.height(ACTION_BAR_SPACE))
             }
         }
-        DetailTopBar(hero?.title, scroll, onBack, Modifier.align(Alignment.TopCenter))
+        DetailTopBar(hero?.title, scroll, onBack, showBack = !paneMode, Modifier.align(Alignment.TopCenter))
         AnimatedVisibility(
             story != null,
             Modifier.align(Alignment.BottomCenter),
@@ -314,7 +318,7 @@ private fun BodySkeleton() {
  * along its bottom edge and is drawn straight from [scroll], so scrolling doesn't recompose.
  */
 @Composable
-private fun DetailTopBar(title: String?, scroll: ScrollState, onBack: () -> Unit, modifier: Modifier = Modifier) {
+private fun DetailTopBar(title: String?, scroll: ScrollState, onBack: () -> Unit, showBack: Boolean, modifier: Modifier = Modifier) {
     val c = ChangeloomTheme.colors
     val brand = ChangeloomTheme.gradients.brandHorizontal
     val collapseAt = with(LocalDensity.current) { TITLE_COLLAPSE_OFFSET.toPx() }
@@ -329,16 +333,18 @@ private fun DetailTopBar(title: String?, scroll: ScrollState, onBack: () -> Unit
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(c.navGlass)
-                    .border(1.dp, c.line, CircleShape)
-                    .clickable(role = Role.Button, onClickLabel = stringResource(R.string.back), onClick = onBack),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.back), tint = c.fg, modifier = Modifier.size(20.dp))
+            if (showBack) {
+                Box(
+                    Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(c.navGlass)
+                        .border(1.dp, c.line, CircleShape)
+                        .clickable(role = Role.Button, onClickLabel = stringResource(R.string.back), onClick = onBack),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.back), tint = c.fg, modifier = Modifier.size(20.dp))
+                }
             }
             AnimatedVisibility(
                 collapsed && title != null,
