@@ -63,6 +63,25 @@ func TestPriorityIntervals(t *testing.T) {
 	}
 }
 
+func TestMinImportance(t *testing.T) {
+	t.Setenv("CURATOR_AI_PROVIDER", "claude")
+	t.Setenv("CURATOR_MIN_IMPORTANCE", "")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MinImportance != 3 {
+		t.Errorf("default = %d, want 3", cfg.MinImportance)
+	}
+
+	for _, bad := range []string{"0", "6", "x"} {
+		t.Setenv("CURATOR_MIN_IMPORTANCE", bad)
+		if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), "CURATOR_MIN_IMPORTANCE") {
+			t.Errorf("%q: err = %v", bad, err)
+		}
+	}
+}
+
 func TestLocalNeedsAModel(t *testing.T) {
 	t.Setenv("CURATOR_AI_PROVIDER", "local")
 	t.Setenv("OLLAMA_MODEL", "")

@@ -172,7 +172,7 @@ internal fun CatchUpScreen(
             CatchUpTopBar(pager, pages.size, onClose)
             VerticalPager(
                 pager,
-                Modifier.weight(1f).fillMaxWidth().testTag("catch_up"),
+                Modifier.weight(1f).readableWidth().testTag("catch_up"),
                 // The next card peeks in below, so the pages read as a stack to swipe through.
                 contentPadding = PaddingValues(horizontal = Spacing.gutter, vertical = CATCH_UP_PEEK),
                 pageSpacing = 12.dp,

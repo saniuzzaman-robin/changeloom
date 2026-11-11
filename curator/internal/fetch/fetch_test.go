@@ -287,6 +287,33 @@ func TestFetchConcurrentCallsDedupe(t *testing.T) {
 	}
 }
 
+func TestFetchDropsStoriesBelowTheFloor(t *testing.T) {
+	pool := setup(t)
+	ctx := t.Context()
+	now := time.Now()
+
+	fake := &fakeClaude{responses: []any{map[string]any{"stories": []any{
+		story("Go 1.27", "https://go.dev/blog/go1.27", now.Add(-time.Hour), func(s map[string]any) { s["importance"] = 4 }),
+		story("Gopls v0.20.1", "https://go.dev/blog/gopls", now.Add(-time.Hour), nil),
+	}}}}
+	cfg := testConfig()
+	cfg.MinImportance = 3
+	sum, err := fetch.New(pool, fake, cfg).Run(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The minor story is a valid answer, so it is dropped without counting as rejected.
+	if sum.Added != 1 || sum.Rejected != 0 {
+		t.Fatalf("summary = %+v", sum)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM stories WHERE title = 'Gopls v0.20.1'`); n != 0 {
+		t.Errorf("story below the floor was stored")
+	}
+	if !strings.Contains(fake.prompts[0], "importance 3 or higher") {
+		t.Errorf("prompt does not state the floor:\n%s", fake.prompts[0])
+	}
+}
+
 func TestFetchDealsPerCountry(t *testing.T) {
 	pool := dbtest.New(t)
 	ctx := t.Context()
@@ -330,7 +357,10 @@ topics:
 		// US: same URL still a separate story; a deal only valid in BD and one with a bad code are rejected.
 		map[string]any{"stories": []any{deal("Laptop deal US", []string{"us"}), deal("Not for US", []string{"BD"}), deal("Bad code", []string{"ZZ"})}},
 	}}
-	f = fetch.New(pool, fake, testConfig())
+	// Deals are importance 2 here: the news floor must not drop them.
+	cfg := testConfig()
+	cfg.MinImportance = 3
+	f = fetch.New(pool, fake, cfg)
 
 	sum, err := f.Run(ctx)
 	if err != nil {

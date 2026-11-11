@@ -199,6 +199,7 @@ func (f *Fetcher) Run(ctx context.Context) (Summary, error) {
 		TopicsPerCall:     f.cfg.TopicsPerCall,
 		MaxCalls:          f.cfg.MaxCallsPerRun,
 		StoriesPerTopic:   f.cfg.StoriesPerTopic,
+		MinImportance:     f.cfg.MinImportance,
 		HotMinEngaged:     f.cfg.HotMinEngaged,
 		HotInterval:       f.cfg.HotMinInterval,
 		Cooldown:          f.cfg.FetchCooldown,
@@ -261,6 +262,8 @@ func (f *Fetcher) planDeals(ctx context.Context, deals []Topic, s PlanSettings) 
 
 	s.MaxAge = f.cfg.DealsMaxAge
 	s.MinLookback = 0
+	// The deals prompt keeps importance 4 and 5 for exceptional lows, so deals have no floor.
+	s.MinImportance = 0
 	s.BackoffMaxMultiplier = 0
 	budget := f.cfg.DealsMaxCallsPerRun
 	for _, c := range countries {
@@ -386,6 +389,10 @@ func (f *Fetcher) runGroup(ctx context.Context, g Group, cat catalog) (groupResu
 	for _, r := range rejected {
 		slog.WarnContext(ctx, "story rejected", "group", g.Slug, "reason", r)
 	}
+	// Stories under the floor are valid answers, not model errors, so they are not counted as rejected.
+	kept := slices.DeleteFunc(stories, func(s Story) bool { return int(s.Importance) < g.MinImportance })
+	belowFloor := len(stories) - len(kept)
+	stories = kept
 
 	f.storeMu.Lock()
 	defer f.storeMu.Unlock()
@@ -418,7 +425,7 @@ func (f *Fetcher) runGroup(ctx context.Context, g Group, cat catalog) (groupResu
 	res.storeResult = stored
 
 	slog.InfoContext(ctx, "fetch call finished", "group", g.Slug, "added", stored.added, "merged", stored.merged,
-		"rejected", res.rejected, "cost_usd", out.CostUSD, "turns", out.Turns, "duration", out.Duration.Round(time.Second),
+		"rejected", res.rejected, "below_floor", belowFloor, "cost_usd", out.CostUSD, "turns", out.Turns, "duration", out.Duration.Round(time.Second),
 		"output_tokens", out.Usage.OutputTokens, "model", out.Model, "account", out.Account)
 	return res, nil
 }

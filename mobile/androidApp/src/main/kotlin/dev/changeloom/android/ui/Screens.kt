@@ -78,13 +78,14 @@ fun AppRoot(
     // Each target carries its own store owner, so a screen fading out keeps its ViewModels instead of picking up
     // the next session's (or, for sign-in, leaving the activity's store).
     val target = RootTarget(screen, if (userId == null) activityOwner else session, vm)
+    val windowWidth = rememberWindowWidth()
     AnimatedContent(
         target,
         transitionSpec = { fadeIn(expoTween()) togetherWith fadeOut(expoTween()) },
         contentKey = { it.screen },
         label = "root",
     ) { t ->
-        CompositionLocalProvider(LocalViewModelStoreOwner provides t.owner) {
+        CompositionLocalProvider(LocalViewModelStoreOwner provides t.owner, LocalWindowWidth provides windowWidth) {
             when (t.screen) {
                 RootScreen.SignIn -> {
                     SideEffect(onContentReady)

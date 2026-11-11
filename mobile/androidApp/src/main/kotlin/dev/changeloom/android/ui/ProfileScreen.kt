@@ -254,7 +254,7 @@ internal fun ProfileContent(
         ) {
             ProfileBanner(displayName, email, photo)
             Column(
-                Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = Spacing.gutter),
+                Modifier.readableWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = Spacing.gutter),
                 verticalArrangement = Arrangement.spacedBy(28.dp),
             ) {
                 Column(Modifier.enter(160)) {

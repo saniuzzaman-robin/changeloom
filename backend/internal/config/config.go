@@ -157,7 +157,7 @@ func Load() (Config, error) {
 		TierWeight:       envWeight(&errs, "TIMELINE_TIER_WEIGHT", 2),
 		ImportanceWeight: envWeight(&errs, "TIMELINE_IMPORTANCE_WEIGHT", 1),
 		SeverityWeight:   envWeight(&errs, "TIMELINE_SEVERITY_WEIGHT", 0.5),
-		AgeDecay:         time.Duration(envInt(&errs, "TIMELINE_DECAY_HOURS", 24)) * time.Hour,
+		AgeDecay:         time.Duration(envInt(&errs, "TIMELINE_DECAY_HOURS", 96)) * time.Hour,
 		SeenPenalty:      envWeight(&errs, "TIMELINE_SEEN_PENALTY", 3),
 		SeenGrace:        time.Duration(envInt(&errs, "TIMELINE_SEEN_GRACE_HOURS", 12)) * time.Hour,
 		AffinityWeight:   envWeight(&errs, "TIMELINE_AFFINITY_WEIGHT", 1.5),

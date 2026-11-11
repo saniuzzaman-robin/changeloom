@@ -8,4 +8,7 @@ object Spacing {
 
     /** Inner padding of content cards. */
     val cardPadding = 14.dp
+
+    /** Widest a content column grows on Medium and Expanded windows. */
+    val readableMaxWidth = 640.dp
 }
