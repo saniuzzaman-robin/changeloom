@@ -192,6 +192,18 @@
     <string name="browse_feed">Browse your feed</string>
 
     <!-- Topics -->
+    <!-- Intro (before onboarding, once per install) -->
+    <string name="intro_skip">Skip</string>
+    <string name="intro_next">Next</string>
+    <string name="intro_get_started">Get started</string>
+    <string name="intro_page_of">Page %1$d of %2$d</string>
+    <string name="intro_feed_title">A feed of just your stack</string>
+    <string name="intro_feed_body">Follow the languages, tools and platforms you use. Your feed shows the changes to them that matter, most important first.</string>
+    <string name="intro_save_title">Save what you\'ll need</string>
+    <string name="intro_save_body">Bookmark a release, migration or deprecation and find it again in Saved when it\'s time to act.</string>
+    <string name="intro_alerts_title">Hear about urgent changes</string>
+    <string name="intro_alerts_body">Get an alert when something urgent lands in a topic you follow, like a security fix. You choose whether to allow notifications.</string>
+
     <string name="topics_onboarding_eyebrow">Personalise your feed</string>
     <string name="topics_edit_eyebrow">Followed topics</string>
     <string name="topics_onboarding_title_1">What do you</string>

@@ -88,6 +88,8 @@ class MemoryReviewStore : ReviewStore {
     override var lastPromptAt = 0L
 }
 
+class MemoryIntroStore(override var introSeen: Boolean = false) : IntroStore
+
 object NoAnalytics : Analytics {
     override fun screenView(name: String) = Unit
     override fun login(method: String) = Unit

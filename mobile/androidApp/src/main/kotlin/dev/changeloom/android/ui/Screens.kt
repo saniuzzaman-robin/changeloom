@@ -69,10 +69,14 @@ fun AppRoot(
     var signInShown by rememberSaveable { mutableStateOf(false) }
     val vm: TopicPickerViewModel? = if (userId != null) koinViewModel(viewModelStoreOwner = session) else null
     val state = vm?.state?.collectAsStateWithLifecycle()?.value
+    // Per install, so it lives in the activity's store rather than the session's.
+    val intro: IntroViewModel = koinViewModel(viewModelStoreOwner = activityOwner)
+    val showIntro by intro.show.collectAsStateWithLifecycle()
     val screen = when {
         state == null -> RootScreen.SignIn
         state.followed.isNotEmpty() -> RootScreen.Main
-        state.loading -> RootScreen.Loading
+        state.loading || showIntro == null -> RootScreen.Loading
+        showIntro == true -> RootScreen.Intro
         else -> RootScreen.Onboarding
     }
     // Each target carries its own store owner, so a screen fading out keeps its ViewModels instead of picking up
@@ -98,6 +102,11 @@ fun AppRoot(
                     MainScreen(openStoryId, onOpenStoryHandled)
                 }
                 RootScreen.Loading -> LoadingMark(weave = signInShown)
+                RootScreen.Intro -> {
+                    SideEffect(onContentReady)
+                    TrackScreen("intro")
+                    IntroScreen(onDone = intro::finish)
+                }
                 RootScreen.Onboarding -> {
                     SideEffect(onContentReady)
                     TrackScreen("onboarding")
@@ -108,7 +117,7 @@ fun AppRoot(
     }
 }
 
-private enum class RootScreen { SignIn, Loading, Main, Onboarding }
+private enum class RootScreen { SignIn, Loading, Main, Intro, Onboarding }
 
 private data class RootTarget(val screen: RootScreen, val owner: ViewModelStoreOwner, val vm: TopicPickerViewModel?)
 
