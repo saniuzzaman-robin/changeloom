@@ -343,9 +343,20 @@ LIMIT @page_size;
 SELECT set_config('pg_trgm.word_similarity_threshold', '0.4', true);
 
 -- name: SearchStories :many
--- Full-text search over all stories visible to the user, newest first; titles also match fuzzily (typos) by trigram
--- word similarity of at least 0.4. Run it after SetSearchSimilarityThreshold in the same transaction: `<%` (unlike
--- word_similarity() >= 0.4) can use stories_title_trgm_idx. Keyset pagination on (published_at, id).
+-- Full-text search over all stories visible to the user, newest first. Only when no visible story matches the words
+-- do titles match fuzzily (typos) by trigram word similarity of at least 0.4; otherwise a near word ("click" for
+-- "ClickHouse") would bury the real matches. Run it after SetSearchSimilarityThreshold in the same transaction: `<%`
+-- (unlike word_similarity() >= 0.4) can use stories_title_trgm_idx. Keyset pagination on (published_at, id).
+WITH word_match AS (
+    SELECT EXISTS (
+        SELECT 1 FROM stories ws
+        WHERE ws.search @@ websearch_to_tsquery('english', @query::text)
+            AND (
+                ws.kind <> 'deal' OR cardinality(ws.countries) = 0
+                OR (SELECT u.country FROM users u WHERE u.id = @user_id) = ANY(ws.countries)
+            )
+    ) AS found
+)
 SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
     s.key_points, s.action_required,
     (ub.story_id IS NOT NULL)::boolean AS is_bookmarked,
@@ -356,9 +367,10 @@ SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_a
 FROM stories s
 LEFT JOIN user_story_state uss ON uss.story_id = s.id AND uss.user_id = @user_id
 LEFT JOIN user_bookmarks ub ON ub.story_id = s.id AND ub.user_id = @user_id
+CROSS JOIN word_match
 WHERE (
         s.search @@ websearch_to_tsquery('english', @query::text)
-        OR @query::text <% s.title
+        OR (NOT word_match.found AND @query::text <% s.title)
     )
     AND (
         s.kind <> 'deal' OR cardinality(s.countries) = 0
