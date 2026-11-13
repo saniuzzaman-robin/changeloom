@@ -239,3 +239,95 @@ func (q *Queries) ListTopicTree(ctx context.Context) ([]ListTopicTreeRow, error)
 	}
 	return items, nil
 }
+
+const moveStoryTopics = `-- name: MoveStoryTopics :execrows
+WITH moved AS (
+    DELETE FROM story_topics
+    WHERE topic_id = (SELECT f.id FROM topics f WHERE f.slug = $2)
+    RETURNING story_id
+)
+INSERT INTO story_topics (story_id, topic_id)
+SELECT moved.story_id, t.id FROM moved, topics t WHERE t.slug = $1
+ON CONFLICT DO NOTHING
+`
+
+type MoveStoryTopicsParams struct {
+	ToSlug   string
+	FromSlug string
+}
+
+func (q *Queries) MoveStoryTopics(ctx context.Context, arg MoveStoryTopicsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, moveStoryTopics, arg.ToSlug, arg.FromSlug)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const moveTopicFollows = `-- name: MoveTopicFollows :execrows
+WITH moved AS (
+    DELETE FROM user_topics
+    WHERE topic_id = (SELECT f.id FROM topics f WHERE f.slug = $2)
+    RETURNING user_id
+)
+INSERT INTO user_topics (user_id, topic_id)
+SELECT moved.user_id, t.id FROM moved, topics t WHERE t.slug = $1
+ON CONFLICT DO NOTHING
+`
+
+type MoveTopicFollowsParams struct {
+	ToSlug   string
+	FromSlug string
+}
+
+// Moves follows from topic @from_slug to @to_slug; a user who followed both keeps one. Counts the moved follows.
+func (q *Queries) MoveTopicFollows(ctx context.Context, arg MoveTopicFollowsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, moveTopicFollows, arg.ToSlug, arg.FromSlug)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const moveTopicMutes = `-- name: MoveTopicMutes :execrows
+WITH moved AS (
+    DELETE FROM user_topic_mutes
+    WHERE topic_id = (SELECT f.id FROM topics f WHERE f.slug = $2)
+    RETURNING user_id
+)
+INSERT INTO user_topic_mutes (user_id, topic_id)
+SELECT moved.user_id, t.id FROM moved, topics t WHERE t.slug = $1
+ON CONFLICT DO NOTHING
+`
+
+type MoveTopicMutesParams struct {
+	ToSlug   string
+	FromSlug string
+}
+
+func (q *Queries) MoveTopicMutes(ctx context.Context, arg MoveTopicMutesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, moveTopicMutes, arg.ToSlug, arg.FromSlug)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const moveTopicRequests = `-- name: MoveTopicRequests :execrows
+UPDATE topic_requests
+SET topic_id = (SELECT n.id FROM topics n WHERE n.slug = $1)
+WHERE topic_id = (SELECT f.id FROM topics f WHERE f.slug = $2)
+`
+
+type MoveTopicRequestsParams struct {
+	ToSlug   string
+	FromSlug string
+}
+
+func (q *Queries) MoveTopicRequests(ctx context.Context, arg MoveTopicRequestsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, moveTopicRequests, arg.ToSlug, arg.FromSlug)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}

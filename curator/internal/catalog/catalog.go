@@ -34,8 +34,11 @@ type Node struct {
 	Priority int `yaml:"priority"`
 	// Headline topics (and their descendants) reach every user's timeline when a story is
 	// important enough, and are fetched like followed topics.
-	Headline bool   `yaml:"headline"`
-	Children []Node `yaml:"children"`
+	Headline bool `yaml:"headline"`
+	// Replaces are slugs of topics this one took over, such as its slug before a rename. `curator clean`
+	// moves their follows, mutes, stories and requests here, then deletes them.
+	Replaces []string `yaml:"replaces"`
+	Children []Node   `yaml:"children"`
 }
 
 // Topic priorities: 1 is fetched first and most often.
@@ -131,7 +134,26 @@ func (c Catalog) Validate() error {
 	if err := validateLinks(c.Topics, seen); err != nil {
 		return err
 	}
+	if err := validateReplaces(c.Topics, seen, map[string]string{}); err != nil {
+		return err
+	}
 	return c.validateProfessions()
+}
+
+// Replacements maps each slug a catalog topic replaces to that topic's slug.
+func (c Catalog) Replacements() map[string]string {
+	out := map[string]string{}
+	var walk func([]Node)
+	walk = func(nodes []Node) {
+		for _, n := range nodes {
+			for _, r := range n.Replaces {
+				out[r] = n.Slug
+			}
+			walk(n.Children)
+		}
+	}
+	walk(c.Topics)
+	return out
 }
 
 func (c Catalog) validateProfessions() error {
@@ -248,6 +270,32 @@ func validateLinks(nodes []Node, slugs map[string]bool) error {
 			}
 		}
 		if err := validateLinks(n.Children, slugs); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateReplaces checks that replaced slugs are well formed, left the catalog, and are replaced by one topic.
+func validateReplaces(nodes []Node, slugs map[string]bool, by map[string]string) error {
+	for _, n := range nodes {
+		for _, r := range n.Replaces {
+			parent, _, _ := strings.Cut(r, "/")
+			if parent == r {
+				parent = ""
+			}
+			if err := CheckSlug(r, parent); err != nil {
+				return fmt.Errorf("topic %q replaces: %w", n.Slug, err)
+			}
+			switch {
+			case slugs[r]:
+				return fmt.Errorf("topic %q replaces %q, which is still in the catalog", n.Slug, r)
+			case by[r] != "":
+				return fmt.Errorf("topics %q and %q both replace %q", by[r], n.Slug, r)
+			}
+			by[r] = n.Slug
+		}
+		if err := validateReplaces(n.Children, slugs, by); err != nil {
 			return err
 		}
 	}

@@ -162,3 +162,80 @@ func TestCleanKeepsWhatIsInUse(t *testing.T) {
 		t.Errorf("local kept topics = %d, want 6", n)
 	}
 }
+
+const replacingCatalog = `
+professions:
+  - {slug: engineer, name: Engineer, topics: [databases], launch: true}
+topics:
+  - slug: databases
+    name: Databases
+    priority: 3
+    children:
+      - {slug: databases/postgresql, name: PostgreSQL, replaces: [databases/postgres]}
+`
+
+func TestCleanMergesReplacedTopics(t *testing.T) {
+	ctx := t.Context()
+	cat, err := catalog.Parse([]byte(replacingCatalog))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := dbtest.New(t)
+	if _, err := catalog.Seed(ctx, pool, cat); err != nil {
+		t.Fatal(err)
+	}
+	exec(t, pool, `INSERT INTO topics (slug, name, parent_id) SELECT 'databases/postgres', 'PostgreSQL', id FROM topics WHERE slug = 'databases'`)
+	exec(t, pool, `INSERT INTO users (firebase_uid) VALUES ('old'), ('both'), ('muter')`)
+	exec(t, pool, `INSERT INTO user_topics SELECT u.id, t.id FROM users u, topics t
+		WHERE (u.firebase_uid IN ('old', 'both') AND t.slug = 'databases/postgres') OR (u.firebase_uid = 'both' AND t.slug = 'databases/postgresql')`)
+	exec(t, pool, `INSERT INTO user_topic_mutes SELECT u.id, t.id FROM users u, topics t WHERE u.firebase_uid = 'muter' AND t.slug = 'databases/postgres'`)
+	exec(t, pool, `INSERT INTO topic_requests (user_id, text, status, topic_id)
+		SELECT u.id, 'Postgres', 'accepted', t.id FROM users u, topics t WHERE u.firebase_uid = 'old' AND t.slug = 'databases/postgres'`)
+	story(t, pool, "only old", "databases/postgres")
+	story(t, pool, "old and new", "databases/postgres", "databases/postgresql")
+
+	inUse := clean.NewInUse()
+	if err := inUse.AddHosted(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := clean.PlanFor(ctx, pool, cat, inUse)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []clean.Merge{{From: "databases/postgres", To: "databases/postgresql"}}; !slices.Equal(plan.Merges, want) {
+		t.Errorf("merges = %v, want %v", plan.Merges, want)
+	}
+	// In use, but replaced: its uses move, then it goes, and its stories stay with the replacement.
+	if want := []string{"databases/postgres"}; !slices.Equal(plan.Topics, want) || plan.Stories != 0 {
+		t.Errorf("delete topics %v and %d stories, want %v and 0", plan.Topics, plan.Stories, want)
+	}
+
+	res, err := clean.Apply(ctx, pool, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One follow (the other user already followed both), one mute, one story tag, one request.
+	if res != (clean.Result{Moved: 4, Topics: 1}) {
+		t.Errorf("result = %+v, want 4 moved, 1 topic", res)
+	}
+	for sql, want := range map[string]int{
+		`SELECT count(*) FROM topics WHERE slug = 'databases/postgres'`:                                                      0,
+		`SELECT count(*) FROM user_topics ut JOIN topics t ON t.id = ut.topic_id WHERE t.slug = 'databases/postgresql'`:      2,
+		`SELECT count(*) FROM user_topic_mutes um JOIN topics t ON t.id = um.topic_id WHERE t.slug = 'databases/postgresql'`: 1,
+		`SELECT count(*) FROM story_topics st JOIN topics t ON t.id = st.topic_id WHERE t.slug = 'databases/postgresql'`:     2,
+		`SELECT count(*) FROM topic_requests r JOIN topics t ON t.id = r.topic_id WHERE t.slug = 'databases/postgresql'`:     1,
+		`SELECT count(*) FROM stories`: 2,
+	} {
+		if n := count(t, pool, sql); n != want {
+			t.Errorf("%s = %d, want %d", sql, n, want)
+		}
+	}
+
+	again, err := clean.PlanFor(ctx, pool, cat, inUse)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.Empty() {
+		t.Errorf("second plan = %+v, want nothing to do", again)
+	}
+}
