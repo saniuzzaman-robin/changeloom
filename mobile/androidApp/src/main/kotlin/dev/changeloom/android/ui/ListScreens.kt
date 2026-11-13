@@ -43,6 +43,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -117,7 +119,7 @@ internal fun SearchContent(
             Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = Spacing.gutter).padding(top = 16.dp)) {
                 Eyebrow(stringResource(R.string.tab_search), Modifier.enter(delayMillis = 0), color = c.primaryText)
                 Spacer(Modifier.height(8.dp))
-                Text(stringResource(R.string.search_title), Modifier.enter(delayMillis = 80), style = MaterialTheme.typography.headlineMedium, color = c.fg)
+                Text(stringResource(R.string.search_title), Modifier.enter(delayMillis = 80).semantics { heading() }, style = MaterialTheme.typography.headlineMedium, color = c.fg)
                 Spacer(Modifier.height(16.dp))
                 SearchField(query, onQueryChange, search, Modifier.enter(delayMillis = 160))
                 StatusBanner(
@@ -146,7 +148,7 @@ internal fun SearchContent(
                         .padding(top = 24.dp)
                         .enter(delayMillis = 240),
                 ) {
-                    Eyebrow(stringResource(R.string.search_suggestions))
+                    Eyebrow(stringResource(R.string.search_suggestions), heading = true)
                     Spacer(Modifier.height(12.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         suggestions.forEach { TopicChip(it, onClick = { keyboard?.hide(); onSuggestion(it) }) }
@@ -243,7 +245,7 @@ internal fun SavedContent(
                 Column(Modifier.padding(top = 8.dp, bottom = 4.dp)) {
                     Eyebrow(stringResource(R.string.tab_saved), Modifier.enter(delayMillis = 0, enabled = animateIn), color = c.primaryText)
                     Spacer(Modifier.height(8.dp))
-                    Text(stringResource(R.string.saved_title), Modifier.enter(delayMillis = 80, enabled = animateIn), style = MaterialTheme.typography.headlineMedium, color = c.fg)
+                    Text(stringResource(R.string.saved_title), Modifier.enter(delayMillis = 80, enabled = animateIn).semantics { heading() }, style = MaterialTheme.typography.headlineMedium, color = c.fg)
                     if (state.items.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
                         Text(

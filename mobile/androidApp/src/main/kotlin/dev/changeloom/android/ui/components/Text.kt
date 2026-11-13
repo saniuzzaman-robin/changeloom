@@ -14,6 +14,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -97,10 +99,12 @@ fun Eyebrow(
     modifier: Modifier = Modifier,
     color: Color = ChangeloomTheme.colors.fgSubtle,
     maxLines: Int = 1,
+    /** Marks a section title, so TalkBack users can jump between sections. */
+    heading: Boolean = false,
 ) {
     Text(
         text = text.uppercase(Locale.ROOT),
-        modifier = modifier,
+        modifier = if (heading) modifier.semantics { heading() } else modifier,
         style = ChangeloomTextStyles.eyebrow,
         color = color,
         maxLines = maxLines,

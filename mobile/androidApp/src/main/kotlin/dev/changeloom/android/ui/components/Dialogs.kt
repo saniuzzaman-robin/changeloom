@@ -39,6 +39,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -87,7 +89,7 @@ fun ChangeloomDialog(
                 Icon(icon, contentDescription = null, tint = tone, modifier = Modifier.size(28.dp))
             }
             Spacer(Modifier.height(16.dp))
-            Text(title, style = MaterialTheme.typography.titleLarge, color = c.fg, textAlign = TextAlign.Center)
+            Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge, color = c.fg, textAlign = TextAlign.Center)
             if (message != null) {
                 Spacer(Modifier.height(8.dp))
                 Text(message, style = MaterialTheme.typography.bodyMedium, color = c.fgMuted, textAlign = TextAlign.Center)
@@ -134,7 +136,7 @@ fun ChangeloomSheet(
                 .verticalScroll(rememberScrollState())
                 .padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
         ) {
-            Text(title, style = MaterialTheme.typography.titleLarge, color = c.fg)
+            Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge, color = c.fg)
             if (message != null) {
                 Spacer(Modifier.height(4.dp))
                 Text(message, style = MaterialTheme.typography.bodyMedium, color = c.fgMuted)

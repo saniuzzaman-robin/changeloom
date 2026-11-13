@@ -87,6 +87,8 @@ import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -266,7 +268,7 @@ internal fun ProfileContent(
                 verticalArrangement = Arrangement.spacedBy(28.dp),
             ) {
                 Column(Modifier.enter(160)) {
-                    Eyebrow(stringResource(R.string.profile_activity))
+                    Eyebrow(stringResource(R.string.profile_activity), heading = true)
                     Spacer(Modifier.height(12.dp))
                     StatusBanner(state.error, Icons.Rounded.ErrorOutline, tone = BannerTone.Error, actionLabel = stringResource(R.string.retry), onAction = onRetry)
                     if (state.error != null) Spacer(Modifier.height(12.dp))
@@ -284,7 +286,7 @@ internal fun ProfileContent(
                 Column(Modifier.enter(240)) {
                     if (professions.isNotEmpty()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Eyebrow(stringResource(R.string.professions_label), Modifier.weight(1f))
+                            Eyebrow(stringResource(R.string.professions_label), Modifier.weight(1f), heading = true)
                             TextAction(stringResource(R.string.edit_professions), onEditProfessions, icon = Icons.Rounded.Edit)
                         }
                         Spacer(Modifier.height(4.dp))
@@ -294,7 +296,7 @@ internal fun ProfileContent(
                         Spacer(Modifier.height(20.dp))
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Eyebrow(stringResource(R.string.following), Modifier.weight(1f))
+                        Eyebrow(stringResource(R.string.following), Modifier.weight(1f), heading = true)
                         TextAction(stringResource(R.string.edit_topics), onEditTopics, icon = Icons.Rounded.Edit)
                     }
                     Spacer(Modifier.height(4.dp))
@@ -308,7 +310,7 @@ internal fun ProfileContent(
                     val muted = state.muted.orEmpty()
                     if (muted.isNotEmpty()) {
                         Spacer(Modifier.height(20.dp))
-                        Eyebrow(stringResource(R.string.muted_topics))
+                        Eyebrow(stringResource(R.string.muted_topics), heading = true)
                         Spacer(Modifier.height(4.dp))
                         Text(stringResource(R.string.muted_topics_hint), style = MaterialTheme.typography.bodySmall, color = c.fgMuted)
                         muted.forEach { slug ->
@@ -322,7 +324,7 @@ internal fun ProfileContent(
 
                 Column(Modifier.enter(260)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Eyebrow(stringResource(R.string.country_label), Modifier.weight(1f))
+                        Eyebrow(stringResource(R.string.country_label), Modifier.weight(1f), heading = true)
                         TextAction(stringResource(R.string.edit_country), { pickCountry = true }, icon = Icons.Rounded.Edit)
                     }
                     Spacer(Modifier.height(4.dp))
@@ -334,7 +336,7 @@ internal fun ProfileContent(
                 }
 
                 Column(Modifier.enter(280)) {
-                    Eyebrow(stringResource(R.string.improve_title))
+                    Eyebrow(stringResource(R.string.improve_title), heading = true)
                     Spacer(Modifier.height(12.dp))
                     GlassCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(vertical = 4.dp)) {
                         ActionRow(
@@ -372,7 +374,7 @@ internal fun ProfileContent(
                 }
 
                 Column(Modifier.enter(320)) {
-                    Eyebrow(stringResource(R.string.appearance))
+                    Eyebrow(stringResource(R.string.appearance), heading = true)
                     Spacer(Modifier.height(12.dp))
                     ThemeSwitch(themeMode, onThemeMode)
                 }
@@ -424,14 +426,14 @@ internal fun ProfileContent(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             )
             Spacer(Modifier.height(8.dp))
-            LazyColumn(Modifier.heightIn(max = 264.dp)) {
+            LazyColumn(Modifier.heightIn(max = 264.dp).selectableGroup()) {
                 items(shown, key = { it.first }, contentType = { "country" }) { (code, name) ->
                     val selected = code == state.country
                     Row(
                         Modifier
                             .fillMaxWidth()
                             .clip(Radius.md)
-                            .clickable {
+                            .selectable(selected, role = Role.RadioButton) {
                                 pickCountry = false
                                 onCountry(code)
                             }
@@ -580,7 +582,7 @@ private fun StatTile(label: String, value: Long?, icon: ImageVector, tint: Color
     val locale = LocalLocale.current.platformLocale
     val formatter = remember(locale) { StatFormatter(locale) }
     LaunchedEffect(value) { if (value != null) shown.animateTo(value.toFloat(), expoTween(Durations.SLOW + 600)) }
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier.semantics(mergeDescendants = true) {}, horizontalAlignment = Alignment.CenterHorizontally) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Icon(icon, contentDescription = null, Modifier.size(18.dp), tint = tint)
             Text(
@@ -628,8 +630,8 @@ private fun ActionRow(icon: ImageVector, title: String, detail: String, onClick:
             Icon(icon, contentDescription = null, tint = c.primaryText, modifier = Modifier.size(20.dp))
         }
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, color = c.fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(detail, style = MaterialTheme.typography.bodySmall, color = c.fgMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, style = MaterialTheme.typography.titleSmall, color = c.fg, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = c.fgMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = c.fgSubtle)
     }

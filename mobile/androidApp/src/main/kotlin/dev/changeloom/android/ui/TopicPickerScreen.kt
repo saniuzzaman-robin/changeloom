@@ -114,6 +114,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.input.ImeAction
@@ -389,7 +390,7 @@ private fun PickerHeader(
         }
         Eyebrow(stringResource(eyebrow), Modifier.enter(delayMillis = 0), color = c.primaryText)
         Spacer(Modifier.height(4.dp))
-        Column(Modifier.enter(delayMillis = 80)) {
+        Column(Modifier.enter(delayMillis = 80).semantics(mergeDescendants = true) { heading() }) {
             if (professionStep) {
                 Text(stringResource(R.string.professions_title_1), style = MaterialTheme.typography.headlineMedium, color = c.fg)
                 GradientText(stringResource(R.string.professions_title_2), style = MaterialTheme.typography.headlineMedium)
@@ -635,7 +636,7 @@ private fun TriStateCheck(state: CheckState, label: String, onClick: () -> Unit)
     )
     Box(
         Modifier
-            .size(44.dp)
+            .size(48.dp)
             .clip(Radius.md)
             .triStateToggleable(state = state.toToggleableState(), role = Role.Checkbox, onClick = onClick)
             .semantics { contentDescription = label },
