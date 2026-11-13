@@ -4,6 +4,7 @@ import android.content.ContextWrapper
 import android.content.SharedPreferences
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.changeloom.android.play.ReviewStore
 import dev.changeloom.android.telemetry.Analytics
 import dev.changeloom.android.telemetry.AnalyticsConsent
 import dev.changeloom.shared.auth.AuthRepository
@@ -81,6 +82,11 @@ class FakeAuth(method: SignInMethod = SignInMethod.Password) : AuthRepository {
 }
 
 fun reauthRequired() = ReauthRequiredException()
+
+class MemoryReviewStore : ReviewStore {
+    override var storyReads = 0
+    override var lastPromptAt = 0L
+}
 
 object NoAnalytics : Analytics {
     override fun screenView(name: String) = Unit

@@ -85,6 +85,8 @@ android {
 
     defaultConfig {
         applicationId = "dev.changeloom.android"
+        // The Play listing that rate and share point at; staging's suffixed id isn't published.
+        buildConfigField("String", "PLAY_PACKAGE", "\"$applicationId\"")
         minSdk = 26
         targetSdk = 36
         // CI sets both from the release workflow (-Pchangeloom.versionCode, -Pchangeloom.versionName).

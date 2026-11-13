@@ -17,7 +17,7 @@ import org.koin.compose.koinInject
 
 private const val TAG = "Review"
 
-/** Stories read before the app asks for a review. */
+/** Stories read or saved before the app asks for a review. */
 internal const val READS_BEFORE_REVIEW = 5
 
 /** At most one review prompt per 90 days. */
@@ -30,14 +30,18 @@ interface ReviewStore {
 }
 
 /**
- * Decides when to ask for a Play review: after [READS_BEFORE_REVIEW] story reads, and at most once per
+ * Decides when to ask for a Play review: after [READS_BEFORE_REVIEW] story reads or saves, and at most once per
  * [REVIEW_INTERVAL_MS]. Play itself may still decide not to show the dialog.
  */
 class ReviewPrompter(private val store: ReviewStore, private val now: () -> Long = System::currentTimeMillis) {
     private val _due = MutableStateFlow(false)
     val due: StateFlow<Boolean> = _due.asStateFlow()
 
-    fun storyRead() {
+    fun storyRead() = engaged()
+
+    fun storySaved() = engaged()
+
+    private fun engaged() {
         store.storyReads += 1
         if (store.storyReads >= READS_BEFORE_REVIEW && now() - store.lastPromptAt >= REVIEW_INTERVAL_MS) _due.value = true
     }

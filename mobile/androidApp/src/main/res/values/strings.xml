@@ -250,6 +250,12 @@
     </plurals>
     <string name="feedback_title">Send feedback</string>
     <string name="feedback_row_body">Report a bug, suggest an idea or leave a review</string>
+    <string name="rate_app_title">Rate Changeloom</string>
+    <string name="rate_app_body">Enjoying it? A rating on Google Play helps others find it</string>
+    <string name="share_app_title">Share Changeloom</string>
+    <string name="share_app_body">Tell a friend or colleague about it</string>
+    <string name="share_app_subject">Try Changeloom</string>
+    <string name="share_app_text">I use Changeloom to keep up with what changed in the tools and topics I follow, all in one feed. Get it on Google Play: %1$s</string>
     <string name="feedback_body">Tell us what\'s working, what\'s broken or what you\'d like to see.</string>
     <string name="feedback_placeholder">Your feedback</string>
     <string name="feedback_send">Send</string>

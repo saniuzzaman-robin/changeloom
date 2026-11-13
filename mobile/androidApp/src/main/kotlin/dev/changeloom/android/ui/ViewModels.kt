@@ -377,6 +377,7 @@ class TimelineViewModel(
     private val analytics: Analytics,
     private val views: ViewTracker,
     private val suggester: FollowSuggester,
+    private val review: ReviewPrompter,
 ) : ViewModel() {
     val state: StateFlow<TimelineState> = repo.state
 
@@ -456,7 +457,10 @@ class TimelineViewModel(
     }
 
     fun setBookmarked(id: Long, on: Boolean) {
-        if (on) analytics.bookmarkAdd(id)
+        if (on) {
+            analytics.bookmarkAdd(id)
+            review.storySaved()
+        }
         viewModelScope.launch { repo.setBookmarked(id, on) }
     }
 
@@ -555,7 +559,10 @@ class StoryDetailViewModel(
 
     fun setBookmarked(on: Boolean) {
         if (_state.value.story == null) return
-        if (on) analytics.bookmarkAdd(id)
+        if (on) {
+            analytics.bookmarkAdd(id)
+            review.storySaved()
+        }
         _state.update { s -> s.copy(story = s.story?.copy(isBookmarked = on)) }
         viewModelScope.launch { repo.setBookmarked(id, on) }
     }
@@ -638,6 +645,7 @@ class SearchViewModel(
     private val api: ChangeloomApi,
     private val repo: TimelineRepository,
     private val analytics: Analytics,
+    private val review: ReviewPrompter,
     private val saved: SavedStateHandle,
 ) : ViewModel() {
     val query: StateFlow<String> = saved.getStateFlow(KEY_QUERY, "")
@@ -686,7 +694,10 @@ class SearchViewModel(
 
     fun setBookmarked(id: Long, on: Boolean) {
         val current = pager.value ?: return
-        if (on) analytics.bookmarkAdd(id)
+        if (on) {
+            analytics.bookmarkAdd(id)
+            review.storySaved()
+        }
         current.setBookmarked(id, on)
         viewModelScope.launch { repo.setBookmarked(id, on) }
     }

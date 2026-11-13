@@ -1,6 +1,7 @@
 package dev.changeloom.android.ui
 
 import dev.changeloom.android.data.FollowSuggester
+import dev.changeloom.android.play.ReviewPrompter
 import dev.changeloom.shared.data.TimelineRepository
 import dev.changeloom.shared.data.ViewTracker
 import io.ktor.client.engine.mock.respond
@@ -51,7 +52,7 @@ class TimelineViewModelTest {
                 else -> respond(TWO_STORIES, headers = json)
             }
         }
-        return TimelineViewModel(TimelineRepository(api, MemoryCache()), NoAnalytics, views, suggester)
+        return TimelineViewModel(TimelineRepository(api, MemoryCache()), NoAnalytics, views, suggester, ReviewPrompter(MemoryReviewStore()))
     }
 
     @Test
