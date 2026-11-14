@@ -134,11 +134,13 @@ WITH RECURSIVE followed AS (
             + sqlc.arg(severity_weight)::float8
                 * CASE r.severity WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'medium' THEN 1 ELSE 0 END
             + CASE WHEN r.action_required THEN sqlc.arg(action_weight)::float8 ELSE 0 END
-            - (
-                extract(epoch FROM greatest(sqlc.arg(as_of)::timestamptz - r.created_at, interval '0'))
-                + sqlc.arg(fetch_lag_weight)::float8
-                    * extract(epoch FROM greatest(r.created_at - r.published_at, interval '0'))
-            ) / 3600 / sqlc.arg(decay_hours)::float8
+            -- Only the total is clamped, so a weight of 1 gives exactly as_of - published_at, even for a
+            -- story added after as_of. Interval arithmetic is exact to the microsecond, so equal ages tie.
+            - extract(epoch FROM greatest(
+                sqlc.arg(as_of)::timestamptz - r.created_at
+                    + sqlc.arg(fetch_lag_weight)::float8 * greatest(r.created_at - r.published_at, interval '0'),
+                interval '0'
+            )) / 3600 / sqlc.arg(decay_hours)::float8
             - CASE WHEN r.is_bookmarked THEN 0
                 WHEN r.id IN (
                     SELECT sv.story_id FROM story_views sv
