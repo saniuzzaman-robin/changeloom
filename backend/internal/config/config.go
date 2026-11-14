@@ -101,6 +101,9 @@ type TimelineScore struct {
 	SeverityWeight float64
 	// AgeDecay is the age that costs one point (TIMELINE_DECAY_HOURS).
 	AgeDecay time.Duration
+	// FetchLagWeight is the share of the time between a story's publishing and its adding that
+	// counts toward its age, 0 to 1 (TIMELINE_FETCH_LAG_WEIGHT): 1 ages it from published_at.
+	FetchLagWeight float64
 	// SeenPenalty is the points a seen but unopened, unsaved story loses (TIMELINE_SEEN_PENALTY).
 	SeenPenalty float64
 	// SeenGrace is how long after it was first seen the penalty starts (TIMELINE_SEEN_GRACE_HOURS).
@@ -158,6 +161,7 @@ func Load() (Config, error) {
 		ImportanceWeight: envWeight(&errs, "TIMELINE_IMPORTANCE_WEIGHT", 1),
 		SeverityWeight:   envWeight(&errs, "TIMELINE_SEVERITY_WEIGHT", 0.5),
 		AgeDecay:         time.Duration(envInt(&errs, "TIMELINE_DECAY_HOURS", 96)) * time.Hour,
+		FetchLagWeight:   envRatio(&errs, "TIMELINE_FETCH_LAG_WEIGHT", 0.25),
 		SeenPenalty:      envWeight(&errs, "TIMELINE_SEEN_PENALTY", 3),
 		SeenGrace:        time.Duration(envInt(&errs, "TIMELINE_SEEN_GRACE_HOURS", 12)) * time.Hour,
 		AffinityWeight:   envWeight(&errs, "TIMELINE_AFFINITY_WEIGHT", 1.5),

@@ -4,7 +4,9 @@
 -- professions only suggest topics at onboarding and add no stories. Unread first, by score: tier,
 -- importance and severity points, action_weight for an action-required story, plus the topic
 -- affinity bonus, minus one point per decay_hours of age at as_of, minus seen_penalty for a story
--- first seen before seen_before and not saved. Read
+-- first seen before seen_before and not saved. Age runs from when the story was added (created_at)
+-- plus fetch_lag_weight of the time between publishing and adding it, so a story the curator found
+-- days late ranks near new ones (1 counts age from published_at alone, 0 from created_at alone). Read
 -- stories (score 0) follow, newest first. Every input is fixed for a given as_of, so later views or
 -- new stories don't move rows across a page boundary.
 -- Affinity: the user's history is every story they saw, read, saved, boosted or dismissed from
@@ -99,7 +101,7 @@ WITH RECURSIVE followed AS (
     WHERE st.topic_id = ANY((SELECT it.ids FROM in_tier it)::bigint[])
     GROUP BY st.story_id
 ), ranked AS (
-    SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
+    SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, s.created_at, uss.read_at,
         s.key_points, s.action_required,
         (uss.read_at IS NOT NULL) AS is_read,
         (ub.story_id IS NOT NULL) AS is_bookmarked,
@@ -132,8 +134,11 @@ WITH RECURSIVE followed AS (
             + sqlc.arg(severity_weight)::float8
                 * CASE r.severity WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'medium' THEN 1 ELSE 0 END
             + CASE WHEN r.action_required THEN sqlc.arg(action_weight)::float8 ELSE 0 END
-            - extract(epoch FROM greatest(sqlc.arg(as_of)::timestamptz - r.published_at, interval '0'))
-                / 3600 / sqlc.arg(decay_hours)::float8
+            - (
+                extract(epoch FROM greatest(sqlc.arg(as_of)::timestamptz - r.created_at, interval '0'))
+                + sqlc.arg(fetch_lag_weight)::float8
+                    * extract(epoch FROM greatest(r.created_at - r.published_at, interval '0'))
+            ) / 3600 / sqlc.arg(decay_hours)::float8
             - CASE WHEN r.is_bookmarked THEN 0
                 WHEN r.id IN (
                     SELECT sv.story_id FROM story_views sv
@@ -163,7 +168,7 @@ WITH RECURSIVE followed AS (
     ORDER BY sc.is_read ASC, sc.is_followed DESC, sc.score DESC, sc.published_at DESC, sc.id DESC
     LIMIT @page_size
 )
-SELECT p.id, p.title, p.summary, p.kind, p.severity, p.importance, p.published_at, p.read_at,
+SELECT p.id, p.title, p.summary, p.kind, p.severity, p.importance, p.published_at, p.created_at AS added_at, p.read_at,
     p.key_points, p.action_required,
     p.is_bookmarked::boolean AS is_bookmarked,
     p.tier::integer AS tier,
@@ -178,7 +183,7 @@ FROM page p
 ORDER BY p.is_read ASC, p.is_followed DESC, p.score DESC, p.published_at DESC, p.id DESC;
 
 -- name: GetStory :one
-SELECT s.id, s.title, s.summary, s.body_md, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
+SELECT s.id, s.title, s.summary, s.body_md, s.kind, s.severity, s.importance, s.published_at, s.created_at AS added_at, uss.read_at,
     s.key_points, s.action_required,
     coalesce(s.dedupe_keys ->> 'version', '')::text AS version,
     (ub.story_id IS NOT NULL)::boolean AS is_bookmarked,
@@ -319,7 +324,7 @@ DELETE FROM user_bookmarks WHERE user_id = @user_id AND story_id = ANY(@ids::big
 -- name: ListBookmarks :many
 -- The user's bookmarked stories, most recently bookmarked first. Keyset pagination on
 -- (bookmarked_at, id).
-SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
+SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, s.created_at AS added_at, uss.read_at,
     s.key_points, s.action_required,
     ub.created_at AS bookmarked_at,
     ARRAY(
@@ -357,7 +362,7 @@ WITH word_match AS (
             )
     ) AS found
 )
-SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
+SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, s.created_at AS added_at, uss.read_at,
     s.key_points, s.action_required,
     (ub.story_id IS NOT NULL)::boolean AS is_bookmarked,
     ARRAY(

@@ -72,12 +72,14 @@ type Options struct {
 // AffinityWindow, smoothed by AffinityPrior pseudo-stories, a boosted story counting as
 // BoostEngagements engaged ones) is above the user's overall share,
 // minus one point per AgeDecay of age and SeenPenalty for a story seen longer than SeenGrace ago but
-// never opened or saved. AgeDecay must be positive.
+// never opened or saved. Age is the time since the story was added plus FetchLagWeight (0 to 1) of
+// the time between its publishing and adding. AgeDecay must be positive.
 type TimelineScore struct {
 	TierWeight       float64
 	ImportanceWeight float64
 	SeverityWeight   float64
 	AgeDecay         time.Duration
+	FetchLagWeight   float64
 	SeenPenalty      float64
 	SeenGrace        time.Duration
 	AffinityWeight   float64

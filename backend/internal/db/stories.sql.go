@@ -91,7 +91,7 @@ func (q *Queries) DismissStory(ctx context.Context, arg DismissStoryParams) (boo
 }
 
 const getStory = `-- name: GetStory :one
-SELECT s.id, s.title, s.summary, s.body_md, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
+SELECT s.id, s.title, s.summary, s.body_md, s.kind, s.severity, s.importance, s.published_at, s.created_at AS added_at, uss.read_at,
     s.key_points, s.action_required,
     coalesce(s.dedupe_keys ->> 'version', '')::text AS version,
     (ub.story_id IS NOT NULL)::boolean AS is_bookmarked,
@@ -124,6 +124,7 @@ type GetStoryRow struct {
 	Severity       *string
 	Importance     int16
 	PublishedAt    time.Time
+	AddedAt        time.Time
 	ReadAt         *time.Time
 	KeyPoints      []string
 	ActionRequired bool
@@ -146,6 +147,7 @@ func (q *Queries) GetStory(ctx context.Context, arg GetStoryParams) (GetStoryRow
 		&i.Severity,
 		&i.Importance,
 		&i.PublishedAt,
+		&i.AddedAt,
 		&i.ReadAt,
 		&i.KeyPoints,
 		&i.ActionRequired,
@@ -282,7 +284,7 @@ func (q *Queries) GetStoryThread(ctx context.Context, arg GetStoryThreadParams) 
 }
 
 const listBookmarks = `-- name: ListBookmarks :many
-SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
+SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, s.created_at AS added_at, uss.read_at,
     s.key_points, s.action_required,
     ub.created_at AS bookmarked_at,
     ARRAY(
@@ -316,6 +318,7 @@ type ListBookmarksRow struct {
 	Severity       *string
 	Importance     int16
 	PublishedAt    time.Time
+	AddedAt        time.Time
 	ReadAt         *time.Time
 	KeyPoints      []string
 	ActionRequired bool
@@ -347,6 +350,7 @@ func (q *Queries) ListBookmarks(ctx context.Context, arg ListBookmarksParams) ([
 			&i.Severity,
 			&i.Importance,
 			&i.PublishedAt,
+			&i.AddedAt,
 			&i.ReadAt,
 			&i.KeyPoints,
 			&i.ActionRequired,
@@ -435,7 +439,7 @@ WITH RECURSIVE followed AS (
     WHERE st.topic_id = ANY((SELECT it.ids FROM in_tier it)::bigint[])
     GROUP BY st.story_id
 ), ranked AS (
-    SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
+    SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, s.created_at, uss.read_at,
         s.key_points, s.action_required,
         (uss.read_at IS NOT NULL) AS is_read,
         (ub.story_id IS NOT NULL) AS is_bookmarked,
@@ -460,7 +464,7 @@ WITH RECURSIVE followed AS (
     AND ($10::boolean IS NULL OR s.action_required = $10::boolean)
 ), scored AS (
     -- sqlc.arg, not @name: sqlc fails to resolve the ranked alias in arithmetic with @name params.
-    SELECT r.id, r.title, r.summary, r.kind, r.severity, r.importance, r.published_at, r.read_at, r.key_points, r.action_required, r.is_read, r.is_bookmarked, r.is_seen, r.tier, r.affinity,
+    SELECT r.id, r.title, r.summary, r.kind, r.severity, r.importance, r.published_at, r.created_at, r.read_at, r.key_points, r.action_required, r.is_read, r.is_bookmarked, r.is_seen, r.tier, r.affinity,
         CASE WHEN r.is_read THEN 0 ELSE
             $11::float8 * r.importance
             - $12::float8 * CASE r.tier WHEN 0 THEN 0 ELSE r.tier - 1 END
@@ -468,38 +472,41 @@ WITH RECURSIVE followed AS (
             + $13::float8
                 * CASE r.severity WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'medium' THEN 1 ELSE 0 END
             + CASE WHEN r.action_required THEN $14::float8 ELSE 0 END
-            - extract(epoch FROM greatest($3::timestamptz - r.published_at, interval '0'))
-                / 3600 / $15::float8
+            - (
+                extract(epoch FROM greatest($3::timestamptz - r.created_at, interval '0'))
+                + $15::float8
+                    * extract(epoch FROM greatest(r.created_at - r.published_at, interval '0'))
+            ) / 3600 / $16::float8
             - CASE WHEN r.is_bookmarked THEN 0
                 WHEN r.id IN (
                     SELECT sv.story_id FROM story_views sv
-                    WHERE sv.user_id = $1 AND sv.seen_at < $16::timestamptz
-                ) THEN $17::float8
+                    WHERE sv.user_id = $1 AND sv.seen_at < $17::timestamptz
+                ) THEN $18::float8
                 ELSE 0 END
         END::float8 AS score,
         (NOT r.is_read AND r.tier = 0) AS is_followed,
         count(*) FILTER (WHERE NOT r.is_read AND NOT r.is_seen) OVER () AS unseen_count
     FROM ranked r
 ), page AS (
-    SELECT sc.id, sc.title, sc.summary, sc.kind, sc.severity, sc.importance, sc.published_at, sc.read_at, sc.key_points, sc.action_required, sc.is_read, sc.is_bookmarked, sc.is_seen, sc.tier, sc.affinity, sc.score, sc.is_followed, sc.unseen_count FROM scored sc
-    WHERE $18::bigint IS NULL
-        OR sc.is_read > $19::boolean
+    SELECT sc.id, sc.title, sc.summary, sc.kind, sc.severity, sc.importance, sc.published_at, sc.created_at, sc.read_at, sc.key_points, sc.action_required, sc.is_read, sc.is_bookmarked, sc.is_seen, sc.tier, sc.affinity, sc.score, sc.is_followed, sc.unseen_count FROM scored sc
+    WHERE $19::bigint IS NULL
+        OR sc.is_read > $20::boolean
         OR (
-            sc.is_read = $19::boolean
+            sc.is_read = $20::boolean
             AND (
-                sc.is_followed < $20::boolean
+                sc.is_followed < $21::boolean
                 OR (
-                    sc.is_followed = $20::boolean
+                    sc.is_followed = $21::boolean
                     AND (sc.score, sc.published_at, sc.id) < (
-                        $21::float8, $22::timestamptz, $18::bigint
+                        $22::float8, $23::timestamptz, $19::bigint
                     )
                 )
             )
         )
     ORDER BY sc.is_read ASC, sc.is_followed DESC, sc.score DESC, sc.published_at DESC, sc.id DESC
-    LIMIT $23
+    LIMIT $24
 )
-SELECT p.id, p.title, p.summary, p.kind, p.severity, p.importance, p.published_at, p.read_at,
+SELECT p.id, p.title, p.summary, p.kind, p.severity, p.importance, p.published_at, p.created_at AS added_at, p.read_at,
     p.key_points, p.action_required,
     p.is_bookmarked::boolean AS is_bookmarked,
     p.tier::integer AS tier,
@@ -529,6 +536,7 @@ type ListTimelineParams struct {
 	TierWeight        float64
 	SeverityWeight    float64
 	ActionWeight      float64
+	FetchLagWeight    float64
 	DecayHours        float64
 	SeenBefore        time.Time
 	SeenPenalty       float64
@@ -548,6 +556,7 @@ type ListTimelineRow struct {
 	Severity       *string
 	Importance     int16
 	PublishedAt    time.Time
+	AddedAt        time.Time
 	ReadAt         *time.Time
 	KeyPoints      []string
 	ActionRequired bool
@@ -564,7 +573,9 @@ type ListTimelineRow struct {
 // professions only suggest topics at onboarding and add no stories. Unread first, by score: tier,
 // importance and severity points, action_weight for an action-required story, plus the topic
 // affinity bonus, minus one point per decay_hours of age at as_of, minus seen_penalty for a story
-// first seen before seen_before and not saved. Read
+// first seen before seen_before and not saved. Age runs from when the story was added (created_at)
+// plus fetch_lag_weight of the time between publishing and adding it, so a story the curator found
+// days late ranks near new ones (1 counts age from published_at alone, 0 from created_at alone). Read
 // stories (score 0) follow, newest first. Every input is fixed for a given as_of, so later views or
 // new stories don't move rows across a page boundary.
 // Affinity: the user's history is every story they saw, read, saved, boosted or dismissed from
@@ -604,6 +615,7 @@ func (q *Queries) ListTimeline(ctx context.Context, arg ListTimelineParams) ([]L
 		arg.TierWeight,
 		arg.SeverityWeight,
 		arg.ActionWeight,
+		arg.FetchLagWeight,
 		arg.DecayHours,
 		arg.SeenBefore,
 		arg.SeenPenalty,
@@ -629,6 +641,7 @@ func (q *Queries) ListTimeline(ctx context.Context, arg ListTimelineParams) ([]L
 			&i.Severity,
 			&i.Importance,
 			&i.PublishedAt,
+			&i.AddedAt,
 			&i.ReadAt,
 			&i.KeyPoints,
 			&i.ActionRequired,
@@ -749,7 +762,7 @@ WITH word_match AS (
             )
     ) AS found
 )
-SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, uss.read_at,
+SELECT s.id, s.title, s.summary, s.kind, s.severity, s.importance, s.published_at, s.created_at AS added_at, uss.read_at,
     s.key_points, s.action_required,
     (ub.story_id IS NOT NULL)::boolean AS is_bookmarked,
     ARRAY(
@@ -792,6 +805,7 @@ type SearchStoriesRow struct {
 	Severity       *string
 	Importance     int16
 	PublishedAt    time.Time
+	AddedAt        time.Time
 	ReadAt         *time.Time
 	KeyPoints      []string
 	ActionRequired bool
@@ -826,6 +840,7 @@ func (q *Queries) SearchStories(ctx context.Context, arg SearchStoriesParams) ([
 			&i.Severity,
 			&i.Importance,
 			&i.PublishedAt,
+			&i.AddedAt,
 			&i.ReadAt,
 			&i.KeyPoints,
 			&i.ActionRequired,

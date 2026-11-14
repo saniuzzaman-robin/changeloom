@@ -25,6 +25,7 @@ func setBase(t *testing.T) {
 		"TIMELINE_IMPORTANCE_WEIGHT":  "",
 		"TIMELINE_SEVERITY_WEIGHT":    "",
 		"TIMELINE_DECAY_HOURS":        "",
+		"TIMELINE_FETCH_LAG_WEIGHT":   "",
 		"TIMELINE_SEEN_PENALTY":       "",
 		"TIMELINE_SEEN_GRACE_HOURS":   "",
 		"TIMELINE_MAX_TOPIC_RUN":      "",
@@ -83,7 +84,7 @@ func TestLoadDefaults(t *testing.T) {
 		t.Errorf("Load() = timeline window %s, want 14 days", cfg.TimelineWindow)
 	}
 	want := TimelineScore{
-		TierWeight: 2, ImportanceWeight: 1, SeverityWeight: 0.5, AgeDecay: 96 * time.Hour, SeenPenalty: 3, SeenGrace: 12 * time.Hour,
+		TierWeight: 2, ImportanceWeight: 1, SeverityWeight: 0.5, AgeDecay: 96 * time.Hour, FetchLagWeight: 0.25, SeenPenalty: 3, SeenGrace: 12 * time.Hour,
 		AffinityWeight: 1.5, AffinityWindow: 30 * 24 * time.Hour, AffinityPrior: 4, BoostEngagements: 3, ActionWeight: 1,
 	}
 	if cfg.TimelineScore != want {
@@ -131,6 +132,7 @@ func TestLoadTimelineScore(t *testing.T) {
 	t.Setenv("TIMELINE_TIER_WEIGHT", "0")
 	t.Setenv("TIMELINE_IMPORTANCE_WEIGHT", "1.5")
 	t.Setenv("TIMELINE_DECAY_HOURS", "48")
+	t.Setenv("TIMELINE_FETCH_LAG_WEIGHT", "0.5")
 	t.Setenv("TIMELINE_SEEN_GRACE_HOURS", "6")
 	t.Setenv("TIMELINE_MAX_TOPIC_RUN", "3")
 	t.Setenv("TIMELINE_AFFINITY_WEIGHT", "0")
@@ -143,8 +145,8 @@ func TestLoadTimelineScore(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 	got := cfg.TimelineScore
-	if got.TierWeight != 0 || got.ImportanceWeight != 1.5 || got.AgeDecay != 48*time.Hour || got.SeenGrace != 6*time.Hour {
-		t.Errorf("Load() = timeline score %+v, want tier 0, importance 1.5, decay 48h, grace 6h", got)
+	if got.TierWeight != 0 || got.ImportanceWeight != 1.5 || got.AgeDecay != 48*time.Hour || got.FetchLagWeight != 0.5 || got.SeenGrace != 6*time.Hour {
+		t.Errorf("Load() = timeline score %+v, want tier 0, importance 1.5, decay 48h, fetch lag 0.5, grace 6h", got)
 	}
 	if got.AffinityWeight != 0 || got.AffinityWindow != 7*24*time.Hour || got.AffinityPrior != 10 || got.ActionWeight != 2.5 || got.BoostEngagements != 5 {
 		t.Errorf("Load() = timeline score %+v, want affinity weight 0, window 7 days, prior 10, action weight 2.5, boost 5", got)
@@ -190,6 +192,7 @@ func TestLoadRejectsBadPoolAndTimeout(t *testing.T) {
 		{"TIMELINE_SEVERITY_WEIGHT", "NaN"},
 		{"TIMELINE_SEEN_PENALTY", "Inf"},
 		{"TIMELINE_DECAY_HOURS", "0"},
+		{"TIMELINE_FETCH_LAG_WEIGHT", "1.5"},
 		{"TIMELINE_SEEN_GRACE_HOURS", "1.5"},
 		{"TIMELINE_MAX_TOPIC_RUN", "0"},
 		{"STORY_THREAD_DAYS", "0"},
