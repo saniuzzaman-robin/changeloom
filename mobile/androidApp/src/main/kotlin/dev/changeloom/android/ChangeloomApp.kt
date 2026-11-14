@@ -21,6 +21,7 @@ import dev.changeloom.android.telemetry.Analytics
 import dev.changeloom.android.telemetry.FirebaseAnalyticsTracker
 import dev.changeloom.android.ui.AndroidStrings
 import dev.changeloom.android.ui.BookmarksViewModel
+import dev.changeloom.android.ui.IntroViewModel
 import dev.changeloom.android.ui.ProfileViewModel
 import dev.changeloom.android.ui.SearchViewModel
 import dev.changeloom.android.ui.SignInViewModel
@@ -91,6 +92,7 @@ class ChangeloomApp : Application() {
                     single { FollowSuggester(androidContext()) }
                     single(createdAtStart = true) { SessionManager(get(), get(), get(), get(), get()) }
                     viewModelOf(::SignInViewModel)
+                    viewModel { IntroViewModel(get<AppPreferences>()) }
                     single { FileStoryCache(File(androidContext().filesDir, "changeloom")) } bind StoryCache::class
                     single { TopicCatalog(get()) }
                     viewModelOf(::TopicPickerViewModel)

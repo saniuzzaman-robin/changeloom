@@ -59,6 +59,8 @@ import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.RateReview
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SettingsBrightness
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.StarRate
 import androidx.compose.material.icons.rounded.Tag
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -85,6 +87,8 @@ import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -101,6 +105,8 @@ import dev.changeloom.android.BuildConfig
 import dev.changeloom.android.R
 import dev.changeloom.android.ads.ConsentManager
 import dev.changeloom.android.auth.requestGoogleIdToken
+import dev.changeloom.android.play.openPlayListing
+import dev.changeloom.android.play.shareApp
 import dev.changeloom.android.ui.components.BannerTone
 import dev.changeloom.android.ui.components.ChangeloomDialog
 import dev.changeloom.android.ui.components.ChangeloomTextField
@@ -180,6 +186,8 @@ internal fun ProfileScreen(
             dismiss = vm::dismissFeedback,
         ),
         onSignOut = vm::signOut,
+        onRateApp = context::openPlayListing,
+        onShareApp = context::shareApp,
         onPrivacyOptions = activity?.takeIf { privacyOptions }?.let { { consent.showPrivacyOptions(it) } },
         deleteActions = DeleteActions(
             start = vm::startDelete,
@@ -234,6 +242,8 @@ internal fun ProfileContent(
     onSubmitRequest: () -> Unit,
     onSignOut: () -> Unit,
     feedbackActions: FeedbackActions = FeedbackActions(),
+    onRateApp: () -> Unit = {},
+    onShareApp: () -> Unit = {},
     onPrivacyOptions: (() -> Unit)? = null,
     deleteActions: DeleteActions = DeleteActions(),
 ) {
@@ -258,7 +268,7 @@ internal fun ProfileContent(
                 verticalArrangement = Arrangement.spacedBy(28.dp),
             ) {
                 Column(Modifier.enter(160)) {
-                    Eyebrow(stringResource(R.string.profile_activity))
+                    Eyebrow(stringResource(R.string.profile_activity), heading = true)
                     Spacer(Modifier.height(12.dp))
                     StatusBanner(state.error, Icons.Rounded.ErrorOutline, tone = BannerTone.Error, actionLabel = stringResource(R.string.retry), onAction = onRetry)
                     if (state.error != null) Spacer(Modifier.height(12.dp))
@@ -276,7 +286,7 @@ internal fun ProfileContent(
                 Column(Modifier.enter(240)) {
                     if (professions.isNotEmpty()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Eyebrow(stringResource(R.string.professions_label), Modifier.weight(1f))
+                            Eyebrow(stringResource(R.string.professions_label), Modifier.weight(1f), heading = true)
                             TextAction(stringResource(R.string.edit_professions), onEditProfessions, icon = Icons.Rounded.Edit)
                         }
                         Spacer(Modifier.height(4.dp))
@@ -286,7 +296,7 @@ internal fun ProfileContent(
                         Spacer(Modifier.height(20.dp))
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Eyebrow(stringResource(R.string.following), Modifier.weight(1f))
+                        Eyebrow(stringResource(R.string.following), Modifier.weight(1f), heading = true)
                         TextAction(stringResource(R.string.edit_topics), onEditTopics, icon = Icons.Rounded.Edit)
                     }
                     Spacer(Modifier.height(4.dp))
@@ -300,7 +310,7 @@ internal fun ProfileContent(
                     val muted = state.muted.orEmpty()
                     if (muted.isNotEmpty()) {
                         Spacer(Modifier.height(20.dp))
-                        Eyebrow(stringResource(R.string.muted_topics))
+                        Eyebrow(stringResource(R.string.muted_topics), heading = true)
                         Spacer(Modifier.height(4.dp))
                         Text(stringResource(R.string.muted_topics_hint), style = MaterialTheme.typography.bodySmall, color = c.fgMuted)
                         muted.forEach { slug ->
@@ -314,7 +324,7 @@ internal fun ProfileContent(
 
                 Column(Modifier.enter(260)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Eyebrow(stringResource(R.string.country_label), Modifier.weight(1f))
+                        Eyebrow(stringResource(R.string.country_label), Modifier.weight(1f), heading = true)
                         TextAction(stringResource(R.string.edit_country), { pickCountry = true }, icon = Icons.Rounded.Edit)
                     }
                     Spacer(Modifier.height(4.dp))
@@ -326,7 +336,7 @@ internal fun ProfileContent(
                 }
 
                 Column(Modifier.enter(280)) {
-                    Eyebrow(stringResource(R.string.improve_title))
+                    Eyebrow(stringResource(R.string.improve_title), heading = true)
                     Spacer(Modifier.height(12.dp))
                     GlassCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(vertical = 4.dp)) {
                         ActionRow(
@@ -346,11 +356,25 @@ internal fun ProfileContent(
                             stringResource(R.string.feedback_row_body),
                             onClick = { sheet = ProfileSheet.Feedback },
                         )
+                        Box(Modifier.padding(start = 64.dp).fillMaxWidth().height(1.dp).background(c.line))
+                        ActionRow(
+                            Icons.Rounded.StarRate,
+                            stringResource(R.string.rate_app_title),
+                            stringResource(R.string.rate_app_body),
+                            onClick = onRateApp,
+                        )
+                        Box(Modifier.padding(start = 64.dp).fillMaxWidth().height(1.dp).background(c.line))
+                        ActionRow(
+                            Icons.Rounded.Share,
+                            stringResource(R.string.share_app_title),
+                            stringResource(R.string.share_app_body),
+                            onClick = onShareApp,
+                        )
                     }
                 }
 
                 Column(Modifier.enter(320)) {
-                    Eyebrow(stringResource(R.string.appearance))
+                    Eyebrow(stringResource(R.string.appearance), heading = true)
                     Spacer(Modifier.height(12.dp))
                     ThemeSwitch(themeMode, onThemeMode)
                 }
@@ -402,14 +426,14 @@ internal fun ProfileContent(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             )
             Spacer(Modifier.height(8.dp))
-            LazyColumn(Modifier.heightIn(max = 264.dp)) {
+            LazyColumn(Modifier.heightIn(max = 264.dp).selectableGroup()) {
                 items(shown, key = { it.first }, contentType = { "country" }) { (code, name) ->
                     val selected = code == state.country
                     Row(
                         Modifier
                             .fillMaxWidth()
                             .clip(Radius.md)
-                            .clickable {
+                            .selectable(selected, role = Role.RadioButton) {
                                 pickCountry = false
                                 onCountry(code)
                             }
@@ -558,7 +582,7 @@ private fun StatTile(label: String, value: Long?, icon: ImageVector, tint: Color
     val locale = LocalLocale.current.platformLocale
     val formatter = remember(locale) { StatFormatter(locale) }
     LaunchedEffect(value) { if (value != null) shown.animateTo(value.toFloat(), expoTween(Durations.SLOW + 600)) }
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier.semantics(mergeDescendants = true) {}, horizontalAlignment = Alignment.CenterHorizontally) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Icon(icon, contentDescription = null, Modifier.size(18.dp), tint = tint)
             Text(
@@ -587,7 +611,7 @@ private class StatFormatter(locale: Locale) {
 /** The bottom sheets the profile opens. */
 private enum class ProfileSheet { TopicRequest, Feedback }
 
-/** Tappable card row: tinted icon badge, title and one-line detail, and a chevron; it opens a sheet. */
+/** Tappable card row: tinted icon badge, title and one-line detail, and a chevron; it opens a sheet or another app. */
 @Composable
 private fun ActionRow(icon: ImageVector, title: String, detail: String, onClick: () -> Unit) {
     val c = ChangeloomTheme.colors
@@ -606,8 +630,8 @@ private fun ActionRow(icon: ImageVector, title: String, detail: String, onClick:
             Icon(icon, contentDescription = null, tint = c.primaryText, modifier = Modifier.size(20.dp))
         }
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, color = c.fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(detail, style = MaterialTheme.typography.bodySmall, color = c.fgMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, style = MaterialTheme.typography.titleSmall, color = c.fg, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = c.fgMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = c.fgSubtle)
     }

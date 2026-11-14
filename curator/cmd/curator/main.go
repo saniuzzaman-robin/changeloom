@@ -56,7 +56,9 @@ commands:
                                    unsaved stories only in those topics, from the local DB and the
                                    hosted DBs of ENVS (comma-separated, default staging,prod; list
                                    every env that has users). Anything a user follows, muted, picked
-                                   or requested is kept. Without --apply it only reports.
+                                   or requested is kept, except a topic a catalog topic replaces
+                                   (replaces:), whose follows, mutes, stories and requests move to it
+                                   first. Without --apply it only reports.
   run [--full] [--rank FROM-TO]    pull demand and fetch, for each env in CURATOR_RUN_ENVS
                                    (default prod); --full repeats fetch until every topic is covered. It neither syncs nor prunes: use sync and
                                    prune. User topic requests are not handled: use requests pull,
@@ -433,14 +435,18 @@ func runClean(ctx context.Context, cfg config.Config, envs []config.Env, apply b
 		if err != nil {
 			return fmt.Errorf("%s: %w", t.name, err)
 		}
-		slog.InfoContext(ctx, "clean plan", "db", t.name,
+		merges := make([]string, 0, len(plan.Merges))
+		for _, m := range plan.Merges {
+			merges = append(merges, m.From+" -> "+m.To)
+		}
+		slog.InfoContext(ctx, "clean plan", "db", t.name, "merge_topics", merges,
 			"delete_topics", plan.Topics, "delete_professions", plan.Professions, "delete_stories", plan.Stories,
 			"kept_in_use_topics", plan.KeptTopics, "kept_in_use_professions", plan.KeptProfessions)
 		if !apply || plan.Empty() {
 			continue
 		}
 		res, err := clean.Apply(ctx, t.pool, plan)
-		slog.InfoContext(ctx, "cleaned", "db", t.name, "topics", res.Topics, "professions", res.Professions, "stories", res.Stories)
+		slog.InfoContext(ctx, "cleaned", "db", t.name, "moved", res.Moved, "topics", res.Topics, "professions", res.Professions, "stories", res.Stories)
 		if err != nil {
 			return fmt.Errorf("%s: %w", t.name, err)
 		}

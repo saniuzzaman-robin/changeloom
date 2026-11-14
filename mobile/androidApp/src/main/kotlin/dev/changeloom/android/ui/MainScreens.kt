@@ -141,6 +141,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -902,7 +903,7 @@ private fun FollowSuggestionCard(suggestion: FollowSuggestion, onFollow: (String
     val c = ChangeloomTheme.colors
     val name = LocalTopicName.current(suggestion.topic)
     GlassCard(modifier.fillMaxWidth().testTag("follow_suggestion")) {
-        Eyebrow(stringResource(R.string.suggested), color = c.accent)
+        Eyebrow(stringResource(R.string.suggested), color = c.accentText)
         Spacer(Modifier.height(8.dp))
         Text(stringResource(R.string.follow_suggestion_title, name), style = MaterialTheme.typography.titleMedium, color = c.fg)
         Spacer(Modifier.height(4.dp))
@@ -1070,7 +1071,7 @@ private fun FeedHeader(
             Column(Modifier.weight(1f)) {
                 Eyebrow(today, Modifier.enter(delayMillis = 0, enabled = animateIn), color = c.primaryText)
                 Spacer(Modifier.height(8.dp))
-                Column(Modifier.enter(delayMillis = 80, enabled = animateIn)) {
+                Column(Modifier.enter(delayMillis = 80, enabled = animateIn).semantics(mergeDescendants = true) { heading() }) {
                     val greeting = stringResource(greeting(LocalTime.now()))
                     Text(
                         if (name != null) stringResource(R.string.greeting_before_name, greeting) else greeting,
@@ -1082,7 +1083,7 @@ private fun FeedHeader(
             }
             GradientAvatar(
                 displayName ?: userEmail ?: "?",
-                Modifier.clip(CircleShape).clickable(onClickLabel = stringResource(R.string.open_profile), onClick = onProfile).enter(delayMillis = 120, enabled = animateIn),
+                Modifier.clip(CircleShape).clickable(role = Role.Button, onClickLabel = stringResource(R.string.open_profile), onClick = onProfile).enter(delayMillis = 120, enabled = animateIn),
                 size = 48.dp,
                 photo = photo,
             )
@@ -1118,7 +1119,7 @@ private fun SectionHeader(title: String, count: Int?, highlight: Boolean, modifi
     val c = ChangeloomTheme.colors
     val color = if (highlight) c.primaryText else c.fgSubtle
     Row(modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Eyebrow(title, color = color)
+        Eyebrow(title, color = color, heading = true)
         Spacer(Modifier.width(10.dp))
         Box(Modifier.weight(1f).height(1.dp).background(c.line))
         if (count != null) {
@@ -1187,10 +1188,10 @@ internal fun StoryCard(
                     Eyebrow(
                         stringResource(if (story.match == "headline") R.string.headline else R.string.suggested),
                         Modifier.padding(end = 8.dp),
-                        color = c.accent,
+                        color = c.accentText,
                     )
                 }
-                Eyebrow(relativeTime(story.publishedAt))
+                Eyebrow(storyTime(story.publishedAt, story.addedAt))
             }
             Spacer(Modifier.height(10.dp))
             Text(
@@ -1511,6 +1512,41 @@ internal fun relativeTime(publishedAt: String, now: Instant = Instant.now()): St
     }
 }
 
+/**
+ * A list's time for a story: when it was added ("added 2h ago") if that was at least [LATE_ADDED] after it was
+ * published, so a story found late doesn't look old, else [relativeTime] of its publishing.
+ */
+@Composable
+internal fun storyTime(publishedAt: String, addedAt: String?, now: Instant = Instant.now()): String =
+    if (addedAt != null && rememberAddedLate(publishedAt, addedAt)) {
+        stringResource(R.string.time_added, relativeTime(addedAt, now))
+    } else {
+        relativeTime(publishedAt, now)
+    }
+
+/** A story's dates for its detail: "Published Nov 5 · added Nov 14" when it was added late, else [relativeTime]. */
+@Composable
+internal fun storyDates(publishedAt: String, addedAt: String?, now: Instant = Instant.now()): String {
+    if (addedAt == null || !rememberAddedLate(publishedAt, addedAt)) return relativeTime(publishedAt, now)
+    val format = shortDate()
+    val zone = ZoneId.systemDefault()
+    return stringResource(
+        R.string.story_published_added,
+        format.format(Instant.parse(publishedAt).atZone(zone)),
+        format.format(Instant.parse(addedAt).atZone(zone)),
+    )
+}
+
+/** Whether [addedAt] is at least [LATE_ADDED] after [publishedAt]; false when either won't parse. */
+@Composable
+private fun rememberAddedLate(publishedAt: String, addedAt: String): Boolean = remember(publishedAt, addedAt) {
+    try {
+        Duration.between(Instant.parse(publishedAt), Instant.parse(addedAt)) >= LATE_ADDED
+    } catch (e: DateTimeParseException) {
+        false
+    }
+}
+
 /** The "MMMd" format for the current locale, built once per locale: every older card needs it, and the lookup is slow. */
 private fun shortDate(): DateTimeFormatter {
     val locale = Locale.getDefault()
@@ -1619,6 +1655,9 @@ private const val TAB_SLIDE_DIVISOR = 12
 private const val LIST_PANE_WEIGHT = 0.42f
 private const val DATE_LENGTH = 10
 private const val WEEK_DAYS = 7
+
+/** How long after publishing a story must be added for lists to show when it was added instead. */
+private val LATE_ADDED = Duration.ofDays(1)
 private const val TITLE_LINES = 3
 private const val SUMMARY_LINES = 3
 private const val MAX_CARD_TOPICS = 2

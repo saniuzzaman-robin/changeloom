@@ -36,9 +36,10 @@ const (
 )
 
 // testScore is the api's default ranking: with stories of equal importance a few hours apart,
-// tiers decide the order.
+// tiers decide the order. Test stories are added at insert time, so a lag weight of 1 ages them
+// from published_at; TestTimelineFetchLag covers other weights.
 var testScore = httpapi.TimelineScore{
-	TierWeight: 2, ImportanceWeight: 1, SeverityWeight: 0.5, AgeDecay: 24 * time.Hour, SeenPenalty: 3, SeenGrace: 12 * time.Hour,
+	TierWeight: 2, ImportanceWeight: 1, SeverityWeight: 0.5, AgeDecay: 24 * time.Hour, FetchLagWeight: 1, SeenPenalty: 3, SeenGrace: 12 * time.Hour,
 	AffinityWeight: 1.5, AffinityWindow: 30 * 24 * time.Hour, AffinityPrior: 4, BoostEngagements: 3, ActionWeight: 1,
 }
 
@@ -1066,6 +1067,44 @@ func TestTimelineScore(t *testing.T) {
 		}
 		if !slices.Equal(walked, want) {
 			t.Fatalf("limit %d: paged order = %v, want %v", limit, walked, want)
+		}
+	}
+}
+
+// A story added long after it was published ages from when it was added plus FetchLagWeight of
+// that lag, so it can outrank an older addition; a weight of 1 ages every story from published_at.
+func TestTimelineFetchLag(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	for _, tc := range []struct {
+		weight float64
+		late   bool // whether the late-added story comes first
+	}{{0.25, true}, {1, false}} {
+		e := newEnvWith(t, func(o *httpapi.Options) { o.TimelineScore.FetchLagWeight = tc.weight })
+		e.follow(aliceToken, "web/react")
+		// late: published 4 days ago, added now (age 1 day at 0.25); prompt: published and added 2 days ago.
+		late := e.insertStory("late", now.Add(-96*time.Hour), "web/react")
+		prompt := e.insertStory("prompt", now.Add(-48*time.Hour), "web/react")
+		e.exec(`UPDATE stories SET created_at = $2 WHERE id = $1`, prompt, now.Add(-48*time.Hour))
+
+		want := []int64{prompt, late}
+		if tc.late {
+			want = []int64{late, prompt}
+		}
+		page := e.timeline(aliceToken, 50, "")
+		if got := ids(page.Items); !slices.Equal(got, want) {
+			t.Fatalf("weight %v: timeline order = %v, want %v", tc.weight, got, want)
+		}
+		for _, it := range page.Items {
+			if it.Id == prompt && (it.AddedAt == nil || !it.AddedAt.Equal(now.Add(-48*time.Hour))) {
+				t.Errorf("weight %v: prompt added_at = %v, want %v", tc.weight, it.AddedAt, now.Add(-48*time.Hour))
+			}
+		}
+		var story httpapi.Story
+		if code := e.do(http.MethodGet, "/v1/stories/"+strconv.FormatInt(late, 10), aliceToken, nil, &story); code != http.StatusOK {
+			t.Fatalf("get story: status %d", code)
+		}
+		if story.AddedAt == nil || !story.AddedAt.After(story.PublishedAt) {
+			t.Errorf("weight %v: detail added_at = %v, want after published_at %v", tc.weight, story.AddedAt, story.PublishedAt)
 		}
 	}
 }

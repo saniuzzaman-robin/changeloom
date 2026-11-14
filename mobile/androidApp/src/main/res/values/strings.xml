@@ -170,6 +170,8 @@
     <string name="time_minutes_ago">%1$dm ago</string>
     <string name="time_hours_ago">%1$dh ago</string>
     <string name="time_days_ago">%1$dd ago</string>
+    <string name="time_added">added %1$s</string>
+    <string name="story_published_added">Published %1$s · added %2$s</string>
 
     <!-- Story -->
     <string name="sources_count">Sources · %1$d</string>
@@ -192,6 +194,18 @@
     <string name="browse_feed">Browse your feed</string>
 
     <!-- Topics -->
+    <!-- Intro (before onboarding, once per install) -->
+    <string name="intro_skip">Skip</string>
+    <string name="intro_next">Next</string>
+    <string name="intro_get_started">Get started</string>
+    <string name="intro_page_of">Page %1$d of %2$d</string>
+    <string name="intro_feed_title">A feed of just your stack</string>
+    <string name="intro_feed_body">Follow the languages, tools and platforms you use. Your feed shows the changes to them that matter, most important first.</string>
+    <string name="intro_save_title">Save what you\'ll need</string>
+    <string name="intro_save_body">Bookmark a release, migration or deprecation and find it again in Saved when it\'s time to act.</string>
+    <string name="intro_alerts_title">Hear about urgent changes</string>
+    <string name="intro_alerts_body">Get an alert when something urgent lands in a topic you follow, like a security fix. You choose whether to allow notifications.</string>
+
     <string name="topics_onboarding_eyebrow">Personalise your feed</string>
     <string name="topics_edit_eyebrow">Followed topics</string>
     <string name="topics_onboarding_title_1">What do you</string>
@@ -250,6 +264,12 @@
     </plurals>
     <string name="feedback_title">Send feedback</string>
     <string name="feedback_row_body">Report a bug, suggest an idea or leave a review</string>
+    <string name="rate_app_title">Rate Changeloom</string>
+    <string name="rate_app_body">Enjoying it? A rating on Google Play helps others find it</string>
+    <string name="share_app_title">Share Changeloom</string>
+    <string name="share_app_body">Tell a friend or colleague about it</string>
+    <string name="share_app_subject">Try Changeloom</string>
+    <string name="share_app_text">I use Changeloom to keep up with what changed in the tools and topics I follow, all in one feed. Get it on Google Play: %1$s</string>
     <string name="feedback_body">Tell us what\'s working, what\'s broken or what you\'d like to see.</string>
     <string name="feedback_placeholder">Your feedback</string>
     <string name="feedback_send">Send</string>

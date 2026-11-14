@@ -52,6 +52,9 @@ topics: [{slug: a, name: A, priority: 3}, {slug: b, name: B, priority: 3}]`, `ro
 		{"unknown key", `[{slug: a, name: A, priority: 3, hint: [https://example.com]}]`, "field hint not found"},
 		{"nothing launched", `professions: [{slug: p, name: P, topics: [a]}]
 topics: [{slug: a, name: A, priority: 3}]`, "no profession has launch: true"},
+		{"replaces a catalog topic", `[{slug: a, name: A, priority: 3, children: [{slug: a/x, name: X}, {slug: a/y, name: Y, replaces: [a/x]}]}]`, `replaces "a/x", which is still in the catalog`},
+		{"replaced twice", `[{slug: a, name: A, priority: 3, replaces: [old], children: [{slug: a/x, name: X, replaces: [old]}]}]`, `both replace "old"`},
+		{"bad replaced slug", `[{slug: a, name: A, priority: 3, replaces: [old/x/y]}]`, `topic "a" replaces: topic slug "old/x/y"`},
 		{"headline under headline", `[{slug: a, name: A, priority: 3, headline: true, children: [{slug: a/x, name: X, headline: true}]}]`, `"a/x" is a headline already through its parent`},
 	}
 	for _, tc := range tests {

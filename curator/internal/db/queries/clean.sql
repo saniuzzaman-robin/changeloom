@@ -69,3 +69,39 @@ DELETE FROM topics WHERE slug = ANY(@slugs::text[]) AND parent_id IS NULL;
 
 -- name: DeleteProfessionsBySlug :execrows
 DELETE FROM professions WHERE slug = ANY(@slugs::text[]);
+
+-- name: MoveTopicFollows :execrows
+-- Moves follows from topic @from_slug to @to_slug; a user who followed both keeps one. Counts the moved follows.
+WITH moved AS (
+    DELETE FROM user_topics
+    WHERE topic_id = (SELECT f.id FROM topics f WHERE f.slug = @from_slug)
+    RETURNING user_id
+)
+INSERT INTO user_topics (user_id, topic_id)
+SELECT moved.user_id, t.id FROM moved, topics t WHERE t.slug = @to_slug
+ON CONFLICT DO NOTHING;
+
+-- name: MoveTopicMutes :execrows
+WITH moved AS (
+    DELETE FROM user_topic_mutes
+    WHERE topic_id = (SELECT f.id FROM topics f WHERE f.slug = @from_slug)
+    RETURNING user_id
+)
+INSERT INTO user_topic_mutes (user_id, topic_id)
+SELECT moved.user_id, t.id FROM moved, topics t WHERE t.slug = @to_slug
+ON CONFLICT DO NOTHING;
+
+-- name: MoveStoryTopics :execrows
+WITH moved AS (
+    DELETE FROM story_topics
+    WHERE topic_id = (SELECT f.id FROM topics f WHERE f.slug = @from_slug)
+    RETURNING story_id
+)
+INSERT INTO story_topics (story_id, topic_id)
+SELECT moved.story_id, t.id FROM moved, topics t WHERE t.slug = @to_slug
+ON CONFLICT DO NOTHING;
+
+-- name: MoveTopicRequests :execrows
+UPDATE topic_requests
+SET topic_id = (SELECT n.id FROM topics n WHERE n.slug = @to_slug)
+WHERE topic_id = (SELECT f.id FROM topics f WHERE f.slug = @from_slug);

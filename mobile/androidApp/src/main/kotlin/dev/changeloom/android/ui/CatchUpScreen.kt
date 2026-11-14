@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -54,12 +56,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -177,6 +181,7 @@ internal fun CatchUpScreen(
                 contentPadding = PaddingValues(horizontal = Spacing.gutter, vertical = CATCH_UP_PEEK),
                 pageSpacing = 12.dp,
                 key = { pages.getOrNull(it)?.id ?: CATCH_UP_END },
+                pageNestedScrollConnection = catchUpPageScroll(pager),
             ) { page ->
                 val story = pages.getOrNull(page)
                 when {
@@ -218,6 +223,22 @@ internal fun CatchUpScreen(
     }
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) { lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.trackViews() } }
+}
+
+/**
+ * The pager's default page connection, except a flick that moved the pager hands its velocity on, so it turns the
+ * page. The default keeps that velocity, and every page scrolls inside, so only a drag past half a page turned it.
+ * A flick that only scrolled the story leaves the pager at rest and keeps the default.
+ */
+@Composable
+internal fun catchUpPageScroll(pager: PagerState): NestedScrollConnection {
+    val default = PagerDefaults.pageNestedScrollConnection(pager, Orientation.Vertical)
+    return remember(default, pager) {
+        object : NestedScrollConnection by default {
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
+                if (pager.currentPageOffsetFraction != 0f) Velocity.Zero else default.onPostFling(consumed, available)
+        }
+    }
 }
 
 /** Close, and "k of n" while on a story; reads [pager] itself so a swipe recomposes only the bar. */
@@ -264,7 +285,7 @@ private fun CatchUpPage(
                 SeverityDot(story.severity, Modifier.padding(start = 4.dp))
                 if (story.actionRequired) ActionPill(Modifier.padding(start = 8.dp))
                 Spacer(Modifier.weight(1f))
-                Eyebrow(relativeTime(story.publishedAt))
+                Eyebrow(storyTime(story.publishedAt, story.addedAt))
             }
             Spacer(Modifier.height(16.dp))
             Text(story.title, Modifier.sharedStoryTitle(story.id), style = MaterialTheme.typography.headlineSmall, color = c.fg)

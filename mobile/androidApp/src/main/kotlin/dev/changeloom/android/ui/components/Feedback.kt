@@ -32,6 +32,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -82,7 +84,7 @@ fun EmptyState(
     ) {
         art()
         Spacer(Modifier.height(20.dp))
-        Text(title, style = MaterialTheme.typography.titleLarge, color = c.fg, textAlign = TextAlign.Center)
+        Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge, color = c.fg, textAlign = TextAlign.Center)
         Spacer(Modifier.height(8.dp))
         Text(message, style = MaterialTheme.typography.bodyMedium, color = c.fgMuted, textAlign = TextAlign.Center)
         if (action != null) {

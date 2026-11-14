@@ -25,6 +25,8 @@ data class ChangeloomColors(
     val primaryFg: Color,
     val primaryText: Color,
     val accent: Color,
+    /** [accent] for text and small labels; darker in light mode so it passes WCAG AA on tinted surfaces. */
+    val accentText: Color,
     val success: Color,
     val glow: Color,
     /**
@@ -33,6 +35,8 @@ data class ChangeloomColors(
      */
     val navGlass: Color,
     val blue: Color,
+    /** [blue] for text and small labels, like [accentText]. */
+    val blueText: Color,
     val rose: Color,
     val amber: Color,
     val red: Color,
@@ -55,14 +59,16 @@ val DarkColors = ChangeloomColors(
     primaryFg = Color(0xFFFFFFFF),
     primaryText = Color(0xFF818CF8),
     accent = Color(0xFF06B6D4),
+    accentText = Color(0xFF06B6D4),
     success = Color(0xFF10B981),
     glow = Color(0x2E6366F1),
     navGlass = Color(0xFF070709),
     blue = Color(0xFF3B82F6),
+    blueText = Color(0xFF3B82F6),
     rose = Color(0xFFF43F5E),
     amber = Color(0xFFF59E0B),
     red = Color(0xFFEF4444),
-    slate = Color(0xFF64748B),
+    slate = Color(0xFF94A3B8),
 )
 
 val LightColors = ChangeloomColors(
@@ -81,14 +87,16 @@ val LightColors = ChangeloomColors(
     primaryFg = Color(0xFFFFFFFF),
     primaryText = Color(0xFF4F46E5),
     accent = Color(0xFF0284C7),
+    accentText = Color(0xFF0369A1),
     success = Color(0xFF047857),
     glow = Color(0x1A4F46E5),
     navGlass = Color(0xFFFFFFFF),
     blue = Color(0xFF2563EB),
-    rose = Color(0xFFE11D48),
-    amber = Color(0xFFD97706),
-    red = Color(0xFFDC2626),
-    slate = Color(0xFF64748B),
+    blueText = Color(0xFF1D4ED8),
+    rose = Color(0xFFBE123C),
+    amber = Color(0xFF92400E),
+    red = Color(0xFFB91C1C),
+    slate = Color(0xFF475569),
 )
 
 /** Maps the tokens onto Material 3 so stock components (fields, dialogs, switches) match. */

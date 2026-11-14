@@ -292,6 +292,9 @@ type Story struct {
 	// ActionRequired Readers must upgrade, migrate or patch something because of this story.
 	ActionRequired *bool `json:"action_required,omitempty"`
 
+	// AddedAt When Changeloom added the story, which can be days after published_at. Absent from older servers and from story threads.
+	AddedAt *time.Time `json:"added_at,omitempty"`
+
 	// BodyMd Markdown body.
 	BodyMd       string `json:"body_md"`
 	Id           int64  `json:"id"`
@@ -339,10 +342,13 @@ type StorySource struct {
 type StorySummary struct {
 	// ActionRequired Readers must upgrade, migrate or patch something because of this story.
 	ActionRequired *bool `json:"action_required,omitempty"`
-	Id             int64 `json:"id"`
-	Importance     int   `json:"importance"`
-	IsBookmarked   bool  `json:"is_bookmarked"`
-	IsRead         bool  `json:"is_read"`
+
+	// AddedAt When Changeloom added the story, which can be days after published_at. Absent from older servers and from story threads.
+	AddedAt      *time.Time `json:"added_at,omitempty"`
+	Id           int64      `json:"id"`
+	Importance   int        `json:"importance"`
+	IsBookmarked bool       `json:"is_bookmarked"`
+	IsRead       bool       `json:"is_read"`
 
 	// KeyPoints Up to 3 short takeaways that add to the summary; empty when the story has none.
 	KeyPoints *[]string `json:"key_points,omitempty"`
@@ -368,10 +374,13 @@ type StorySummaryMatch string
 type StoryThreadItem struct {
 	// ActionRequired Readers must upgrade, migrate or patch something because of this story.
 	ActionRequired *bool `json:"action_required,omitempty"`
-	Id             int64 `json:"id"`
-	Importance     int   `json:"importance"`
-	IsBookmarked   bool  `json:"is_bookmarked"`
-	IsRead         bool  `json:"is_read"`
+
+	// AddedAt When Changeloom added the story, which can be days after published_at. Absent from older servers and from story threads.
+	AddedAt      *time.Time `json:"added_at,omitempty"`
+	Id           int64      `json:"id"`
+	Importance   int        `json:"importance"`
+	IsBookmarked bool       `json:"is_bookmarked"`
+	IsRead       bool       `json:"is_read"`
 
 	// KeyPoints Up to 3 short takeaways that add to the summary; empty when the story has none.
 	KeyPoints *[]string `json:"key_points,omitempty"`

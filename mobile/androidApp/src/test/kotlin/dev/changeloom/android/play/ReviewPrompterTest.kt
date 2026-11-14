@@ -1,13 +1,9 @@
 package dev.changeloom.android.play
 
+import dev.changeloom.android.ui.MemoryReviewStore
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-
-private class MemoryReviewStore : ReviewStore {
-    override var storyReads = 0
-    override var lastPromptAt = 0L
-}
 
 class ReviewPrompterTest {
     private var now = REVIEW_INTERVAL_MS
@@ -20,6 +16,13 @@ class ReviewPrompterTest {
         read(READS_BEFORE_REVIEW - 1)
         assertFalse(prompter.due.value)
         read(1)
+        assertTrue(prompter.due.value)
+    }
+
+    @Test
+    fun savesCountTowardThePrompt() {
+        read(READS_BEFORE_REVIEW - 1)
+        prompter.storySaved()
         assertTrue(prompter.due.value)
     }
 

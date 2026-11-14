@@ -1,12 +1,13 @@
 - slug: frontend
   name: "Frontend"
+  replaces: [web]
   priority: 1
   description: "Browsers, UI frameworks and web platform changes."
   children:
-    - {slug: frontend/react, name: "React"}
-    - {slug: frontend/nextjs, name: "Next.js"}
-    - {slug: frontend/angular, name: "Angular", priority: 2}
-    - {slug: frontend/vue, name: "Vue", priority: 2}
+    - {slug: frontend/react, name: "React", replaces: [web/react]}
+    - {slug: frontend/nextjs, name: "Next.js", replaces: [web/nextjs]}
+    - {slug: frontend/angular, name: "Angular", priority: 2, replaces: [web/angular]}
+    - {slug: frontend/vue, name: "Vue", priority: 2, replaces: [web/vue]}
     - {slug: frontend/svelte, name: "Svelte", priority: 2}
     - {slug: frontend/solid, name: "Solid", priority: 3}
     - {slug: frontend/astro, name: "Astro", priority: 3}
@@ -17,7 +18,7 @@
     - {slug: frontend/css, name: "CSS & Layout"}
     - {slug: frontend/tailwind-css, name: "Tailwind CSS", priority: 2}
     - {slug: frontend/web-components, name: "Web Components", priority: 3}
-    - {slug: frontend/browsers, name: "Browsers"}
+    - {slug: frontend/browsers, name: "Browsers", replaces: [web/browsers]}
     - {slug: frontend/web-performance, name: "Web Performance", priority: 2}
     - {slug: frontend/bundlers, name: "Bundlers & Build Tools", priority: 2}
     - {slug: frontend/state-management, name: "State Management", priority: 3}
@@ -31,6 +32,7 @@
   children:
     - slug: backend/nodejs
       name: "Node.js"
+      replaces: [web/nodejs]
       hints: [https://nodejs.org/en/feed/blog.xml]
     - {slug: backend/deno-bun, name: "Deno & Bun", priority: 2}
     - {slug: backend/django, name: "Django", priority: 2}
@@ -103,18 +105,20 @@
     - {slug: languages/shell, name: "Shell & Bash"}
 - slug: devops-cloud
   name: "DevOps & Cloud"
+  replaces: [cloud]
   priority: 1
   description: "Cloud providers, containers and delivery pipelines."
   children:
-    - {slug: devops-cloud/aws, name: "AWS"}
-    - {slug: devops-cloud/gcp, name: "Google Cloud"}
-    - {slug: devops-cloud/azure, name: "Azure"}
+    - {slug: devops-cloud/aws, name: "AWS", replaces: [cloud/aws]}
+    - {slug: devops-cloud/gcp, name: "Google Cloud", replaces: [cloud/gcp]}
+    - {slug: devops-cloud/azure, name: "Azure", replaces: [cloud/azure]}
     - slug: devops-cloud/kubernetes
       name: "Kubernetes"
+      replaces: [cloud/kubernetes]
       hints: [https://kubernetes.io/feed.xml]
-    - {slug: devops-cloud/docker, name: "Docker"}
-    - {slug: devops-cloud/terraform, name: "Terraform & IaC", priority: 2}
-    - {slug: devops-cloud/ci-cd, name: "CI/CD", priority: 2}
+    - {slug: devops-cloud/docker, name: "Docker", replaces: [cloud/docker]}
+    - {slug: devops-cloud/terraform, name: "Terraform & IaC", priority: 2, replaces: [cloud/terraform]}
+    - {slug: devops-cloud/ci-cd, name: "CI/CD", priority: 2, replaces: [devtools/ci-cd]}
     - {slug: devops-cloud/github-actions, name: "GitHub Actions", priority: 2}
     - {slug: devops-cloud/gitops, name: "Helm & GitOps", priority: 3}
     - {slug: devops-cloud/service-mesh, name: "Service Mesh", priority: 3}
@@ -127,7 +131,7 @@
   priority: 2
   description: "Database engines, drivers and managed data services."
   children:
-    - {slug: databases/postgresql, name: "PostgreSQL"}
+    - {slug: databases/postgresql, name: "PostgreSQL", replaces: [databases/postgres]}
     - {slug: databases/mysql, name: "MySQL"}
     - {slug: databases/redis, name: "Redis"}
     - {slug: databases/mongodb, name: "MongoDB"}
@@ -176,16 +180,17 @@
     - {slug: security/bug-bounties, name: "Bug Bounties", priority: 3}
 - slug: ai-ml
   name: "AI & ML"
+  replaces: [ai]
   priority: 1
   description: "Model releases, AI APIs and ML frameworks."
   children:
-    - {slug: ai-ml/models, name: "Models & APIs"}
+    - {slug: ai-ml/models, name: "Models & APIs", replaces: [ai/models]}
     - {slug: ai-ml/llms, name: "LLMs"}
     - {slug: ai-ml/open-models, name: "Open-Weight Models"}
     - {slug: ai-ml/agents, name: "Agents & MCP"}
     - {slug: ai-ml/rag, name: "RAG & Embeddings", priority: 2}
     - {slug: ai-ml/prompt-engineering, name: "Prompt Engineering", priority: 2}
-    - {slug: ai-ml/frameworks, name: "ML Frameworks", priority: 2}
+    - {slug: ai-ml/frameworks, name: "ML Frameworks", priority: 2, replaces: [ai/frameworks]}
     - {slug: ai-ml/pytorch, name: "PyTorch", priority: 2}
     - {slug: ai-ml/computer-vision, name: "Computer Vision", priority: 2}
     - {slug: ai-ml/speech, name: "Speech & Audio AI", priority: 2}

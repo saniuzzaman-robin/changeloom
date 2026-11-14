@@ -135,7 +135,7 @@ func (s *Server) ListBookmarks(w http.ResponseWriter, r *http.Request, params Li
 	for i, row := range rows {
 		items[i] = StorySummary{
 			Id: row.ID, Title: row.Title, Summary: row.Summary, Kind: StoryKind(row.Kind), Severity: (*Severity)(row.Severity),
-			Importance: int(row.Importance), PublishedAt: row.PublishedAt, Topics: row.Topics,
+			Importance: int(row.Importance), PublishedAt: row.PublishedAt, AddedAt: &row.AddedAt, Topics: row.Topics,
 			IsRead: row.ReadAt != nil, ReadAt: row.ReadAt, IsBookmarked: true,
 			KeyPoints: &row.KeyPoints, ActionRequired: &row.ActionRequired,
 		}
@@ -187,7 +187,7 @@ func (s *Server) SearchStories(w http.ResponseWriter, r *http.Request, params Se
 	for i, row := range rows {
 		items[i] = StorySummary{
 			Id: row.ID, Title: row.Title, Summary: row.Summary, Kind: StoryKind(row.Kind), Severity: (*Severity)(row.Severity),
-			Importance: int(row.Importance), PublishedAt: row.PublishedAt, Topics: row.Topics,
+			Importance: int(row.Importance), PublishedAt: row.PublishedAt, AddedAt: &row.AddedAt, Topics: row.Topics,
 			IsRead: row.ReadAt != nil, ReadAt: row.ReadAt, IsBookmarked: row.IsBookmarked,
 			KeyPoints: &row.KeyPoints, ActionRequired: &row.ActionRequired,
 		}

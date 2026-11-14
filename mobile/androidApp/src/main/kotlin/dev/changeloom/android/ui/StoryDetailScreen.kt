@@ -75,6 +75,8 @@ import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -244,10 +246,10 @@ private fun DetailHero(story: StorySummary) {
                 }
                 if (story.actionRequired) ActionPill(Modifier.padding(start = 8.dp))
                 Spacer(Modifier.weight(1f))
-                Eyebrow(relativeTime(story.publishedAt))
+                Eyebrow(storyDates(story.publishedAt, story.addedAt))
             }
             Spacer(Modifier.height(18.dp))
-            Text(story.title, Modifier.sharedStoryTitle(story.id), style = MaterialTheme.typography.headlineMedium, color = c.fg)
+            Text(story.title, Modifier.sharedStoryTitle(story.id).semantics { heading() }, style = MaterialTheme.typography.headlineMedium, color = c.fg)
             Spacer(Modifier.height(12.dp))
             Text(story.summary, Modifier.enter(LEDE_ENTER_DELAY), style = MaterialTheme.typography.bodyLarge, color = c.fgMuted)
             if (story.keyPoints.isNotEmpty()) {
@@ -379,7 +381,7 @@ private fun DetailTopBar(title: String?, scroll: ScrollState, onBack: () -> Unit
 private fun SourceList(sources: List<StorySource>, onOpen: (String) -> Unit, modifier: Modifier = Modifier) {
     val c = ChangeloomTheme.colors
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Eyebrow(stringResource(R.string.sources_count, sources.size))
+        Eyebrow(stringResource(R.string.sources_count, sources.size), heading = true)
         sources.forEachIndexed { i, source ->
             GlassCard(
                 Modifier.fillMaxWidth(),
@@ -425,7 +427,7 @@ private fun instantOrNull(timestamp: String): Instant? = try {
 private fun StoryThread(entries: List<ThreadEntry>, onOpen: (Long) -> Unit, modifier: Modifier = Modifier) {
     val c = ChangeloomTheme.colors
     Column(modifier) {
-        Eyebrow(stringResource(R.string.story_thread))
+        Eyebrow(stringResource(R.string.story_thread), heading = true)
         Spacer(Modifier.height(10.dp))
         entries.forEachIndexed { i, entry ->
             val first = i == 0
@@ -530,7 +532,7 @@ private fun ActionItem(icon: ImageVector, label: String, actionLabel: String, ac
                 if (toggle) haptics.performHapticFeedback(if (active) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
                 onClick()
             }
-            .height(44.dp)
+            .height(48.dp)
             .padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -544,6 +546,7 @@ private fun Story.asSummary() = StorySummary(
     id, title, summary, kind, severity, importance, publishedAt, topics, isRead, readAt, isBookmarked,
     keyPoints = keyPoints,
     actionRequired = actionRequired,
+    addedAt = addedAt,
 )
 
 /** "https://www.kotlinlang.org/docs" → "kotlinlang.org"; the raw URL if it won't parse. */

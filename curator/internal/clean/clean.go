@@ -1,12 +1,15 @@
 // Package clean deletes topics and professions that left the catalog, with the stories that were
 // only in those topics, from the local DB and the hosted DBs. Seed and sync never delete, so
 // removed or renamed catalog entries otherwise stay forever. Anything a hosted user still uses is
-// kept.
+// kept, unless a catalog topic replaces it: then its follows, mutes, stories and requests move to
+// that topic first.
 package clean
 
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -62,8 +65,14 @@ func (u InUse) AddHosted(ctx context.Context, remote db.DBTX) error {
 	return nil
 }
 
-// Plan is what Clean deletes from one DB, and the unused-by-the-catalog entries it keeps.
+// Merge moves a replaced topic's follows, mutes, stories and requests to the catalog topic replacing it.
+type Merge struct {
+	From, To string
+}
+
+// Plan is what Clean merges and deletes in one DB, and the unused-by-the-catalog entries it keeps.
 type Plan struct {
+	Merges          []Merge
 	Topics          []string
 	Professions     []string
 	KeptTopics      []string
@@ -72,16 +81,19 @@ type Plan struct {
 	Stories int64
 }
 
-// Result counts what Clean deleted.
+// Result counts what Clean merged and deleted.
 type Result struct {
+	// Moved counts the follows, mutes, story tags and requests merges moved.
+	Moved       int64
 	Topics      int64
 	Professions int64
 	Stories     int64
 }
 
-// PlanFor works out what to delete from pool: its topics and professions not in cat, minus those
-// in use. A topic stays when it is in use, when its parent is (following or muting a topic covers
-// its descendants), or when one of its children stays (a parent can't go before its children).
+// PlanFor works out what to merge and delete in pool: its topics and professions not in cat, minus
+// those in use. A topic stays when it is in use, when its parent is (following or muting a topic
+// covers its descendants), or when one of its children stays (a parent can't go before its
+// children). A topic a catalog topic in pool replaces is merged into it, so its own use doesn't count.
 func PlanFor(ctx context.Context, pool db.DBTX, cat catalog.Catalog, inUse InUse) (Plan, error) {
 	q := db.New(pool)
 	tree, err := q.ListTopicTree(ctx)
@@ -94,15 +106,27 @@ func PlanFor(ctx context.Context, pool db.DBTX, cat catalog.Catalog, inUse InUse
 	}
 	inCatalog := catalogTopics(cat)
 
+	var plan Plan
 	parent := make(map[string]string, len(tree))
+	inPool := make(map[string]bool, len(tree))
 	for _, t := range tree {
+		inPool[t.Slug] = true
 		if t.ParentSlug != nil {
 			parent[t.Slug] = *t.ParentSlug
 		}
 	}
+	merged := map[string]bool{}
+	for from, to := range cat.Replacements() {
+		if inPool[from] && inPool[to] {
+			merged[from] = true
+			plan.Merges = append(plan.Merges, Merge{From: from, To: to})
+		}
+	}
+	slices.SortFunc(plan.Merges, func(a, b Merge) int { return strings.Compare(a.From, b.From) })
+	used := func(slug string) bool { return slug != "" && inUse.Topics[slug] && !merged[slug] }
 	keep := map[string]bool{}
 	for _, t := range tree {
-		if inCatalog[t.Slug] || inUse.Topics[t.Slug] || inUse.Topics[parent[t.Slug]] {
+		if inCatalog[t.Slug] || used(t.Slug) || used(parent[t.Slug]) {
 			keep[t.Slug] = true
 		}
 	}
@@ -115,7 +139,6 @@ func PlanFor(ctx context.Context, pool db.DBTX, cat catalog.Catalog, inUse InUse
 		}
 	}
 
-	var plan Plan
 	for _, t := range tree {
 		switch {
 		case !keep[t.Slug]:
@@ -137,19 +160,27 @@ func PlanFor(ctx context.Context, pool db.DBTX, cat catalog.Catalog, inUse InUse
 			plan.Professions = append(plan.Professions, p)
 		}
 	}
-	if len(plan.Topics) > 0 {
-		if plan.Stories, err = q.CountStoriesOnlyIn(ctx, plan.Topics); err != nil {
+	// A merged topic's stories move to its replacement, so only the other deleted topics lose stories.
+	if gone := slices.DeleteFunc(slices.Clone(plan.Topics), func(s string) bool { return merged[s] }); len(gone) > 0 {
+		if plan.Stories, err = q.CountStoriesOnlyIn(ctx, gone); err != nil {
 			return Plan{}, fmt.Errorf("count stories to delete: %w", err)
 		}
 	}
 	return plan, nil
 }
 
-// Apply deletes plan from pool: first the stories (in batches, so a rerun after an interruption
-// finishes the job), then the professions and topics in one transaction. Saved stories stay, without
-// the deleted topics.
+// Apply carries out plan in pool: first the merges in one transaction, then the stories (in batches,
+// so a rerun after an interruption finishes the job), then the professions and topics in one
+// transaction. Saved stories stay, without the deleted topics.
 func Apply(ctx context.Context, pool *pgxpool.Pool, plan Plan) (Result, error) {
 	var res Result
+	if len(plan.Merges) > 0 {
+		moved, err := merge(ctx, pool, plan.Merges)
+		if err != nil {
+			return res, err
+		}
+		res.Moved = moved
+	}
 	q := db.New(pool)
 	if len(plan.Topics) > 0 {
 		for {
@@ -187,6 +218,45 @@ func Apply(ctx context.Context, pool *pgxpool.Pool, plan Plan) (Result, error) {
 	return res, err
 }
 
+// merge moves each merge's follows, mutes, story tags and requests in one transaction and counts them.
+func merge(ctx context.Context, pool *pgxpool.Pool, merges []Merge) (int64, error) {
+	var moved int64
+	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		q := db.New(tx)
+		for _, m := range merges {
+			steps := []struct {
+				what string
+				run  func() (int64, error)
+			}{
+				{"follows", func() (int64, error) {
+					return q.MoveTopicFollows(ctx, db.MoveTopicFollowsParams{FromSlug: m.From, ToSlug: m.To})
+				}},
+				{"mutes", func() (int64, error) {
+					return q.MoveTopicMutes(ctx, db.MoveTopicMutesParams{FromSlug: m.From, ToSlug: m.To})
+				}},
+				{"story topics", func() (int64, error) {
+					return q.MoveStoryTopics(ctx, db.MoveStoryTopicsParams{FromSlug: m.From, ToSlug: m.To})
+				}},
+				{"requests", func() (int64, error) {
+					return q.MoveTopicRequests(ctx, db.MoveTopicRequestsParams{FromSlug: m.From, ToSlug: m.To})
+				}},
+			}
+			for _, s := range steps {
+				n, err := s.run()
+				if err != nil {
+					return fmt.Errorf("merge %s into %s: move %s: %w", m.From, m.To, s.what, err)
+				}
+				moved += n
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return moved, nil
+}
+
 func catalogTopics(cat catalog.Catalog) map[string]bool {
 	slugs := map[string]bool{}
 	var walk func([]catalog.Node)
@@ -200,7 +270,7 @@ func catalogTopics(cat catalog.Catalog) map[string]bool {
 	return slugs
 }
 
-// Empty reports whether the plan deletes nothing.
+// Empty reports whether the plan merges and deletes nothing.
 func (p Plan) Empty() bool {
-	return len(p.Topics) == 0 && len(p.Professions) == 0
+	return len(p.Merges) == 0 && len(p.Topics) == 0 && len(p.Professions) == 0
 }

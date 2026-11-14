@@ -95,6 +95,8 @@ data class StorySummary(
      * older servers) default to true, so nothing is marked new there.
      */
     val seen: Boolean = true,
+    /** When Changeloom added the story, which can be days after [publishedAt]; null from older servers. */
+    @SerialName("added_at") val addedAt: String? = null,
 )
 
 @Serializable
@@ -121,6 +123,8 @@ data class Story(
     val version: String? = null,
     /** Other recent stories about the same project or CVE, newest first; empty when there are none. */
     val thread: List<StoryThreadItem> = emptyList(),
+    /** When Changeloom added the story, which can be days after [publishedAt]; null from older servers. */
+    @SerialName("added_at") val addedAt: String? = null,
 )
 
 /** A story in another story's thread: the summary fields the thread shows, plus its release. */

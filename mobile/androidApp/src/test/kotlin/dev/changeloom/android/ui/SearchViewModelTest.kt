@@ -1,6 +1,7 @@
 package dev.changeloom.android.ui
 
 import androidx.lifecycle.SavedStateHandle
+import dev.changeloom.android.play.ReviewPrompter
 import dev.changeloom.shared.data.TimelineRepository
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
@@ -21,7 +22,7 @@ class SearchViewModelTest {
     private fun vm(saved: SavedStateHandle, requests: MutableList<String>): SearchViewModel {
         val auth = FakeAuth()
         val api = fakeApi(auth, requests) { respond(ONE_RESULT, headers = json) }
-        return SearchViewModel(api, TimelineRepository(api, MemoryCache()), NoAnalytics, saved)
+        return SearchViewModel(api, TimelineRepository(api, MemoryCache()), NoAnalytics, ReviewPrompter(MemoryReviewStore()), saved)
     }
 
     @Test

@@ -103,8 +103,27 @@ func TestSearch(t *testing.T) {
 	}
 }
 
-// TestSearchMatchesWordSimilarity checks the indexed `<%` match returns exactly what the former
-// predicate, word_similarity(q, title) >= 0.4 or a full-text match, did.
+// TestSearchPrefersWordMatches checks fuzzy title matches don't bury word matches: "click" is 0.45 word-similar to
+// "ClickHouse", so it only counts when no story matches the words.
+func TestSearchPrefersWordMatches(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+	clickhouse := e.insertStory("ClickHouse 26.10 adds lightweight updates", now.Add(-2*time.Hour), "languages/go")
+	e.insertStory("Figma selects objects in images with one click", now.Add(-1*time.Hour), "languages/go")
+
+	for q, want := range map[string][]int64{"ClickHouse": {clickhouse}, "clikhouse": {clickhouse}} { //nolint:misspell // deliberate typo exercises the fuzzy fallback
+		var page timelinePage
+		if code := e.do(http.MethodGet, "/v1/search?"+url.Values{"q": {q}}.Encode(), aliceToken, nil, &page); code != http.StatusOK {
+			t.Fatalf("search %q: status %d", q, code)
+		}
+		if got := ids(page.Items); !slices.Equal(got, want) {
+			t.Errorf("search %q = %v, want %v", q, got, want)
+		}
+	}
+}
+
+// TestSearchMatchesWordSimilarity checks the indexed `<%` match returns exactly what the plain predicate does: a
+// full-text match, or word_similarity(q, title) >= 0.4 when nothing matches the words.
 func TestSearchMatchesWordSimilarity(t *testing.T) {
 	e := newEnv(t)
 	now := time.Now()
@@ -132,7 +151,9 @@ func TestSearchMatchesWordSimilarity(t *testing.T) {
 	for _, q := range queries {
 		rows, err := e.pool.Query(t.Context(), `
 			SELECT id FROM stories
-			WHERE search @@ websearch_to_tsquery('english', $1) OR word_similarity($1, title) >= 0.4
+			WHERE search @@ websearch_to_tsquery('english', $1)
+				OR (NOT EXISTS (SELECT 1 FROM stories WHERE search @@ websearch_to_tsquery('english', $1))
+					AND word_similarity($1, title) >= 0.4)
 			ORDER BY published_at DESC, id DESC`, q)
 		if err != nil {
 			t.Fatalf("expected ids for %q: %v", q, err)

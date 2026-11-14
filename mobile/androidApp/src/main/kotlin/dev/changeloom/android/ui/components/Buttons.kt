@@ -37,6 +37,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.changeloom.android.ui.theme.ChangeloomTheme
@@ -97,7 +99,7 @@ fun PrimaryButton(
     ) {
         AnimatedContent(loading, transitionSpec = { fadeIn(expoTween()) togetherWith fadeOut(expoTween()) }, label = "primaryButton") { busy ->
             if (busy) {
-                CircularProgressIndicator(Modifier.size(20.dp), color = c.primaryFg, strokeWidth = 2.dp)
+                CircularProgressIndicator(Modifier.size(20.dp).semantics { contentDescription = text }, color = c.primaryFg, strokeWidth = 2.dp)
             } else {
                 ButtonContent(text, icon, fg, trailingIcon = trailingIcon)
             }
@@ -137,7 +139,7 @@ fun SecondaryButton(
         contentAlignment = Alignment.Center,
     ) {
         if (loading) {
-            CircularProgressIndicator(Modifier.size(20.dp), color = contentColor, strokeWidth = 2.dp)
+            CircularProgressIndicator(Modifier.size(20.dp).semantics { contentDescription = text }, color = contentColor, strokeWidth = 2.dp)
         } else {
             ButtonContent(text, icon, contentColor, leading)
         }
