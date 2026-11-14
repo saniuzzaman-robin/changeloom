@@ -285,7 +285,7 @@ private fun CatchUpPage(
                 SeverityDot(story.severity, Modifier.padding(start = 4.dp))
                 if (story.actionRequired) ActionPill(Modifier.padding(start = 8.dp))
                 Spacer(Modifier.weight(1f))
-                Eyebrow(relativeTime(story.publishedAt))
+                Eyebrow(storyTime(story.publishedAt, story.addedAt))
             }
             Spacer(Modifier.height(16.dp))
             Text(story.title, Modifier.sharedStoryTitle(story.id), style = MaterialTheme.typography.headlineSmall, color = c.fg)

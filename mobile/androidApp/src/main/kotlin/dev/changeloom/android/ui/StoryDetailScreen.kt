@@ -246,7 +246,7 @@ private fun DetailHero(story: StorySummary) {
                 }
                 if (story.actionRequired) ActionPill(Modifier.padding(start = 8.dp))
                 Spacer(Modifier.weight(1f))
-                Eyebrow(relativeTime(story.publishedAt))
+                Eyebrow(storyDates(story.publishedAt, story.addedAt))
             }
             Spacer(Modifier.height(18.dp))
             Text(story.title, Modifier.sharedStoryTitle(story.id).semantics { heading() }, style = MaterialTheme.typography.headlineMedium, color = c.fg)
@@ -546,6 +546,7 @@ private fun Story.asSummary() = StorySummary(
     id, title, summary, kind, severity, importance, publishedAt, topics, isRead, readAt, isBookmarked,
     keyPoints = keyPoints,
     actionRequired = actionRequired,
+    addedAt = addedAt,
 )
 
 /** "https://www.kotlinlang.org/docs" → "kotlinlang.org"; the raw URL if it won't parse. */

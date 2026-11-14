@@ -452,6 +452,17 @@ class TimelineRepositoryTest {
     }
 
     @Test
+    fun addedAtIsNullForOlderPayloads() = runTest {
+        val newer = """{"id":4,"title":"t4","summary":"s","kind":"release","importance":3,"published_at":"2026-09-01T00:00:00Z",""" +
+            """"added_at":"2026-09-04T08:00:00Z","topics":["x"],"is_read":false}"""
+        val repo = repo(MemoryCache()) { respond(page(item(1, "2026-09-03T10:00:00Z", false), newer), headers = json) }
+        repo.refresh()
+        val (older, current) = repo.state.value.items
+        assertNull(older.addedAt)
+        assertEquals("2026-09-04T08:00:00Z", current.addedAt)
+    }
+
+    @Test
     fun failedDismissPutsTheStoryBack() = runTest {
         val repo = repo(MemoryCache()) { req ->
             if (req.method == HttpMethod.Put) respondError(HttpStatusCode.InternalServerError) else respond(firstPage, headers = json)

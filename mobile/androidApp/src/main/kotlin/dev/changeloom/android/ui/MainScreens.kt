@@ -1191,7 +1191,7 @@ internal fun StoryCard(
                         color = c.accentText,
                     )
                 }
-                Eyebrow(relativeTime(story.publishedAt))
+                Eyebrow(storyTime(story.publishedAt, story.addedAt))
             }
             Spacer(Modifier.height(10.dp))
             Text(
@@ -1512,6 +1512,41 @@ internal fun relativeTime(publishedAt: String, now: Instant = Instant.now()): St
     }
 }
 
+/**
+ * A list's time for a story: when it was added ("added 2h ago") if that was at least [LATE_ADDED] after it was
+ * published, so a story found late doesn't look old, else [relativeTime] of its publishing.
+ */
+@Composable
+internal fun storyTime(publishedAt: String, addedAt: String?, now: Instant = Instant.now()): String =
+    if (addedAt != null && rememberAddedLate(publishedAt, addedAt)) {
+        stringResource(R.string.time_added, relativeTime(addedAt, now))
+    } else {
+        relativeTime(publishedAt, now)
+    }
+
+/** A story's dates for its detail: "Published Nov 5 · added Nov 14" when it was added late, else [relativeTime]. */
+@Composable
+internal fun storyDates(publishedAt: String, addedAt: String?, now: Instant = Instant.now()): String {
+    if (addedAt == null || !rememberAddedLate(publishedAt, addedAt)) return relativeTime(publishedAt, now)
+    val format = shortDate()
+    val zone = ZoneId.systemDefault()
+    return stringResource(
+        R.string.story_published_added,
+        format.format(Instant.parse(publishedAt).atZone(zone)),
+        format.format(Instant.parse(addedAt).atZone(zone)),
+    )
+}
+
+/** Whether [addedAt] is at least [LATE_ADDED] after [publishedAt]; false when either won't parse. */
+@Composable
+private fun rememberAddedLate(publishedAt: String, addedAt: String): Boolean = remember(publishedAt, addedAt) {
+    try {
+        Duration.between(Instant.parse(publishedAt), Instant.parse(addedAt)) >= LATE_ADDED
+    } catch (e: DateTimeParseException) {
+        false
+    }
+}
+
 /** The "MMMd" format for the current locale, built once per locale: every older card needs it, and the lookup is slow. */
 private fun shortDate(): DateTimeFormatter {
     val locale = Locale.getDefault()
@@ -1620,6 +1655,9 @@ private const val TAB_SLIDE_DIVISOR = 12
 private const val LIST_PANE_WEIGHT = 0.42f
 private const val DATE_LENGTH = 10
 private const val WEEK_DAYS = 7
+
+/** How long after publishing a story must be added for lists to show when it was added instead. */
+private val LATE_ADDED = Duration.ofDays(1)
 private const val TITLE_LINES = 3
 private const val SUMMARY_LINES = 3
 private const val MAX_CARD_TOPICS = 2

@@ -170,6 +170,8 @@
     <string name="time_minutes_ago">%1$dm ago</string>
     <string name="time_hours_ago">%1$dh ago</string>
     <string name="time_days_ago">%1$dd ago</string>
+    <string name="time_added">added %1$s</string>
+    <string name="story_published_added">Published %1$s · added %2$s</string>
 
     <!-- Story -->
     <string name="sources_count">Sources · %1$d</string>
