@@ -165,7 +165,7 @@ curator-lint: ## Lint curator code
 curator-fmt: ## Format curator code
 	cd $(CURATOR) && go tool golangci-lint fmt ./...
 
-deploy-api: ## Build and deploy the api to Cloud Run for DEPLOY_ENV (reads deploy/<env>.env; run migrate-remote first)
+deploy-api: ## Build and deploy the api to Cloud Run for DEPLOY_ENV (reads deploy/<env>.env; run migrate-remote first). Prod's VPS deploys from CI only (deploy/README.md, section VPS)
 	deploy/deploy-api.sh $(DEPLOY_ENV)
 
 android-apk: ## Build the signed release APK for DEPLOY_ENV (androidApp/build/outputs/apk/<env>/release)

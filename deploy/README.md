@@ -99,6 +99,106 @@ make deploy-api DEPLOY_ENV=prod          # committed code only; asks you to type
   gcloud run services update-traffic changeloom-api --to-revisions <revision>=100 --project "$P" --region "$R"
   ```
 
+## VPS (shared server for changeloom prod and cou-alumni)
+
+One OVHcloud VPS-1 in Singapore runs Docker Compose projects under `/srv/<project>/` behind Caddy, which owns
+ports 80/443 and TLS. Each project ships a site file into `/etc/caddy/sites/`. Neon stays the database.
+
+1. **Order** a VPS-1 in Asia-Pacific, Singapore, with the plain **Debian 13** image (not one with apps).
+   OVH emails the `debian` user's password; the first login makes you change it.
+2. **SSH key** on your machine, then copy it over and add a `Host sg1` entry (`HostName <vps-ip>`,
+   `User debian`, `IdentityFile ~/.ssh/ovh_sg1`, `IdentitiesOnly yes`) to `~/.ssh/config`:
+   ```sh
+   ssh-keygen -t ed25519 -C ovh-sg1 -f ~/.ssh/ovh_sg1
+   ssh-copy-id -i ~/.ssh/ovh_sg1.pub sg1
+   ```
+3. **Bootstrap** (as root; safe to rerun). It copies the `debian` user's keys to a new `deploy` user,
+   turns off root and password SSH logins, and installs ufw, swap, unattended upgrades, Docker and Caddy:
+   ```sh
+   scp deploy/vps/bootstrap.sh sg1:
+   ssh sg1 'sudo bash bootstrap.sh'
+   ```
+   Keep that session open and check in a new terminal that the deploy user works:
+   ```sh
+   ssh -i ~/.ssh/ovh_sg1 deploy@<vps-ip> 'docker compose version && sudo systemctl reload caddy'
+   ```
+4. **CI deploy key**: a key only GitHub Actions uses. Add its public half to the deploy user by rerunning
+   bootstrap with it, and store the private half and the host key as secrets `VPS_SSH_KEY` and
+   `VPS_KNOWN_HOSTS` on the `production` environment, plus `VPS_HOST` (the IP, the same one you scan):
+   ```sh
+   ssh-keygen -t ed25519 -C github-deploy -N '' -f ~/.ssh/vps_github_deploy
+   scp ~/.ssh/vps_github_deploy.pub sg1: && ssh sg1 'sudo bash bootstrap.sh vps_github_deploy.pub'
+   ssh-keyscan -t ed25519 <vps-ip>   # the VPS_KNOWN_HOSTS value
+   ```
+   Delete the local private key once it is in GitHub.
+5. **DNS**: an A (and AAAA) record per api domain pointing at the VPS. Caddy gets the certificate on first
+   request once the project's site file is in place.
+6. **changeloom prod files** in `/srv/changeloom/` (the api domain is `changeloom-api.saniuzzaman.dev`, set
+   in `deploy/vps/changeloom.caddy`; the image is public on GHCR, so the server needs no registry login):
+   ```sh
+   scp deploy/vps/{compose.yaml,changeloom.caddy,deploy.sh} deploy@<vps-ip>:/srv/changeloom/
+   scp deploy/vps/api.env.example deploy@<vps-ip>:/srv/changeloom/api.env
+   scp deploy/vps/migrate.env.example deploy@<vps-ip>:/srv/changeloom/migrate.env
+   ```
+   Fill in `api.env` (pooled Neon URL, `NOTIFY_SECRET`) and `migrate.env` (direct Neon URL) on the server with
+   the same values as the prod Secret Manager secrets, then `chmod 600` both. `migrate.env` is read only by
+   `deploy.sh`, so the api never holds the direct URL.
+7. **FCM key.** **IAM change:** a service account in the prod project whose only role is the FCM one, with a
+   JSON key at `/srv/changeloom/fcm.json` (mode 600, owned by `deploy`). The api reads it through
+   `GOOGLE_APPLICATION_CREDENTIALS` (set in `compose.yaml`). If key creation is refused, the org policy
+   `iam.disableServiceAccountKeyCreation` is on for the project. Keep the key off your machine afterwards:
+   ```sh
+   P=changeloom-prod-510511 SA=changeloom-vps-fcm@changeloom-prod-510511.iam.gserviceaccount.com
+   gcloud iam service-accounts create changeloom-vps-fcm --project "$P" --display-name "changeloom VPS FCM sender"
+   gcloud projects add-iam-policy-binding "$P" --member "serviceAccount:$SA" \
+     --role roles/firebasecloudmessaging.admin --condition None
+   gcloud iam service-accounts keys create fcm.json --iam-account "$SA" --project "$P"
+   scp fcm.json deploy@<vps-ip>:/srv/changeloom/ && ssh deploy@<vps-ip> chmod 600 /srv/changeloom/fcm.json
+   rm fcm.json
+   ```
+8. **Deploy** a tag (CI does this on each prod deploy; by hand only to test or roll back):
+   `ssh deploy@<vps-ip> /srv/changeloom/deploy.sh <tag>`. It installs the Caddy site file when it changed,
+   pulls `ghcr.io/saniuzzaman-robin/changeloom-api:<tag>`, runs the goose migrations, starts the api and
+   waits for `/ready`. If the api does not become healthy it restarts the previous tag (`current-tag`);
+   migrations are not rolled back, so they must stay compatible with the previous release.
+   The first CI push creates the GHCR package `changeloom-api` (private by default, linked to this repo
+   through the image's source label): make it public in its package settings, or the server cannot pull, then rerun the failed job.
+9. **Cutover of changeloom prod** (once; `D=changeloom-api.saniuzzaman.dev`, `<vps-ip>` as above):
+   1. Steps 4–7 are done and `dig +short $D` prints the VPS IP.
+   2. **First deploy:** merge `staging` into `main` and approve the prod run (step 8 for the GHCR package).
+      Cloud Run prod still gets the same release, so the current app keeps working.
+   3. **Smoke test the domain** (the api logs go to the container: `ssh deploy@<vps-ip> docker logs --since 10m changeloom-api-1`;
+      `docker compose logs` needs the `API_IMAGE` that only `deploy.sh` sets):
+      - `curl -fsS https://$D/ready` passes, so Caddy has the certificate and the api reaches Neon.
+      - **Client IP.** From your machine, use up your IP's burst (`RATE_LIMIT_IP_PER_MIN`, 300), then
+        try a forged header:
+        ```sh
+        for i in $(seq 320); do curl -s -o /dev/null -w '%{http_code}\n' https://$D/v1/topics; done | sort | uniq -c
+        curl -s -o /dev/null -w '%{http_code}\n' -H 'X-Forwarded-For: 203.0.113.9' https://$D/v1/topics
+        ```
+        The loop ends in 429s, and the forged header still gets 429 (Caddy replaces it). A request from another
+        network (phone data) in the same minute is not 429, so each client has its own bucket rather than
+        sharing Caddy's loopback address. Your IP recovers within a minute.
+      - **Sign-in, App Check, FCM:** set the `production` environment variable `ANDROID_API_BASE_URL` to
+        `https://$D`, then `make release PRE=alpha` and install the closed-testing build from Play (App
+        Check's Play Integrity only passes for Play-installed builds). Sign in, open the timeline and save a
+        story; the api logs show no 401/403. For a push, set `API_BASE_URL_PROD=https://$D` in
+        `curator/.env` and `make curator-sync DEPLOY_ENV=prod` with a new high/critical security story in
+        a topic the test account follows; the phone gets it and the logs show no FCM errors.
+   4. **Release the app:** `make release`, then roll it out in Play. Old versions keep calling Cloud Run prod,
+      which the workflow deploys too while `CLOUD_RUN_DEPLOY=true`; both share the Neon DB, which is safe
+      because the api is stateless and push sends lock their rows with `SKIP LOCKED`.
+   5. **Retire Cloud Run prod** only after Play's stats show the old versions are gone: delete the service
+      (`gcloud run services delete changeloom-api --project changeloom-prod-510511 --region asia-southeast1`,
+      run it yourself), its uptime check, and set `CLOUD_RUN_DEPLOY=false` in `deploy/prod.env`.
+      `MIN_INSTANCES` is already 0, so until then Cloud Run prod only bills for requests.
+
+Notes:
+- Containers must publish ports on `127.0.0.1` only. Docker's port rules bypass ufw, so a `0.0.0.0` port is public.
+- Unattended upgrades install Debian security updates but never reboot. Check `ls /var/run/reboot-required`
+  after kernel updates and reboot in a quiet hour (`ssh sg1 'sudo reboot'`); containers restart on their own.
+- The `deploy` user is in the `docker` group, which is root-equivalent; guard its keys accordingly.
+
 ## Monitoring (per env; prod first, staging optional)
 
 These commands create billable resources and change IAM. Read them, then run them yourself. Load the
@@ -219,7 +319,7 @@ Per-env api URLs go in `~/.gradle/gradle.properties` (or `-P` on the command lin
 
 ```properties
 changeloom.staging.apiBaseUrl=https://<staging Cloud Run url>
-changeloom.prod.apiBaseUrl=https://<prod Cloud Run url>
+changeloom.prod.apiBaseUrl=https://changeloom-api.saniuzzaman.dev
 ```
 
 Without them, both flavors call the local api from the emulator (`http://10.0.2.2:8080`), which is
@@ -317,10 +417,13 @@ them (see Continuous deployment). Play rejects a `versionCode` it has seen befor
     `goose_db_version` table as `curator migrate --remote`), deploys with no traffic, checks `/ready`,
     then shifts traffic. The run summary prints the image (`...api@sha256:...`).
   - **Prod:** runs after CI passes on a push to `main` (a `staging` → `main` merge). After the
-    `production` environment's reviewers approve, it builds the image from that commit, pushes it to
-    prod's registry, then migrates, deploys, checks and promotes the same way. To redeploy or roll back
-    an image that already ran in staging, run Actions → Deploy api → Run workflow with that image: it
-    copies the same digest to prod's registry (crane) and checks out the commit it was built from.
+    `production` environment's reviewers approve, it builds the image from that commit and pushes it to
+    GHCR (`VPS_IMAGE_REPO:<commit>`) and, while `CLOUD_RUN_DEPLOY=true` in `deploy/prod.env`, to prod's
+    registry, then migrates, deploys, checks and promotes Cloud Run the same way. Last it copies
+    `deploy/vps/{compose.yaml,changeloom.caddy,deploy.sh}` to the VPS and runs `deploy.sh <commit>` there
+    over SSH (VPS step 8). To redeploy or roll back an image that already ran in staging, run Actions →
+    Deploy api → Run workflow with that image: it copies the same digest to the prod registries (crane)
+    and checks out the commit it was built from. Set `CLOUD_RUN_DEPLOY=false` once Cloud Run prod is deleted.
 - **Branches:** open PRs against `staging`; Dependabot does too. Merge `staging` into `main` (a PR, with a
   merge commit) when you want a prod release. `main` is the only branch that deploys prod; protect both.
 - `.github/workflows/android-release.yml`
@@ -414,7 +517,7 @@ GitHub environment: `staging`, or `production` for prod.
    | `WIF_PROVIDER` | variable | `$WIF_PROVIDER` |
    | `DEPLOYER_SA` | variable | `$DEPLOYER` |
    | `ANDROID_RELEASE_SA` | variable | `$ANDROID_SA` |
-   | `ANDROID_API_BASE_URL` | variable | the env's Cloud Run URL |
+   | `ANDROID_API_BASE_URL` | variable | staging's Cloud Run URL; prod: `https://changeloom-api.saniuzzaman.dev` (VPS) |
    | `FIREBASE_ANDROID_APP_ID` | variable, staging | the Firebase Android app id (`1:...:android:...`) |
    | `APP_DISTRIBUTION_GROUPS` | variable, staging | tester group aliases, comma-separated |
    | `PLAY_RELEASE_STATUS` | variable, prod, optional | `draft` until the app is out of draft; default `completed` |

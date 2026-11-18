@@ -3,11 +3,13 @@ name: Deploy api
 # Staging: after CI passes on the staging branch, build the image once, migrate, deploy it with no
 # traffic, smoke-test /ready, then shift traffic.
 # Prod: after CI passes on main (a staging -> main merge), build the image from that commit, push it to
-# the prod registry, then migrate, deploy, smoke-test and promote the same way. The production
-# environment's reviewers approve it. To redeploy or roll back an image that already ran in staging,
-# run this workflow by hand with it (printed in the staging run's summary): it copies that exact
-# digest to the prod registry instead of rebuilding.
-# Setup (WIF, service accounts, GitHub environments): deploy/README.md, Continuous deployment.
+# GHCR and (while CLOUD_RUN_DEPLOY=true in deploy/prod.env) the prod registry, migrate, deploy,
+# smoke-test and promote on Cloud Run the same way, then deploy it to the VPS over SSH
+# (deploy/vps/deploy.sh). The production environment's reviewers approve it. To redeploy or roll back
+# an image that already ran in staging, run this workflow by hand with it (printed in the staging
+# run's summary): it copies that exact digest to the prod registries instead of rebuilding.
+# Setup (WIF, service accounts, GitHub environments): deploy/README.md, Continuous deployment; the
+# VPS secrets: deploy/README.md, section VPS.
 on:
   workflow_run:
     workflows: [CI]
@@ -100,6 +102,11 @@ jobs:
     concurrency:
       group: deploy-api-prod
       cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+      # Push the VPS image to GHCR.
+      packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -118,10 +125,13 @@ jobs:
               || { echo "image must be an Artifact Registry api image pinned by digest, got: $SOURCE_IMAGE"; exit 1; }
           fi
           set -a; source deploy/prod.env; set +a
-          for key in GCP_PROJECT GCP_REGION ARTIFACT_REPO MIGRATE_DATABASE_URL_SECRET MIGRATE_DATABASE_URL_SECRET_VERSION; do
+          for key in GCP_PROJECT GCP_REGION ARTIFACT_REPO MIGRATE_DATABASE_URL_SECRET MIGRATE_DATABASE_URL_SECRET_VERSION \
+            CLOUD_RUN_DEPLOY VPS_USER VPS_APP_DIR VPS_IMAGE_REPO; do
             [[ -n ${!key:-} ]] || { echo "Set $key in deploy/prod.env."; exit 1; }
             echo "$key=${!key}" >> "$GITHUB_ENV"
           done
+          [[ $CLOUD_RUN_DEPLOY == true || $CLOUD_RUN_DEPLOY == false ]] \
+            || { echo "CLOUD_RUN_DEPLOY in deploy/prod.env must be true or false, got $CLOUD_RUN_DEPLOY"; exit 1; }
           if [[ $GITHUB_EVENT_NAME == workflow_dispatch ]]; then
             echo "SOURCE_IMAGE=$SOURCE_IMAGE" >> "$GITHUB_ENV"
             echo "IMAGE=$GCP_REGION-docker.pkg.dev/$GCP_PROJECT/$ARTIFACT_REPO/api@${SOURCE_IMAGE#*@}" >> "$GITHUB_ENV"
@@ -131,36 +141,84 @@ jobs:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.DEPLOYER_SA }}
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - name: Log in to GHCR
+        run: docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<< "$GH_TOKEN"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      # The VPS pulls <VPS_IMAGE_REPO>:<commit>; Cloud Run deploys the prod registry's copy by digest.
       - name: Build and push the image
         if: github.event_name == 'workflow_run'
         run: |
-          gcloud auth configure-docker "$GCP_REGION-docker.pkg.dev" --quiet
           image="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT/$ARTIFACT_REPO/api"
-          docker build --label "org.opencontainers.image.revision=$GITHUB_SHA_HEAD" -t "$image:$GITHUB_SHA_HEAD" backend
-          docker push "$image:$GITHUB_SHA_HEAD"
-          ref="$(docker inspect --format '{{index .RepoDigests 0}}' "$image:$GITHUB_SHA_HEAD")"
-          echo "IMAGE=$ref" >> "$GITHUB_ENV"
+          # The source label links the GHCR package to this repo, so this workflow's token can push to it.
+          docker build --label "org.opencontainers.image.revision=$GITHUB_SHA_HEAD" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            -t "$image:$GITHUB_SHA_HEAD" -t "$VPS_IMAGE_REPO:$GITHUB_SHA_HEAD" backend
+          docker push "$VPS_IMAGE_REPO:$GITHUB_SHA_HEAD"
+          echo "COMMIT=$GITHUB_SHA_HEAD" >> "$GITHUB_ENV"
+          if [[ $CLOUD_RUN_DEPLOY == true ]]; then
+            gcloud auth configure-docker "$GCP_REGION-docker.pkg.dev" --quiet
+            docker push "$image:$GITHUB_SHA_HEAD"
+            ref="$(docker inspect --format '{{index .RepoDigests 0}}' "$image:$GITHUB_SHA_HEAD")"
+            echo "IMAGE=$ref" >> "$GITHUB_ENV"
+          fi
         env:
           GITHUB_SHA_HEAD: ${{ github.event.workflow_run.head_sha }}
-      - name: Copy the image to the prod registry
+      - name: Copy the image to the prod registries
         if: github.event_name == 'workflow_dispatch'
         run: |
           gcloud auth configure-docker "${SOURCE_IMAGE%%/*},$GCP_REGION-docker.pkg.dev" --quiet
           commit="$(go run "$CRANE" config "$SOURCE_IMAGE" | jq -r '.config.Labels["org.opencontainers.image.revision"] // empty')"
           [[ -n $commit ]] || { echo "$SOURCE_IMAGE has no revision label: was it built by this workflow?"; exit 1; }
-          go run "$CRANE" copy "$SOURCE_IMAGE" "${IMAGE%@*}:$commit"
-          copied="$(go run "$CRANE" digest "${IMAGE%@*}:$commit")"
-          [[ $copied == "${SOURCE_IMAGE#*@}" ]] || { echo "the copy's digest $copied differs from the source"; exit 1; }
+          targets=("$VPS_IMAGE_REPO:$commit")
+          [[ $CLOUD_RUN_DEPLOY == false ]] || targets+=("${IMAGE%@*}:$commit")
+          for target in "${targets[@]}"; do
+            go run "$CRANE" copy "$SOURCE_IMAGE" "$target"
+            copied="$(go run "$CRANE" digest "$target")"
+            [[ $copied == "${SOURCE_IMAGE#*@}" ]] || { echo "the copy's digest $copied in $target differs from the source"; exit 1; }
+          done
           echo "COMMIT=$commit" >> "$GITHUB_ENV"
       # Deploy with the scripts and commit label of the commit the image was built from.
       - if: github.event_name == 'workflow_dispatch'
         run: git checkout --detach "$COMMIT"
+      # On the VPS deploy.sh runs the same migrations again (a no-op when Cloud Run already ran them).
       - name: Migrate the database
+        if: env.CLOUD_RUN_DEPLOY == 'true'
         run: |
           url="$(gcloud secrets versions access "$MIGRATE_DATABASE_URL_SECRET_VERSION" --secret "$MIGRATE_DATABASE_URL_SECRET" --project "$GCP_PROJECT")"
           echo "::add-mask::$url"
           GOOSE_DRIVER=postgres GOOSE_DBSTRING="$url" docker run --rm -e GOOSE_DRIVER -e GOOSE_DBSTRING \
             "$IMAGE" /app/goose -dir /app/migrations up
-      - run: deploy/deploy-api.sh prod --image "$IMAGE"
-      - run: deploy/promote-api.sh prod
-      - run: echo "Deployed to prod \`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+      - if: env.CLOUD_RUN_DEPLOY == 'true'
+        run: deploy/deploy-api.sh prod --image "$IMAGE"
+      - if: env.CLOUD_RUN_DEPLOY == 'true'
+        run: deploy/promote-api.sh prod
+      # Copies this commit's compose.yaml, site file and deploy.sh to the server, then runs deploy.sh, which
+      # migrates, starts the api, waits for /ready and rolls back to the previous tag on failure.
+      - name: Deploy to the VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          for key in VPS_HOST VPS_SSH_KEY VPS_KNOWN_HOSTS; do
+            [[ -n ${!key:-} ]] || { echo "Set the $key secret on the production environment (deploy/README.md, section VPS)."; exit 1; }
+          done
+          dir="$RUNNER_TEMP/vps-ssh"
+          install -d -m 700 "$dir"
+          install -m 600 /dev/null "$dir/key"
+          printf '%s\n' "$VPS_SSH_KEY" > "$dir/key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$dir/known_hosts"
+          opts=(-i "$dir/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes
+            -o "UserKnownHostsFile=$dir/known_hosts" -o ConnectTimeout=20)
+          remote="$VPS_USER@$VPS_HOST"
+          scp "${opts[@]}" deploy/vps/{compose.yaml,changeloom.caddy,deploy.sh} "$remote:$VPS_APP_DIR/"
+          ssh "${opts[@]}" "$remote" \
+            "APP_DIR=$(printf %q "$VPS_APP_DIR") IMAGE_REPO=$(printf %q "$VPS_IMAGE_REPO") bash $(printf %q "$VPS_APP_DIR/deploy.sh") $(printf %q "$COMMIT")"
+      - name: Summary
+        run: |
+          {
+            [[ $CLOUD_RUN_DEPLOY == false ]] || echo "Deployed to prod Cloud Run: \`$IMAGE\`"
+            echo
+            echo "Deployed to the prod VPS: \`$VPS_IMAGE_REPO:$COMMIT\`"
+          } >> "$GITHUB_STEP_SUMMARY"
