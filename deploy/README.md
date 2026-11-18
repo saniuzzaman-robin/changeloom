@@ -99,6 +99,47 @@ make deploy-api DEPLOY_ENV=prod          # committed code only; asks you to type
   gcloud run services update-traffic changeloom-api --to-revisions <revision>=100 --project "$P" --region "$R"
   ```
 
+## VPS (shared server for changeloom prod and cou-alumni)
+
+One OVHcloud VPS-1 in Singapore runs Docker Compose projects under `/srv/<project>/` behind Caddy, which owns
+ports 80/443 and TLS. Each project ships a site file into `/etc/caddy/sites/`. Neon stays the database.
+
+1. **Order** a VPS-1 in Asia-Pacific, Singapore, with the plain **Debian 13** image (not one with apps).
+   OVH emails the `debian` user's password; the first login makes you change it.
+2. **SSH key** on your machine, then copy it over and add a `Host sg1` entry (`HostName <vps-ip>`,
+   `User debian`, `IdentityFile ~/.ssh/ovh_sg1`, `IdentitiesOnly yes`) to `~/.ssh/config`:
+   ```sh
+   ssh-keygen -t ed25519 -C ovh-sg1 -f ~/.ssh/ovh_sg1
+   ssh-copy-id -i ~/.ssh/ovh_sg1.pub sg1
+   ```
+3. **Bootstrap** (as root; safe to rerun). It copies the `debian` user's keys to a new `deploy` user,
+   turns off root and password SSH logins, and installs ufw, swap, unattended upgrades, Docker and Caddy:
+   ```sh
+   scp deploy/vps/bootstrap.sh sg1:
+   ssh sg1 'sudo bash bootstrap.sh'
+   ```
+   Keep that session open and check in a new terminal that the deploy user works:
+   ```sh
+   ssh -i ~/.ssh/ovh_sg1 deploy@<vps-ip> 'docker compose version && sudo systemctl reload caddy'
+   ```
+4. **CI deploy key** (when the deploy workflow needs it): a key only GitHub Actions uses. Add its public
+   half to the deploy user by rerunning bootstrap with it, and store the private half and the host key in
+   the repo secrets `VPS_SSH_KEY` and `VPS_KNOWN_HOSTS` (`VPS_HOST` is the IP):
+   ```sh
+   ssh-keygen -t ed25519 -C github-deploy -N '' -f ~/.ssh/vps_github_deploy
+   scp ~/.ssh/vps_github_deploy.pub sg1: && ssh sg1 'sudo bash bootstrap.sh vps_github_deploy.pub'
+   ssh-keyscan -t ed25519 <vps-ip>   # the VPS_KNOWN_HOSTS value
+   ```
+   Delete the local private key once it is in GitHub.
+5. **DNS**: an A (and AAAA) record per api domain pointing at the VPS. Caddy gets the certificate on first
+   request once the project's site file is in place.
+
+Notes:
+- Containers must publish ports on `127.0.0.1` only. Docker's port rules bypass ufw, so a `0.0.0.0` port is public.
+- Unattended upgrades install Debian security updates but never reboot. Check `ls /var/run/reboot-required`
+  after kernel updates and reboot in a quiet hour (`ssh sg1 'sudo reboot'`); containers restart on their own.
+- The `deploy` user is in the `docker` group, which is root-equivalent; guard its keys accordingly.
+
 ## Monitoring (per env; prod first, staging optional)
 
 These commands create billable resources and change IAM. Read them, then run them yourself. Load the
