@@ -163,6 +163,35 @@ ports 80/443 and TLS. Each project ships a site file into `/etc/caddy/sites/`. N
    migrations are not rolled back, so they must stay compatible with the previous release.
    The first CI push creates the GHCR package `changeloom-api` (private by default, linked to this repo
    through the image's source label): make it public in its package settings, or the server cannot pull, then rerun the failed job.
+9. **Cutover of changeloom prod** (once; `D=changeloom-api.saniuzzaman.dev`, `<vps-ip>` as above):
+   1. Steps 4–7 are done and `dig +short $D` prints the VPS IP.
+   2. **First deploy:** merge `staging` into `main` and approve the prod run (step 8 for the GHCR package).
+      Cloud Run prod still gets the same release, so the current app keeps working.
+   3. **Smoke test the domain** (the api logs go to the container: `ssh deploy@<vps-ip> docker logs --since 10m changeloom-api-1`;
+      `docker compose logs` needs the `API_IMAGE` that only `deploy.sh` sets):
+      - `curl -fsS https://$D/ready` passes, so Caddy has the certificate and the api reaches Neon.
+      - **Client IP.** From your machine, use up your IP's burst (`RATE_LIMIT_IP_PER_MIN`, 300), then
+        try a forged header:
+        ```sh
+        for i in $(seq 320); do curl -s -o /dev/null -w '%{http_code}\n' https://$D/v1/topics; done | sort | uniq -c
+        curl -s -o /dev/null -w '%{http_code}\n' -H 'X-Forwarded-For: 203.0.113.9' https://$D/v1/topics
+        ```
+        The loop ends in 429s, and the forged header still gets 429 (Caddy replaces it). A request from another
+        network (phone data) in the same minute is not 429, so each client has its own bucket rather than
+        sharing Caddy's loopback address. Your IP recovers within a minute.
+      - **Sign-in, App Check, FCM:** set the `production` environment variable `ANDROID_API_BASE_URL` to
+        `https://$D`, then `make release PRE=alpha` and install the closed-testing build from Play (App
+        Check's Play Integrity only passes for Play-installed builds). Sign in, open the timeline and save a
+        story; the api logs show no 401/403. For a push, set `API_BASE_URL_PROD=https://$D` in
+        `curator/.env` and `make curator-sync DEPLOY_ENV=prod` with a new high/critical security story in
+        a topic the test account follows; the phone gets it and the logs show no FCM errors.
+   4. **Release the app:** `make release`, then roll it out in Play. Old versions keep calling Cloud Run prod,
+      which the workflow deploys too while `CLOUD_RUN_DEPLOY=true`; both share the Neon DB, which is safe
+      because the api is stateless and push sends lock their rows with `SKIP LOCKED`.
+   5. **Retire Cloud Run prod** only after Play's stats show the old versions are gone: delete the service
+      (`gcloud run services delete changeloom-api --project changeloom-prod-510511 --region asia-southeast1`,
+      run it yourself), its uptime check, and set `CLOUD_RUN_DEPLOY=false` in `deploy/prod.env`.
+      `MIN_INSTANCES` is already 0, so until then Cloud Run prod only bills for requests.
 
 Notes:
 - Containers must publish ports on `127.0.0.1` only. Docker's port rules bypass ufw, so a `0.0.0.0` port is public.
@@ -290,7 +319,7 @@ Per-env api URLs go in `~/.gradle/gradle.properties` (or `-P` on the command lin
 
 ```properties
 changeloom.staging.apiBaseUrl=https://<staging Cloud Run url>
-changeloom.prod.apiBaseUrl=https://<prod Cloud Run url>
+changeloom.prod.apiBaseUrl=https://changeloom-api.saniuzzaman.dev
 ```
 
 Without them, both flavors call the local api from the emulator (`http://10.0.2.2:8080`), which is
@@ -488,7 +517,7 @@ GitHub environment: `staging`, or `production` for prod.
    | `WIF_PROVIDER` | variable | `$WIF_PROVIDER` |
    | `DEPLOYER_SA` | variable | `$DEPLOYER` |
    | `ANDROID_RELEASE_SA` | variable | `$ANDROID_SA` |
-   | `ANDROID_API_BASE_URL` | variable | the env's Cloud Run URL |
+   | `ANDROID_API_BASE_URL` | variable | staging's Cloud Run URL; prod: `https://changeloom-api.saniuzzaman.dev` (VPS) |
    | `FIREBASE_ANDROID_APP_ID` | variable, staging | the Firebase Android app id (`1:...:android:...`) |
    | `APP_DISTRIBUTION_GROUPS` | variable, staging | tester group aliases, comma-separated |
    | `PLAY_RELEASE_STATUS` | variable, prod, optional | `draft` until the app is out of draft; default `completed` |
