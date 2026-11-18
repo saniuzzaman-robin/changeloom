@@ -47,6 +47,11 @@ set -a
 source "$conf"
 set +a
 
+if [[ ${CLOUD_RUN_DEPLOY:-true} == false ]]; then
+	echo "CLOUD_RUN_DEPLOY=false in $conf: $env no longer runs on Cloud Run; the deploy workflow deploys the VPS" >&2
+	exit 1
+fi
+
 missing=()
 for key in GCP_PROJECT GCP_REGION CLOUD_RUN_SERVICE SERVICE_ACCOUNT MIN_INSTANCES MAX_INSTANCES \
 	CONCURRENCY CPU MEMORY TIMEOUT CPU_BOOST STARTUP_PROBE LIVENESS_PROBE \

@@ -122,9 +122,9 @@ ports 80/443 and TLS. Each project ships a site file into `/etc/caddy/sites/`. N
    ```sh
    ssh -i ~/.ssh/ovh_sg1 deploy@<vps-ip> 'docker compose version && sudo systemctl reload caddy'
    ```
-4. **CI deploy key** (when the deploy workflow needs it): a key only GitHub Actions uses. Add its public
-   half to the deploy user by rerunning bootstrap with it, and store the private half and the host key in
-   the repo secrets `VPS_SSH_KEY` and `VPS_KNOWN_HOSTS` (`VPS_HOST` is the IP):
+4. **CI deploy key**: a key only GitHub Actions uses. Add its public half to the deploy user by rerunning
+   bootstrap with it, and store the private half and the host key as secrets `VPS_SSH_KEY` and
+   `VPS_KNOWN_HOSTS` on the `production` environment, plus `VPS_HOST` (the IP, the same one you scan):
    ```sh
    ssh-keygen -t ed25519 -C github-deploy -N '' -f ~/.ssh/vps_github_deploy
    scp ~/.ssh/vps_github_deploy.pub sg1: && ssh sg1 'sudo bash bootstrap.sh vps_github_deploy.pub'
@@ -161,6 +161,8 @@ ports 80/443 and TLS. Each project ships a site file into `/etc/caddy/sites/`. N
    pulls `ghcr.io/saniuzzaman-robin/changeloom-api:<tag>`, runs the goose migrations, starts the api and
    waits for `/ready`. If the api does not become healthy it restarts the previous tag (`current-tag`);
    migrations are not rolled back, so they must stay compatible with the previous release.
+   The first CI push creates the GHCR package `changeloom-api` (private by default, linked to this repo
+   through the image's source label): make it public in its package settings, or the server cannot pull, then rerun the failed job.
 
 Notes:
 - Containers must publish ports on `127.0.0.1` only. Docker's port rules bypass ufw, so a `0.0.0.0` port is public.
@@ -386,10 +388,13 @@ them (see Continuous deployment). Play rejects a `versionCode` it has seen befor
     `goose_db_version` table as `curator migrate --remote`), deploys with no traffic, checks `/ready`,
     then shifts traffic. The run summary prints the image (`...api@sha256:...`).
   - **Prod:** runs after CI passes on a push to `main` (a `staging` → `main` merge). After the
-    `production` environment's reviewers approve, it builds the image from that commit, pushes it to
-    prod's registry, then migrates, deploys, checks and promotes the same way. To redeploy or roll back
-    an image that already ran in staging, run Actions → Deploy api → Run workflow with that image: it
-    copies the same digest to prod's registry (crane) and checks out the commit it was built from.
+    `production` environment's reviewers approve, it builds the image from that commit and pushes it to
+    GHCR (`VPS_IMAGE_REPO:<commit>`) and, while `CLOUD_RUN_DEPLOY=true` in `deploy/prod.env`, to prod's
+    registry, then migrates, deploys, checks and promotes Cloud Run the same way. Last it copies
+    `deploy/vps/{compose.yaml,changeloom.caddy,deploy.sh}` to the VPS and runs `deploy.sh <commit>` there
+    over SSH (VPS step 8). To redeploy or roll back an image that already ran in staging, run Actions →
+    Deploy api → Run workflow with that image: it copies the same digest to the prod registries (crane)
+    and checks out the commit it was built from. Set `CLOUD_RUN_DEPLOY=false` once Cloud Run prod is deleted.
 - **Branches:** open PRs against `staging`; Dependabot does too. Merge `staging` into `main` (a PR, with a
   merge commit) when you want a prod release. `main` is the only branch that deploys prod; protect both.
 - `.github/workflows/android-release.yml`
