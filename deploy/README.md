@@ -171,9 +171,9 @@ ports 80/443 and TLS. Each project ships a site file into `/etc/caddy/sites/`. N
       `docker compose logs` needs the `API_IMAGE` that only `deploy.sh` sets):
       - `curl -fsS https://$D/ready` passes, so Caddy has the certificate and the api reaches Neon.
       - **Client IP.** From your machine, use up your IP's burst (`RATE_LIMIT_IP_PER_MIN`, 300), then
-        try a forged header:
+        try a forged header. Send in parallel: the bucket refills 5 per second, faster than sequential curls drain it.
         ```sh
-        for i in $(seq 320); do curl -s -o /dev/null -w '%{http_code}\n' https://$D/v1/topics; done | sort | uniq -c
+        seq 400 | xargs -P 40 -I{} curl -s -o /dev/null -w '%{http_code}\n' https://$D/v1/topics | sort | uniq -c
         curl -s -o /dev/null -w '%{http_code}\n' -H 'X-Forwarded-For: 203.0.113.9' https://$D/v1/topics
         ```
         The loop ends in 429s, and the forged header still gets 429 (Caddy replaces it). A request from another
