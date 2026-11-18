@@ -70,12 +70,13 @@ docker pull -q "$IMAGE_REPO:$tag"
 
 log "Migrations"
 (
-	set -a
-	# shellcheck source=/dev/null
-	. "$APP_DIR/migrate.env"
-	set +a
-	[[ -n ${MIGRATE_DATABASE_URL:-} ]] || die "MIGRATE_DATABASE_URL is empty in $APP_DIR/migrate.env"
-	GOOSE_DRIVER=postgres GOOSE_DBSTRING="$MIGRATE_DATABASE_URL" docker run --rm --user "$RUN_AS" \
+	# Read the value literally, not by sourcing: Neon URLs contain '&', which the shell would run as a command
+	# separator. One pair of surrounding quotes is dropped.
+	url="$(sed -n 's/^[[:space:]]*MIGRATE_DATABASE_URL=//p' "$APP_DIR/migrate.env" | tail -n 1)"
+	url="${url%$'\r'}"
+	[[ $url == \"*\" || $url == \'*\' ]] && url="${url:1:${#url}-2}"
+	[[ -n $url ]] || die "MIGRATE_DATABASE_URL is empty in $APP_DIR/migrate.env"
+	GOOSE_DRIVER=postgres GOOSE_DBSTRING="$url" docker run --rm --user "$RUN_AS" \
 		-e GOOSE_DRIVER -e GOOSE_DBSTRING "$IMAGE_REPO:$tag" /app/goose -dir /app/migrations up
 )
 
