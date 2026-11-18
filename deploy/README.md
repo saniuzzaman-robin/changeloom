@@ -133,6 +133,34 @@ ports 80/443 and TLS. Each project ships a site file into `/etc/caddy/sites/`. N
    Delete the local private key once it is in GitHub.
 5. **DNS**: an A (and AAAA) record per api domain pointing at the VPS. Caddy gets the certificate on first
    request once the project's site file is in place.
+6. **changeloom prod files** in `/srv/changeloom/` (the api domain is `changeloom-api.saniuzzaman.dev`, set
+   in `deploy/vps/changeloom.caddy`; the image is public on GHCR, so the server needs no registry login):
+   ```sh
+   scp deploy/vps/{compose.yaml,changeloom.caddy,deploy.sh} deploy@<vps-ip>:/srv/changeloom/
+   scp deploy/vps/api.env.example deploy@<vps-ip>:/srv/changeloom/api.env
+   scp deploy/vps/migrate.env.example deploy@<vps-ip>:/srv/changeloom/migrate.env
+   ```
+   Fill in `api.env` (pooled Neon URL, `NOTIFY_SECRET`) and `migrate.env` (direct Neon URL) on the server with
+   the same values as the prod Secret Manager secrets, then `chmod 600` both. `migrate.env` is read only by
+   `deploy.sh`, so the api never holds the direct URL.
+7. **FCM key.** **IAM change:** a service account in the prod project whose only role is the FCM one, with a
+   JSON key at `/srv/changeloom/fcm.json` (mode 600, owned by `deploy`). The api reads it through
+   `GOOGLE_APPLICATION_CREDENTIALS` (set in `compose.yaml`). If key creation is refused, the org policy
+   `iam.disableServiceAccountKeyCreation` is on for the project. Keep the key off your machine afterwards:
+   ```sh
+   P=changeloom-prod-510511 SA=changeloom-vps-fcm@changeloom-prod-510511.iam.gserviceaccount.com
+   gcloud iam service-accounts create changeloom-vps-fcm --project "$P" --display-name "changeloom VPS FCM sender"
+   gcloud projects add-iam-policy-binding "$P" --member "serviceAccount:$SA" \
+     --role roles/firebasecloudmessaging.admin --condition None
+   gcloud iam service-accounts keys create fcm.json --iam-account "$SA" --project "$P"
+   scp fcm.json deploy@<vps-ip>:/srv/changeloom/ && ssh deploy@<vps-ip> chmod 600 /srv/changeloom/fcm.json
+   rm fcm.json
+   ```
+8. **Deploy** a tag (CI does this on each prod deploy; by hand only to test or roll back):
+   `ssh deploy@<vps-ip> /srv/changeloom/deploy.sh <tag>`. It installs the Caddy site file when it changed,
+   pulls `ghcr.io/saniuzzaman-robin/changeloom-api:<tag>`, runs the goose migrations, starts the api and
+   waits for `/ready`. If the api does not become healthy it restarts the previous tag (`current-tag`);
+   migrations are not rolled back, so they must stay compatible with the previous release.
 
 Notes:
 - Containers must publish ports on `127.0.0.1` only. Docker's port rules bypass ufw, so a `0.0.0.0` port is public.

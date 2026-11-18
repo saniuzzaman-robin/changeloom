@@ -1,0 +1,34 @@
+# changeloom prod api on the shared VPS, run from /srv/changeloom by deploy.sh (it sets API_IMAGE and
+# RUN_AS). Caddy (changeloom.caddy) terminates TLS and proxies to the loopback port.
+# See deploy/README.md, section VPS.
+name: changeloom
+
+services:
+  api:
+    image: ${API_IMAGE:?set by deploy.sh}
+    # The deploy user's uid:gid, so the api can read the mode-600 key file below.
+    user: ${RUN_AS:?set by deploy.sh}
+    # Relative paths resolve against this file's directory (/srv/changeloom).
+    env_file: ./api.env
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/fcm.json
+    volumes:
+      - ./fcm.json:/run/secrets/fcm.json:ro
+    # Loopback only: Docker's port rules bypass ufw.
+    ports:
+      - 127.0.0.1:8080:8080
+    mem_limit: 512m
+    restart: unless-stopped
+    # main.go finishes shutting down within 8s of SIGTERM.
+    stop_grace_period: 10s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      # /ready pings the database; busybox wget is in the alpine image.
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/ready]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 2s

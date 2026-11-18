@@ -31,3 +31,6 @@ Pods/
 
 # OS
 .DS_Store
+# Filled-in VPS secrets (the *.example files are committed)
+deploy/vps/*.env
+deploy/vps/fcm.json

@@ -1,0 +1,7 @@
+# changeloom prod api. deploy.sh installs this as /etc/caddy/sites/changeloom.caddy and reloads Caddy.
+# Caddy ignores client-sent X-Forwarded-For (no trusted_proxies) and sets it to the peer IP, which
+# clientIP in backend/internal/httpapi/ratelimit.go reads.
+changeloom-api.saniuzzaman.dev {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8080
+}
