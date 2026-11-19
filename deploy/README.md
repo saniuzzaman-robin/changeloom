@@ -331,12 +331,12 @@ env examples. Do this after the VPS steps above (the `deploy` user, Docker and t
 6. **First run** by hand, then follow it (a full run takes hours):
    ```sh
    ssh sg1 'sudo systemctl start --no-block changeloom-curator.service'
-   ssh sg1 'journalctl -u changeloom-curator -f'
+   ssh sg1 'sudo journalctl -u changeloom-curator -f'
    ```
    It ends with `==> End ...: exit 0`, and the app's timeline shows the new stories.
    `systemctl list-timers changeloom-curator.timer` shows the next run.
 
-- **Logs:** `journalctl -u changeloom-curator --since today` (the job's output goes there; `docker logs` only
+- **Logs:** `sudo journalctl -u changeloom-curator --since today` (the job's output goes there; `docker logs` only
   works while the run's container `changeloom-curator-job` exists). A run that is cut short exits non-zero
   and shows as failed in `systemctl status changeloom-curator`.
 - **Stop a run:** `sudo systemctl stop changeloom-curator`; `curator.sh` stops the job and `curator-db`.
