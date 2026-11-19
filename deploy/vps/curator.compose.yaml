@@ -1,0 +1,51 @@
+# The nightly prod curator on the shared VPS, run from /srv/changeloom by curator.sh (it sets CURATOR_IMAGE).
+# A separate compose project from compose.yaml, so the api's deploys and this job never touch each other.
+# Neither service restarts on its own: curator.sh starts curator-db, runs the job and stops curator-db.
+# See deploy/README.md, section VPS.
+name: changeloom-curator
+
+services:
+  curator-db:
+    image: postgres:18-alpine
+    # Relative paths resolve against this file's directory (/srv/changeloom).
+    env_file: ./curator-db.env
+    # Sized for one curator with a few connections; the job's data is small.
+    command: [postgres, -c, shared_buffers=32MB, -c, max_connections=20]
+    volumes:
+      # Postgres 18 images keep PGDATA under /var/lib/postgresql/<major>/docker.
+      - curator-pgdata:/var/lib/postgresql
+    networks: [curator]
+    mem_limit: 256m
+    restart: "no"
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  curator:
+    image: ${CURATOR_IMAGE:?set by curator.sh}
+    # Only started by `compose run curator` (curator.sh).
+    profiles: [curator]
+    env_file: ./curator.env
+    networks: [curator]
+    # The Go binary plus up to CURATOR_CONCURRENCY `claude -p` Node processes.
+    mem_limit: 1g
+    restart: "no"
+    # Reaps the claude processes and passes SIGTERM to the whole group, so curator cancels its run.
+    init: true
+    environment:
+      TINI_KILL_PROCESS_GROUP: "1"
+    read_only: true
+    # The image's app user (uid 10001): Claude's config dir is under its home.
+    tmpfs:
+      - /home/app:uid=10001,gid=10001,mode=0700
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+networks:
+  curator: {}
+
+volumes:
+  curator-pgdata:

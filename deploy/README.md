@@ -171,9 +171,9 @@ ports 80/443 and TLS. Each project ships a site file into `/etc/caddy/sites/`. N
       `docker compose logs` needs the `API_IMAGE` that only `deploy.sh` sets):
       - `curl -fsS https://$D/ready` passes, so Caddy has the certificate and the api reaches Neon.
       - **Client IP.** From your machine, use up your IP's burst (`RATE_LIMIT_IP_PER_MIN`, 300), then
-        try a forged header:
+        try a forged header. Send in parallel: the bucket refills 5 per second, faster than sequential curls drain it.
         ```sh
-        for i in $(seq 320); do curl -s -o /dev/null -w '%{http_code}\n' https://$D/v1/topics; done | sort | uniq -c
+        seq 400 | xargs -P 40 -I{} curl -s -o /dev/null -w '%{http_code}\n' https://$D/v1/topics | sort | uniq -c
         curl -s -o /dev/null -w '%{http_code}\n' -H 'X-Forwarded-For: 203.0.113.9' https://$D/v1/topics
         ```
         The loop ends in 429s, and the forged header still gets 429 (Caddy replaces it). A request from another
@@ -271,47 +271,90 @@ The topic catalog (`curator/seed/catalog/`) and the keys below are tuned in `cur
 - **User topic requests** are not handled by `curator run` or `make curator-full` (they only pull each env's demand). Run `make curator-requests DEPLOY_ENV=<env>` to pull that env's pending requests, group them into topics with AI (real calls; `DRY_RUN=1` only prints the proposal) and sync, so users see the new topics and the decisions.
 - **Removed catalog entries.** Seed and sync never delete. `make curator-clean` reports topics and professions no longer in the catalog (with the unsaved stories only in them) for the local DB and `ENVS` (default `staging,prod`); `APPLY=1` deletes them. Anything a user follows, muted, picked or requested is kept.
 
-### Curator: daily fetch on Cloud Run (prod, fetch only)
+### Curator: nightly job on the VPS (prod)
 
-A Cloud Run Job runs `curator run --full --rank 1-$CURATOR_CLAUDE_TOP` with Claude every morning (`curator/Dockerfile`,
-`curator/deploy/job.sh`: migrate, seed, run; never sync or prune). It fetches into its own Postgres schema
-`curator_job` in the prod Neon database and only reads prod's demand. **Nothing reaches users until you run
-`make curator-sync`**, and `curator sync` reads `LOCAL_DATABASE_URL`, so point your laptop's `LOCAL_DATABASE_URL`
-in `curator/.env` at the same schema (below) before syncing, or the stories fetched in the cloud are not seen.
-These commands create cloud resources and may cost money. Read them, then run them yourself. `P` is the prod
-project, `R` its region, `TZ` your IANA time zone (e.g. `Asia/Dhaka`).
+Every night at 03:00 Asia/Singapore, `changeloom-curator.timer` on the VPS runs `curator.sh`, which starts the
+`curator-db` Postgres container, runs the curator image once (`curator/deploy/job.sh`: migrate, seed, `run --full`
+for every due topic with Claude, then `sync --env prod` and `prune --env prod`) and stops `curator-db` again.
+**The job publishes to prod on its own**; there is no `make curator-sync` review step for prod any more. If the
+fetch stops partway (e.g. a subscription limit), what it fetched is still synced and the run exits non-zero;
+`CURATOR_FETCH_COOLDOWN=48h` makes the next night start with the topics it missed. The files are
+`deploy/vps/curator.{compose.yaml,sh}`, `curator-deploy.sh`, `changeloom-curator.{service,timer}` and the two
+env examples. Do this after the VPS steps above (the `deploy` user, Docker and the CI deploy key exist).
+`<vps-ip>` is the server; commands run on it as `deploy` (`ssh deploy@<vps-ip>`) use
+`C='docker compose -f /srv/changeloom/curator.compose.yaml'`.
 
-1. **Schema.** Create it once with the direct (non-pooled) Neon URL: `psql "$DIRECT_URL" -c 'CREATE SCHEMA curator_job'`.
-   The job's `LOCAL_DATABASE_URL` is that URL plus `search_path=curator_job` (e.g. `...?sslmode=require&search_path=curator_job`),
-   so every table lands in the schema, not in `public`. After the first run check that `public` has no new tables.
-2. **Secrets** (Secret Manager in `P`): `curator-local-database-url`, `curator-remote-database-url-prod` (the prod direct URL)
-   and the Claude credential `curator-claude-token`: either `claude setup-token` output as `CLAUDE_CODE_OAUTH_TOKEN`, or an API key
-   as `ANTHROPIC_API_KEY`. Anthropic's terms say Pro/Max limits assume ordinary individual use and that products should use API
-   keys, so an unattended job feeding a production app is a grey area for the subscription token: an API key is the clearly
-   allowed option (metered per token). Check [the terms](https://code.claude.com/docs/en/legal-and-compliance) before choosing.
-3. **Image** (pin the Claude CLI version; `A` is `$R-docker.pkg.dev/$P/<ARTIFACT_REPO>`):
+1. **Claude credential.** On a machine logged in to the subscription, run `claude setup-token` and keep the
+   token for `curator.env`. Anthropic's terms say Pro/Max limits assume ordinary individual use and that
+   products should use API keys, so an unattended job feeding a production app is a grey area for the
+   subscription token: an API key (`ANTHROPIC_API_KEY` instead of `CLAUDE_CODE_OAUTH_TOKEN`, metered per token)
+   is the clearly allowed option. Check [the terms](https://code.claude.com/docs/en/legal-and-compliance) before choosing.
+2. **Env files** (mode 600, owned by `deploy`; never commit the filled-in files):
    ```sh
-   gcloud builds submit --project "$P" --config /dev/stdin . <<EOF
-   steps:
-   - name: gcr.io/cloud-builders/docker
-     args: [build, -f, curator/Dockerfile, --build-arg, CLAUDE_CODE_VERSION=<x.y.z>, -t, $A/curator:latest, .]
-   images: [$A/curator:latest]
-   EOF
+   scp deploy/vps/curator.env.example deploy@<vps-ip>:/srv/changeloom/curator.env
+   scp deploy/vps/curator-db.env.example deploy@<vps-ip>:/srv/changeloom/curator-db.env
+   ssh deploy@<vps-ip> chmod 600 /srv/changeloom/curator.env /srv/changeloom/curator-db.env
    ```
-4. **Job + schedule.** Use a dedicated service account `curator-job@$P` with `roles/secretmanager.secretAccessor` on those
-   secrets, and a scheduler account allowed to run the job (`roles/run.invoker` on it):
+   In `curator-db.env` set a `POSTGRES_PASSWORD` (`openssl rand -hex 24`); `LOCAL_DATABASE_URL` in `curator.env`
+   uses the same user, password and database. Fill in the token, `REMOTE_DATABASE_URL_PROD` (the prod
+   **direct** Neon URL, as in `migrate.env`) and `NOTIFY_SECRET_PROD` (`NOTIFY_SECRET` from `api.env`).
+3. **First image deploy.** Merge `staging` into `main` and approve the **Deploy curator** run (Continuous
+   deployment below): it copies the curator files to `/srv/changeloom/` and pulls the image. The first push
+   creates the GHCR package `changeloom-curator` as **private**: make it public in its package settings, as
+   for the api, then rerun the failed `vps` job.
+4. **Move the curator DB** (once, before the first run). The laptop's curator DB holds the fetch history,
+   backoff and known stories prod was synced from; without it the first nightly sync starts from an empty
+   history. Dump it on the laptop (the `pg_dump` must be version 18 or older, like `curator-db`):
    ```sh
-   gcloud run jobs deploy curator-fetch --project "$P" --region "$R" --image "$A/curator:latest" \
-     --service-account "curator-job@$P.iam.gserviceaccount.com" --cpu 1 --memory 2Gi --task-timeout 4h --max-retries 0 \
-     --set-env-vars CURATOR_CLAUDE_TOP=100,CURATOR_CONCURRENCY=2 \
-     --set-secrets LOCAL_DATABASE_URL=curator-local-database-url:1,REMOTE_DATABASE_URL_PROD=curator-remote-database-url-prod:1,CLAUDE_CODE_OAUTH_TOKEN=curator-claude-token:1
-   gcloud scheduler jobs create http curator-fetch-daily --project "$P" --location "$R" --schedule "0 7 * * *" --time-zone "$TZ" \
-     --uri "https://$R-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/$P/jobs/curator-fetch:run" --http-method POST \
-     --oauth-service-account-email "curator-scheduler@$P.iam.gserviceaccount.com"
+   pg_dump -Fc --no-owner --no-acl "$LOCAL_DATABASE_URL" -f curator.dump   # LOCAL_DATABASE_URL from curator/.env
+   scp curator.dump deploy@<vps-ip>:/srv/changeloom/
    ```
-   (Use `ANTHROPIC_API_KEY=...` instead of `CLAUDE_CODE_OAUTH_TOKEN=...` in `--set-secrets` for an API key.)
-5. **First run:** `gcloud run jobs execute curator-fetch --project "$P" --region "$R" --wait`, read the logs, then trigger the scheduler once
-   before relying on 07:00. Then `make curator-sync DEPLOY_ENV=prod` from a `curator/.env` whose `LOCAL_DATABASE_URL` is the schema URL.
+   Then restore it on the server into the still-empty `curator-db` (`CURATOR_IMAGE` is only needed so compose
+   can read the file; the job is not started):
+   ```sh
+   cd /srv/changeloom && export CURATOR_IMAGE=unused
+   $C up -d --wait curator-db
+   $C exec -T curator-db sh -c 'pg_restore --no-owner --no-acl --exit-on-error -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < curator.dump
+   $C stop curator-db
+   rm curator.dump
+   ```
+   Delete the laptop's `curator.dump` too. If the restore fails on an existing object, the DB was not empty
+   (a run already happened): `$C down -v` deletes it (this destroys its data), then repeat.
+   **From now on the laptop never syncs or prunes prod**, or two sources diverge: set `CURATOR_RUN_ENVS=staging`
+   in the laptop's `curator/.env`, and use `DEPLOY_ENV=staging` (the default) for `curator-sync`,
+   `curator-prune` and `curator-requests`. Laptop runs stay for local and staging.
+5. **Timer** (as root, once; CI keeps the copies in `/srv/changeloom/` current, so rerun this when a unit changes):
+   ```sh
+   ssh sg1 'sudo install -m 644 /srv/changeloom/changeloom-curator.{service,timer} /etc/systemd/system/ \
+     && sudo systemctl daemon-reload && sudo systemctl enable --now changeloom-curator.timer'
+   ```
+6. **First run** by hand, then follow it (a full run takes hours):
+   ```sh
+   ssh sg1 'sudo systemctl start --no-block changeloom-curator.service'
+   ssh sg1 'journalctl -u changeloom-curator -f'
+   ```
+   It ends with `==> End ...: exit 0`, and the app's timeline shows the new stories.
+   `systemctl list-timers changeloom-curator.timer` shows the next run.
+
+- **Logs:** `journalctl -u changeloom-curator --since today` (the job's output goes there; `docker logs` only
+  works while the run's container `changeloom-curator-job` exists). A run that is cut short exits non-zero
+  and shows as failed in `systemctl status changeloom-curator`.
+- **Stop a run:** `sudo systemctl stop changeloom-curator`; `curator.sh` stops the job and `curator-db`.
+  What was fetched is not synced until the next run.
+- **Rollback:** `ssh deploy@<vps-ip> /srv/changeloom/curator-deploy.sh <older-tag>` (a commit SHA that was
+  pushed to GHCR); the next run uses it. A deploy never interrupts a running job.
+- **User topic requests for prod** now run on the VPS against `curator-db` (not on the laptop), outside the
+  03:00 run. The default provider is Claude, as in the job:
+  ```sh
+  cd /srv/changeloom && export CURATOR_IMAGE=ghcr.io/saniuzzaman-robin/changeloom-curator:$(cat curator-tag)
+  $C up -d --wait curator-db
+  $C run --rm curator /app/curator requests pull --env prod
+  $C run --rm curator /app/curator requests group --dry-run   # then without --dry-run
+  $C run --rm curator /app/curator sync --env prod
+  $C stop curator-db
+  ```
+- **Catalog changes** reach prod with the next image: merge to `main`, approve the curator deploy, and the next
+  run seeds and syncs them.
 
 ## Android app
 
@@ -424,6 +467,11 @@ them (see Continuous deployment). Play rejects a `versionCode` it has seen befor
     over SSH (VPS step 8). To redeploy or roll back an image that already ran in staging, run Actions →
     Deploy api → Run workflow with that image: it copies the same digest to the prod registries (crane)
     and checks out the commit it was built from. Set `CLOUD_RUN_DEPLOY=false` once Cloud Run prod is deleted.
+- `.github/workflows/deploy-curator.yml`: runs after CI passes on a push to `main`. It builds the curator
+  image (Claude CLI pinned by `CURATOR_CLAUDE_CODE_VERSION` in `deploy/prod.env`) and pushes it to GHCR
+  (`VPS_CURATOR_IMAGE_REPO:<commit>`); after the `production` environment's approval it copies the curator
+  files in `deploy/vps/` to the VPS and runs `curator-deploy.sh <commit>`, so the next nightly run uses it
+  (Curator: nightly job on the VPS). Run it by hand to rebuild after bumping the Claude CLI version.
 - **Branches:** open PRs against `staging`; Dependabot does too. Merge `staging` into `main` (a PR, with a
   merge commit) when you want a prod release. `main` is the only branch that deploys prod; protect both.
 - `.github/workflows/android-release.yml`
@@ -533,5 +581,5 @@ GitHub environment: `staging`, or `production` for prod.
 
 1. Staging: merge to `staging`. The workflows deploy the api and send the app to testers. Run the
    curator's `sync --env staging` and test.
-2. Prod: merge `staging` into `main` (deploys the api after approval), then `make release PRE=alpha` for a
+2. Prod: merge `staging` into `main` (deploys the api and the nightly curator after approval), then `make release PRE=alpha` for a
    closed-testing build of the app, and `make release` to ship that version to production.

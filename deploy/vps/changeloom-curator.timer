@@ -1,0 +1,10 @@
+# Starts changeloom-curator.service every night; a run missed while the server was down starts at boot.
+[Unit]
+Description=Nightly changeloom curator
+
+[Timer]
+OnCalendar=*-*-* 03:00 Asia/Singapore
+Persistent=true
+
+[Install]
+WantedBy=timers.target
