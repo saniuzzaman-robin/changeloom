@@ -1,0 +1,18 @@
+# The nightly prod curator job (curator.sh), started by changeloom-curator.timer.
+# Install: copy both units to /etc/systemd/system/, then systemctl daemon-reload and
+# systemctl enable --now changeloom-curator.timer. See deploy/README.md, section VPS.
+[Unit]
+Description=changeloom nightly curator (fetch with Claude, then sync and prune prod)
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+WorkingDirectory=/srv/changeloom
+ExecStart=/usr/bin/bash /srv/changeloom/curator.sh
+# Ends a stuck run well before the next night's start; curator.sh then stops the job and curator-db.
+TimeoutStartSec=20h
+TimeoutStopSec=90

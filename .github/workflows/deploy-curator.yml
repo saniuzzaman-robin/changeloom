@@ -1,0 +1,114 @@
+name: Deploy curator
+
+# After CI passes on main (a staging -> main merge), build the curator image (curator/Dockerfile, with the
+# Claude CLI pinned by CURATOR_CLAUDE_CODE_VERSION in deploy/prod.env) and push it to GHCR as
+# <VPS_CURATOR_IMAGE_REPO>:<commit>, then (after the production environment's approval) pull it on the VPS
+# with deploy/vps/curator-deploy.sh, which the nightly job then runs (deploy/README.md, section VPS).
+# Run it by hand to rebuild main's current commit, e.g. after bumping the Claude CLI version.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Third-party actions are pinned by commit SHA (Dependabot keeps them current).
+jobs:
+  image:
+    # By hand on main, or only pushes to this repo's main; never a PR's CI run.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: deploy-curator
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      # Push the curator image to GHCR.
+      packages: write
+    env:
+      COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.COMMIT }}
+      - name: Load deploy settings
+        run: |
+          set -a; source deploy/prod.env; set +a
+          for key in VPS_CURATOR_IMAGE_REPO CURATOR_CLAUDE_CODE_VERSION; do
+            [[ -n ${!key:-} ]] || { echo "Set $key in deploy/prod.env."; exit 1; }
+            echo "$key=${!key}" >> "$GITHUB_ENV"
+          done
+      - name: Log in to GHCR
+        run: docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<< "$GH_TOKEN"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Build and push the image
+        run: |
+          # The source label links the GHCR package to this repo, so this workflow's token can push to it.
+          docker build -f curator/Dockerfile \
+            --build-arg "CLAUDE_CODE_VERSION=$CURATOR_CLAUDE_CODE_VERSION" \
+            --label "org.opencontainers.image.revision=$COMMIT" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            -t "$VPS_CURATOR_IMAGE_REPO:$COMMIT" .
+          docker push "$VPS_CURATOR_IMAGE_REPO:$COMMIT"
+      - name: Summary
+        run: |
+          echo "Pushed the curator image: \`$VPS_CURATOR_IMAGE_REPO:$COMMIT\`" >> "$GITHUB_STEP_SUMMARY"
+
+  vps:
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The VPS secrets live on the production environment; its reviewers approve this job.
+    environment: production
+    concurrency:
+      group: deploy-curator-vps
+      cancel-in-progress: false
+    env:
+      COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.COMMIT }}
+      - name: Load deploy settings
+        run: |
+          set -a; source deploy/prod.env; set +a
+          for key in VPS_USER VPS_APP_DIR VPS_CURATOR_IMAGE_REPO; do
+            [[ -n ${!key:-} ]] || { echo "Set $key in deploy/prod.env."; exit 1; }
+            echo "$key=${!key}" >> "$GITHUB_ENV"
+          done
+      # Copies this commit's curator compose file, scripts and systemd units to the server, then runs
+      # curator-deploy.sh, which pulls the image and records its tag for the next nightly run.
+      - name: Deploy to the VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          for key in VPS_HOST VPS_SSH_KEY VPS_KNOWN_HOSTS; do
+            [[ -n ${!key:-} ]] || { echo "Set the $key secret on the production environment (deploy/README.md, section VPS)."; exit 1; }
+          done
+          dir="$RUNNER_TEMP/vps-ssh"
+          install -d -m 700 "$dir"
+          install -m 600 /dev/null "$dir/key"
+          printf '%s\n' "$VPS_SSH_KEY" > "$dir/key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$dir/known_hosts"
+          opts=(-i "$dir/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes
+            -o "UserKnownHostsFile=$dir/known_hosts" -o ConnectTimeout=20)
+          remote="$VPS_USER@$VPS_HOST"
+          scp "${opts[@]}" deploy/vps/{curator.compose.yaml,curator.sh,curator-deploy.sh,changeloom-curator.service,changeloom-curator.timer} \
+            "$remote:$VPS_APP_DIR/"
+          ssh "${opts[@]}" "$remote" \
+            "APP_DIR=$(printf %q "$VPS_APP_DIR") IMAGE_REPO=$(printf %q "$VPS_CURATOR_IMAGE_REPO") bash $(printf %q "$VPS_APP_DIR/curator-deploy.sh") $(printf %q "$COMMIT")"
+      - name: Summary
+        run: |
+          echo "Deployed the curator to the prod VPS: \`$VPS_CURATOR_IMAGE_REPO:$COMMIT\` (used from the next nightly run)" >> "$GITHUB_STEP_SUMMARY"
