@@ -206,7 +206,7 @@ androidComponents {
         val problems = buildList {
             val url = apiBaseUrl(env)
             if (!url.startsWith("https://")) {
-                add("the api URL is $url: set changeloom.$env.apiBaseUrl to the $env Cloud Run URL")
+                add("the api URL is $url: set changeloom.$env.apiBaseUrl to the $env api's https URL")
             }
             // The shared fallback is staging's Firebase project, so prod must ship its own.
             val config = if (env == "prod") file("src/$env/google-services.json") else googleServicesFiles[env]
