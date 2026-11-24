@@ -1192,7 +1192,7 @@ internal fun StoryCard(
                     )
                 }
                 SeverityDot(story.severity, Modifier.padding(start = 2.dp))
-                if (story.actionRequired) ActionPill(Modifier.padding(start = 4.dp))
+                if (story.actionRequired) ActionPill(Modifier.padding(start = 4.dp), compact = true)
             }
             Spacer(Modifier.height(10.dp))
             Text(

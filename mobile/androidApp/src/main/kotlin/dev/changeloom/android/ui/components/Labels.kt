@@ -102,21 +102,30 @@ fun KindLabel(kind: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** Amber pill for a story whose readers must upgrade, migrate or patch. */
+/**
+ * Amber pill for a story whose readers must upgrade, migrate or patch. [compact] drops the words for dense rows
+ * (the icon keeps the description for TalkBack).
+ */
 @Composable
-fun ActionPill(modifier: Modifier = Modifier) {
+fun ActionPill(modifier: Modifier = Modifier, compact: Boolean = false) {
     val color = ChangeloomTheme.colors.amber
+    val label = stringResource(R.string.action_needed)
     Row(
         modifier
             .clip(Radius.pill)
             .background(color.copy(alpha = 0.12f))
             .border(1.dp, color.copy(alpha = 0.28f), Radius.pill)
-            .padding(start = 7.dp, end = 9.dp, top = 3.dp, bottom = 3.dp),
+            .padding(start = 7.dp, end = if (compact) 7.dp else 9.dp, top = 3.dp, bottom = 3.dp),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Rounded.Build, contentDescription = null, tint = color, modifier = Modifier.size(12.dp))
-        Eyebrow(stringResource(R.string.action_needed), color = color)
+        Icon(
+            Icons.Rounded.Build,
+            contentDescription = if (compact) label else null,
+            tint = color,
+            modifier = Modifier.size(12.dp),
+        )
+        if (!compact) Eyebrow(label, color = color)
     }
 }
 
