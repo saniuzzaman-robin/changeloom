@@ -92,6 +92,16 @@ fun KindPill(kind: String, modifier: Modifier = Modifier) {
     }
 }
 
+/** A story's kind as a quiet icon and tinted label, without the pill's fill and border; for dense lists. */
+@Composable
+fun KindLabel(kind: String, modifier: Modifier = Modifier) {
+    val color = kindColor(kind)
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(kindIcon(kind), contentDescription = null, tint = color, modifier = Modifier.size(12.dp))
+        Eyebrow(kind, color = color)
+    }
+}
+
 /** Amber pill for a story whose readers must upgrade, migrate or patch. */
 @Composable
 fun ActionPill(modifier: Modifier = Modifier) {

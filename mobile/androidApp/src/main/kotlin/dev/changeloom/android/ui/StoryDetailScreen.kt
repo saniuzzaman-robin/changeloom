@@ -92,7 +92,6 @@ import dev.changeloom.android.ui.components.GlassCard
 import dev.changeloom.android.ui.components.ImportanceMeter
 import dev.changeloom.android.ui.components.KeyPoints
 import dev.changeloom.android.ui.components.KindPill
-import dev.changeloom.android.ui.components.MAX_IMPORTANCE
 import dev.changeloom.android.ui.components.PrimaryButton
 import dev.changeloom.android.ui.components.SeverityDot
 import dev.changeloom.android.ui.components.ScreenBackdrop
@@ -245,11 +244,14 @@ private fun DetailHero(story: StorySummary) {
                     Eyebrow(story.severity.orEmpty(), color = severityColor(story.severity))
                 }
                 if (story.actionRequired) ActionPill(Modifier.padding(start = 8.dp))
-                Spacer(Modifier.weight(1f))
-                Eyebrow(storyDates(story.publishedAt, story.addedAt))
             }
             Spacer(Modifier.height(18.dp))
             Text(story.title, Modifier.sharedStoryTitle(story.id).semantics { heading() }, style = MaterialTheme.typography.headlineMedium, color = c.fg)
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.enter(LEDE_ENTER_DELAY), verticalAlignment = Alignment.CenterVertically) {
+                Eyebrow(storyDates(story.publishedAt, story.addedAt), Modifier.weight(1f), maxLines = 2)
+                ImportanceMeter(story.importance, Modifier.padding(start = 12.dp))
+            }
             Spacer(Modifier.height(12.dp))
             Text(story.summary, Modifier.enter(LEDE_ENTER_DELAY), style = MaterialTheme.typography.bodyLarge, color = c.fgMuted)
             if (story.keyPoints.isNotEmpty()) {
@@ -260,14 +262,8 @@ private fun DetailHero(story: StorySummary) {
                     KeyPoints(story.keyPoints)
                 }
             }
-            Spacer(Modifier.height(20.dp))
-            Row(Modifier.enter(META_ENTER_DELAY), verticalAlignment = Alignment.CenterVertically) {
-                ImportanceMeter(story.importance)
-                Spacer(Modifier.width(8.dp))
-                Eyebrow(stringResource(R.string.importance_label, story.importance, MAX_IMPORTANCE))
-            }
             if (story.topics.isNotEmpty()) {
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(20.dp))
                 FlowRow(
                     Modifier.enter(META_ENTER_DELAY),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),

@@ -167,10 +167,9 @@ import dev.changeloom.android.ui.components.Eyebrow
 import dev.changeloom.android.ui.components.GlassCard
 import dev.changeloom.android.ui.components.GradientAvatar
 import dev.changeloom.android.ui.components.GradientText
-import dev.changeloom.android.ui.components.ImportanceMeter
 import dev.changeloom.android.ui.components.ActionPill
 import dev.changeloom.android.ui.components.KeyPoints
-import dev.changeloom.android.ui.components.KindPill
+import dev.changeloom.android.ui.components.KindLabel
 import dev.changeloom.android.ui.components.LoomMark
 import dev.changeloom.android.ui.components.NewDot
 import dev.changeloom.android.ui.components.PrimaryButton
@@ -1178,20 +1177,22 @@ internal fun StoryCard(
             },
         ) {
             Row(Modifier.padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                KindPill(story.kind)
-                SeverityDot(story.severity, Modifier.padding(start = 2.dp))
-                if (story.actionRequired) ActionPill(Modifier.padding(start = 4.dp))
-                Spacer(Modifier.weight(1f))
-                if (!story.seen && !story.isRead) NewDot(Modifier.padding(end = 8.dp))
+                // Kind and time read as one quiet line; it gives way first when the markers need the room.
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    KindLabel(story.kind)
+                    Eyebrow(" · " + storyTime(story.publishedAt, story.addedAt), Modifier.weight(1f, fill = false))
+                }
+                if (!story.seen && !story.isRead) NewDot(Modifier.padding(start = 8.dp))
                 // Only the timeline sets `match`; followed stories need no label.
                 if (story.match != null && story.match != "followed") {
                     Eyebrow(
                         stringResource(if (story.match == "headline") R.string.headline else R.string.suggested),
-                        Modifier.padding(end = 8.dp),
+                        Modifier.padding(start = 8.dp),
                         color = c.accentText,
                     )
                 }
-                Eyebrow(storyTime(story.publishedAt, story.addedAt))
+                SeverityDot(story.severity, Modifier.padding(start = 2.dp))
+                if (story.actionRequired) ActionPill(Modifier.padding(start = 4.dp))
             }
             Spacer(Modifier.height(10.dp))
             Text(
@@ -1224,11 +1225,16 @@ internal fun StoryCard(
             }
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    story.topics.take(MAX_CARD_TOPICS).forEach { TopicChip(topicName(it)) }
-                    if (story.topics.size > MAX_CARD_TOPICS) Eyebrow("+${story.topics.size - MAX_CARD_TOPICS}")
-                }
-                ImportanceMeter(story.importance, Modifier.padding(start = 8.dp))
+                val topics = story.topics.take(MAX_CARD_TOPICS).joinToString(" · ") { topicName(it) } +
+                    if (story.topics.size > MAX_CARD_TOPICS) " +${story.topics.size - MAX_CARD_TOPICS}" else ""
+                Text(
+                    topics,
+                    Modifier.weight(1f).padding(end = 8.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = c.fgSubtle,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 if (quickTake) QuickTakeToggle(quickTakeOpen, onToggleQuickTake)
                 SaveToggle(story.isBookmarked, onToggleSave)
                 if (menu != null) StoryMenuButton(story, menu)
