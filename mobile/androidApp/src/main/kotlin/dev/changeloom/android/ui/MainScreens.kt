@@ -1192,7 +1192,7 @@ internal fun StoryCard(
                     )
                 }
                 SeverityDot(story.severity, Modifier.padding(start = 2.dp))
-                if (story.actionRequired) ActionPill(Modifier.padding(start = 4.dp))
+                if (story.actionRequired) ActionPill(Modifier.padding(start = 4.dp), compact = true)
             }
             Spacer(Modifier.height(10.dp))
             Text(
@@ -1225,16 +1225,27 @@ internal fun StoryCard(
             }
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val topics = story.topics.take(MAX_CARD_TOPICS).joinToString(" · ") { topicName(it) } +
-                    if (story.topics.size > MAX_CARD_TOPICS) " +${story.topics.size - MAX_CARD_TOPICS}" else ""
-                Text(
-                    topics,
-                    Modifier.weight(1f).padding(end = 8.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = c.fgSubtle,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                // The first topic gives way to the room; the count of the others always stays visible.
+                val extra = story.topics.size - 1
+                Row(Modifier.weight(1f).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        story.topics.firstOrNull()?.let { topicName(it) }.orEmpty(),
+                        Modifier.weight(1f, fill = false),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = c.fgSubtle,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (extra > 0) {
+                        Text(
+                            "+$extra",
+                            Modifier.padding(start = 6.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = c.fgSubtle,
+                            maxLines = 1,
+                        )
+                    }
+                }
                 if (quickTake) QuickTakeToggle(quickTakeOpen, onToggleQuickTake)
                 SaveToggle(story.isBookmarked, onToggleSave)
                 if (menu != null) StoryMenuButton(story, menu)
@@ -1666,7 +1677,6 @@ private const val WEEK_DAYS = 7
 private val LATE_ADDED = Duration.ofDays(1)
 private const val TITLE_LINES = 3
 private const val SUMMARY_LINES = 3
-private const val MAX_CARD_TOPICS = 2
 internal const val STORY_CONTENT = "story"
 internal const val SKELETON_CONTENT = "skeleton"
 private const val SECTION_CONTENT = "section"
