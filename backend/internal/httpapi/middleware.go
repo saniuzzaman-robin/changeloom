@@ -34,7 +34,8 @@ func withTrace(next http.Handler) http.Handler {
 }
 
 // observe logs one entry per request and turns a panic into a JSON 500 (or, once the response has
-// started, an aborted connection) with the stack logged for Error Reporting. It logs no user data.
+// started, an aborted connection) with the stack logged for Error Reporting. The info entry has the redacted query string; the client
+// IP and redacted headers go in a second entry at debug level.
 func observe(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -54,9 +55,14 @@ func observe(next http.Handler) http.Handler {
 			slog.InfoContext(r.Context(), "request",
 				"method", r.Method,
 				"path", r.URL.Path,
+				"query", logging.RedactQuery(r.URL.RawQuery),
 				"status", rec.statusCode(),
 				"bytes", rec.bytes,
 				"latency_ms", time.Since(start).Milliseconds(),
+			)
+			slog.DebugContext(r.Context(), "request details",
+				"ip", clientIP(r),
+				"headers", logging.RedactHeaders(r.Header),
 			)
 			if abort {
 				panic(http.ErrAbortHandler)
