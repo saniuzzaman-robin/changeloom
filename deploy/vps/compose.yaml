@@ -19,6 +19,12 @@ services:
       - 127.0.0.1:8080:8080
     mem_limit: 512m
     restart: unless-stopped
+    # The host's journald keeps the logs for its MaxRetentionSec (deploy/README.md, VPS section), not
+    # Docker's json-file driver, which only rotates by size. `journalctl CONTAINER_TAG=changeloom-api`.
+    logging:
+      driver: journald
+      options:
+        tag: changeloom-api
     # main.go finishes shutting down within 8s of SIGTERM.
     stop_grace_period: 10s
     read_only: true
