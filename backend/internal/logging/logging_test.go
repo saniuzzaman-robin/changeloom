@@ -93,3 +93,21 @@ func TestTraceFromRequest(t *testing.T) {
 		}
 	}
 }
+
+func TestPlainHandler(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := WithTrace(context.Background(), Trace{TraceID: "0af7651916cd43dd8448eb211c80319c"})
+	slog.New(NewPlainHandler(&buf, slog.LevelDebug)).ErrorContext(ctx, "hello")
+	var entry map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("decode %q: %v", buf.String(), err)
+	}
+	if entry["level"] != "ERROR" || entry["msg"] != "hello" || entry["trace_id"] != "0af7651916cd43dd8448eb211c80319c" {
+		t.Errorf("entry = %v, want level, msg and trace_id", entry)
+	}
+	for _, key := range []string{"severity", "message", "@type"} {
+		if _, ok := entry[key]; ok {
+			t.Errorf("entry has Cloud Logging key %q: %v", key, entry)
+		}
+	}
+}

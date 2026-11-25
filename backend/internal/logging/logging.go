@@ -39,7 +39,13 @@ func NewHandler(w io.Writer, level slog.Leveler, project string) slog.Handler {
 			return a
 		},
 	})
-	return &handler{Handler: h, project: project}
+	return &handler{Handler: h, project: project, cloud: true}
+}
+
+// NewPlainHandler returns a JSON handler with slog's own `level` and `msg` keys, for hosts that
+// are not Cloud Run. Entries still carry the request's `trace_id`.
+func NewPlainHandler(w io.Writer, level slog.Leveler) slog.Handler {
+	return &handler{Handler: slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level})}
 }
 
 func severity(l slog.Level) string {
@@ -58,6 +64,8 @@ func severity(l slog.Level) string {
 type handler struct {
 	slog.Handler
 	project string
+	// cloud adds the Error Reporting type to errors (Cloud Logging format only).
+	cloud bool
 }
 
 func (h *handler) Handle(ctx context.Context, r slog.Record) error {
@@ -71,18 +79,18 @@ func (h *handler) Handle(ctx context.Context, r slog.Record) error {
 			r.AddAttrs(slog.String("trace_id", t.TraceID))
 		}
 	}
-	if r.Level >= slog.LevelError {
+	if h.cloud && r.Level >= slog.LevelError {
 		r.AddAttrs(slog.String("@type", errorType))
 	}
 	return h.Handler.Handle(ctx, r)
 }
 
 func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &handler{Handler: h.Handler.WithAttrs(attrs), project: h.project}
+	return &handler{Handler: h.Handler.WithAttrs(attrs), project: h.project, cloud: h.cloud}
 }
 
 func (h *handler) WithGroup(name string) slog.Handler {
-	return &handler{Handler: h.Handler.WithGroup(name), project: h.project}
+	return &handler{Handler: h.Handler.WithGroup(name), project: h.project, cloud: h.cloud}
 }
 
 // Trace identifies the request a log entry belongs to.

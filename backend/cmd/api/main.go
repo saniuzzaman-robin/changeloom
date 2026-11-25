@@ -47,13 +47,19 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	// Hosted environments run in the GCP project that is also the Firebase project (deploy/README.md),
-	// which is where Cloud Run's traces live.
-	traceProject := ""
-	if cfg.Env != config.EnvDev {
-		traceProject = cfg.FirebaseProjectID
+	// Cloud Run (staging) gets Cloud Logging's format; Cloud Run sets K_SERVICE. Anywhere else (the
+	// VPS, local) logs are plain slog JSON.
+	if os.Getenv("K_SERVICE") != "" {
+		// Hosted environments run in the GCP project that is also the Firebase project
+		// (deploy/README.md), which is where Cloud Run's traces live.
+		traceProject := ""
+		if cfg.Env != config.EnvDev {
+			traceProject = cfg.FirebaseProjectID
+		}
+		slog.SetDefault(slog.New(logging.NewHandler(os.Stdout, cfg.LogLevel, traceProject)))
+	} else {
+		slog.SetDefault(slog.New(logging.NewPlainHandler(os.Stdout, cfg.LogLevel)))
 	}
-	slog.SetDefault(slog.New(logging.NewHandler(os.Stdout, cfg.LogLevel, traceProject)))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

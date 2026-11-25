@@ -167,7 +167,7 @@ ports 80/443 and TLS. Each project ships a site file into `/etc/caddy/sites/`. N
    1. Steps 4–7 are done and `dig +short $D` prints the VPS IP.
    2. **First deploy:** merge `staging` into `main` and approve the prod run (step 8 for the GHCR package).
       Cloud Run prod still gets the same release, so the current app keeps working.
-   3. **Smoke test the domain** (the api logs go to the container: `ssh deploy@<vps-ip> docker logs --since 10m changeloom-api-1`;
+   3. **Smoke test the domain** (the api logs go to the host's journald, kept for `MaxRetentionSec` (set it once in `/etc/systemd/journald.conf.d/`, as in the cou-alumni deploy docs): `ssh deploy@<vps-ip> docker logs --since 10m changeloom-api-1` or `journalctl CONTAINER_TAG=changeloom-api --since '10 min ago'`;
       `docker compose logs` needs the `API_IMAGE` that only `deploy.sh` sets):
       - `curl -fsS https://$D/ready` passes, so Caddy has the certificate and the api reaches Neon.
       - **Client IP.** From your machine, use up your IP's burst (`RATE_LIMIT_IP_PER_MIN`, 300), then
